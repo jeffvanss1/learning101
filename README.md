@@ -17,11 +17,11 @@ while chatting live — powered by the **Bingr Embed API**.
 ```
 Browser (static build in /dist)
    │  REST:  /api/rooms, /api/room/:id
-   │  Proxy: /api/bingr/*  ->  https://api.bingr.one/*
+   │  Proxy: /api/tmdb/*  ->  https://api.themoviedb.org/3/*
    │  WS:    /ws?room=<id>
    ▼
 Worker (src/worker.js)
-   │  routes REST, proxies the Bingr catalog API, upgrades WebSockets
+   │  routes REST, proxies the TMDB catalog API, upgrades WebSockets
    ▼
 WatchRoom Durable Object (src/WatchRoom.js)
    ├─ per-room state: video, playback clock, chat history, peers
@@ -37,7 +37,7 @@ The video player is an `<iframe>` pointing at a Bingr watch URL:
 | ------ | --------------------------------------------- |
 | Movie  | `https://bingr.one/watch/movie/{tmdbId}`      |
 | Series | `https://bingr.one/watch/tv/{tmdbId}/{season}/{episode}` |
-| Anime  | `https://bingr.one/watch/anime/{anilistId}/{episode}` |
+| Anime  | `https://bingr.one/watch/tv/{tmdbId}/{season}/{episode}` |
 
 The player is driven with `postMessage` commands to the iframe's
 `contentWindow`:
@@ -89,9 +89,24 @@ echo 'TMDB_API_KEY="your_key_here"' > .dev.vars
 npx wrangler secret put TMDB_API_KEY
 ```
 
+> **Keeping the key safe across `git pull`** — your key is never stored in git,
+> so pulling never resets it:
+>
+> - `.dev.vars` is gitignored (see `.gitignore`) — `git pull` leaves untracked,
+>   ignored files alone.
+> - The production value lives in Cloudflare as a Worker secret, not in the repo.
+> - The `TMDB_API_KEY = ""` in `wrangler.toml` is just an empty placeholder;
+>   `.dev.vars` (local) and the Worker secret (production) both take precedence
+>   over `[vars]`, so it never overrides your real key.
+>
+> Just **don't paste your key into `wrangler.toml`** — keep it in `.dev.vars`
+> (local) and `wrangler secret put TMDB_API_KEY` (production), and a plain
+> `git pull` is always safe. If you've edited tracked files locally, `git pull`
+> will ask you to commit or stash them first.
+
 Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
 `/discover/tv?with_keywords=210024` (anime), `/search/multi`, `/movie/{id}`,
-`/tv/{id}`, `/tv/{id}/season/{n}`.
+`/tv/{id}`, `/tv/{id}/season/{n}`, `/movie/{id}/videos`, `/tv/{id}/videos`.
 
 ## Synchronization model
 
@@ -109,16 +124,16 @@ detected and mirrored back to the room.
 wrangler.toml        # Workers Static Assets + Durable Object bindings/migration
 package.json
 src/
-  worker.js          # routing, REST API, Bingr proxy, WS upgrade
+  worker.js          # routing, REST API, TMDB proxy, WS upgrade
   WatchRoom.js       # Durable Object: state, chat, sync broadcast
 dist/                # static frontend (no build step required)
   index.html
   css/style.css      # room / chat / player chrome
-  css/catalog.css    # browse, hero, rows, cards, modals, seek bar
-  js/utils.js        # DOM helpers, formatting, URL parsing
+  css/catalog.css    # browse, hero, rows, cards, hover preview, modals, seek bar
+  js/utils.js        # DOM helpers, formatting, URL parsing, random names
   js/api.js          # REST + WebSocket client w/ auto-reconnect
   js/player.js       # PlaybackSyncManager (Bingr postMessage bridge)
-  js/catalog.js      # Bingr library: browse, search, detail/episode picker
+  js/catalog.js      # TMDB library: browse, search, trailer hover, episode picker
   js/app.js          # home/room flow, modals, chat, wiring
   favicon.svg
 ```
@@ -153,7 +168,7 @@ Durable Object namespaces on Cloudflare's free plan).
 | ------ | ------------------- | -------------------------------------------- |
 | GET    | `/api/rooms`        | Create a room → `{ id, url, ws }`            |
 | GET    | `/api/room/:id`     | Look up a room's current state               |
-| GET    | `/api/bingr/*`      | Proxy to the Bingr catalog API               |
+| GET    | `/api/tmdb/*`       | Proxy to the TMDB catalog API                |
 | GET    | `/room/:id/health`  | Durable Object health (peers, playback)      |
 
 ## WebSocket protocol

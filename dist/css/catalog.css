@@ -107,8 +107,9 @@
   position: relative;
   width: 100%;
   max-width: 100%;
-  /* Fluid height: scales with the viewport instead of overflowing the layout. */
-  min-height: clamp(240px, 32vw, 440px);
+  /* Fixed (not min-) height: long titles/plots can't stretch the banner. */
+  height: clamp(240px, 32vw, 440px);
+  min-height: 0;
   border-radius: 16px;
   overflow: hidden;
   display: flex;
@@ -163,6 +164,10 @@
   font-weight: 700;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .hero__meta {
@@ -170,8 +175,10 @@
   font-size: 14px;
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
-  overflow-wrap: anywhere;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hero__overview {
@@ -195,7 +202,8 @@
 }
 
 .hero__skeleton {
-  min-height: clamp(240px, 32vw, 440px);
+  height: clamp(240px, 32vw, 440px);
+  min-height: 0;
   border-radius: 16px;
   background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
   background-size: 200% 100%;
@@ -342,6 +350,76 @@
   color: #f5c518;
 }
 
+/* ---- Hover preview (trailer + plot) ----------------------------------------------------- */
+.card-preview {
+  position: fixed;
+  z-index: 400;
+  width: 304px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  pointer-events: auto;
+  animation: preview-in 0.16s ease;
+}
+
+.card-preview__media {
+  aspect-ratio: 16 / 9;
+  background: #000;
+  position: relative;
+}
+
+.card-preview__media iframe,
+.card-preview__media img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border: 0;
+}
+
+.card-preview__body {
+  padding: 12px 14px;
+}
+
+.card-preview__title {
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-preview__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 6px;
+}
+
+.card-preview__overview {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ---- Search results grid ------------------------------------------------------------- */
 .grid {
   display: grid;
@@ -429,8 +507,17 @@
 /* A compact banner inside the "choose a video" picker. */
 .modal__card--wide .hero,
 .modal__card--wide .hero__skeleton {
-  min-height: clamp(170px, 24vh, 250px);
+  height: clamp(150px, 22vh, 220px);
+  min-height: 0;
   border-radius: 12px;
+}
+
+.modal__card--wide .hero__overview {
+  display: none;
+}
+
+.modal__card--wide .hero__title {
+  -webkit-line-clamp: 1;
 }
 
 .modal__head {
@@ -651,6 +738,8 @@
 /* ---- Responsive ---------------------------------------------------------------------------- */
 @media (max-width: 720px) {
   .hero {
+    /* On small screens a fixed height can clip; let it size to content. */
+    height: auto;
     min-height: clamp(190px, 46vw, 280px);
   }
   .hero__content {

@@ -136,6 +136,129 @@
     return parts.join(' · ');
   }
 
+  // ---- hover preview (autoplaying trailer + plot) -------------------------------
+  const CAN_HOVER =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(hover: hover)').matches;
+
+  const videosCache = new Map(); // "type:id" -> YouTube key (or null)
+  let previewTimer = null;
+  let previewEl = null;
+  let previewFor = null; // item currently previewed
+
+  function closePreview() {
+    if (previewTimer) {
+      clearTimeout(previewTimer);
+      previewTimer = null;
+    }
+    if (previewEl) {
+      previewEl.remove();
+      previewEl = null;
+      previewFor = null;
+    }
+  }
+
+  function scheduleClosePreview() {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(closePreview, 220);
+  }
+
+  async function fetchTrailerKey(item) {
+    const cacheKey = item.type + ':' + item.id;
+    if (videosCache.has(cacheKey)) return videosCache.get(cacheKey);
+    let key = null;
+    try {
+      const path = item.type === 'movie'
+        ? '/movie/' + encodeURIComponent(item.id) + '/videos'
+        : '/tv/' + encodeURIComponent(item.id) + '/videos';
+      const data = await api(path);
+      const vids = (data && data.results) || [];
+      const yt = vids.filter((v) => v.site === 'YouTube' && v.key);
+      const trailer =
+        yt.find((v) => v.type === 'Trailer' && v.official) ||
+        yt.find((v) => v.type === 'Trailer') ||
+        yt[0];
+      key = trailer ? trailer.key : null;
+    } catch (_) {}
+    videosCache.set(cacheKey, key);
+    return key;
+  }
+
+  function trailerEmbed(key) {
+    return 'https://www.youtube.com/embed/' + encodeURIComponent(key) +
+      '?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1';
+  }
+
+  function buildPreview(item) {
+    const el = h('div', 'card-preview');
+
+    const media = h('div', 'card-preview__media');
+    const fallback = item.backdrop || item.poster;
+    if (fallback) {
+      const im = document.createElement('img');
+      im.src = fallback;
+      im.alt = '';
+      media.appendChild(im);
+    }
+    el.appendChild(media);
+
+    const body = h('div', 'card-preview__body');
+    body.appendChild(h('div', 'card-preview__title', item.title));
+    body.appendChild(h('div', 'card-preview__meta', metaText(item)));
+    if (item.overview) body.appendChild(h('p', 'card-preview__overview', item.overview));
+    el.appendChild(body);
+
+    el.addEventListener('mouseenter', () => {
+      if (previewTimer) {
+        clearTimeout(previewTimer);
+        previewTimer = null;
+      }
+    });
+    el.addEventListener('mouseleave', scheduleClosePreview);
+    return el;
+  }
+
+  function positionPreview(el, card) {
+    const rect = card.getBoundingClientRect();
+    const W = el.offsetWidth || 304;
+    const H = el.offsetHeight || 360;
+    const margin = 12;
+    let left = rect.right + margin;
+    if (left + W > window.innerWidth - 8) left = rect.left - W - margin;
+    if (left < 8) left = 8;
+    const top = Math.max(8, Math.min(rect.top, window.innerHeight - H - 8));
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+  }
+
+  function attachHoverPreview(card, item) {
+    if (!CAN_HOVER) return;
+    card.addEventListener('mouseenter', () => {
+      if (previewTimer) clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        if (previewFor === item) return;
+        closePreview();
+        previewFor = item;
+        previewEl = buildPreview(item);
+        document.body.appendChild(previewEl);
+        positionPreview(previewEl, card);
+        fetchTrailerKey(item).then((key) => {
+          if (!previewEl || previewFor !== item || !key) return;
+          const media = previewEl.querySelector('.card-preview__media');
+          if (!media) return;
+          media.innerHTML = '';
+          const iframe = document.createElement('iframe');
+          iframe.src = trailerEmbed(key);
+          iframe.title = item.title || 'Trailer';
+          iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+          iframe.setAttribute('allowfullscreen', '');
+          media.appendChild(iframe);
+        });
+      }, 550);
+    });
+    card.addEventListener('mouseleave', scheduleClosePreview);
+  }
+
   // ---- cards ---------------------------------------------------------------------
   function cardNode(item, onClick) {
     const card = h('div', 'card-item');
@@ -169,7 +292,10 @@
     card.appendChild(poster);
     card.appendChild(body);
 
-    const activate = () => onClick(item);
+    const activate = () => {
+      closePreview();
+      onClick(item);
+    };
     card.addEventListener('click', activate);
     card.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -177,6 +303,7 @@
         activate();
       }
     });
+    attachHoverPreview(card, item);
     return card;
   }
 
@@ -576,6 +703,7 @@
     return {
       destroy() {
         destroyed = true;
+        closePreview();
         container.innerHTML = '';
         container.classList.remove('browse');
       },
