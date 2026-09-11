@@ -553,7 +553,13 @@ export class WatchRoom {
       topic: this.meta.topic,
       playback: stale
         ? { isPlaying: false, time: 0, timestamp: now() }
-        : { isPlaying: p.isPlaying, time: p.time, timestamp: p.timestamp },
+        : {
+            // Report the projected position (not the last action's frozen
+            // time) so a freshly joined client lands on the current time.
+            isPlaying: p.isPlaying,
+            time: this.currentTime(),
+            timestamp: now(),
+          },
     };
   }
 

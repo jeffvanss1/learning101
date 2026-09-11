@@ -29,6 +29,7 @@
   'use strict';
 
   const DRIFT_TOLERANCE = 0.75; // seconds before nudging the local player
+  const SEEK_THRESHOLD = 3.5; // seconds before forcing a hard seek
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
 
@@ -44,7 +45,7 @@
       this.isBuffering = false;
       this.ready = false;
       this._suppressed = 0;
-      this._lastTarget = null;
+      this._lastMsg = null;
       this._statusTimer = null;
       this._readyTimer = null;
       this._handlers = new Map();
@@ -84,7 +85,7 @@
       this.localTime = 0;
       this.localPlaying = false;
       this.duration = null;
-      this._lastTarget = null;
+      this._lastMsg = null;
       this._stopPolling();
       this.emit('video', { video: this.video });
 
@@ -145,26 +146,26 @@
     // ---- inbound protocol messages from the Durable Object ------------------
     handleServerMessage(msg) {
       switch (msg.type) {
-        case 'state': {
+        case 'state':
+        case 'videoChange': {
           if (msg.video && msg.video.src && msg.video.src !== (this.video && this.video.src)) {
             this.loadVideo(msg.video);
           }
           if (msg.playback) this.applyRemote(msg.playback);
           break;
         }
-        case 'videoChange': {
-          this.loadVideo(msg.video);
-          if (msg.playback) this.applyRemote(msg.playback);
-          break;
-        }
         case 'play':
-          this.applyRemote({ isPlaying: true, time: msg.time, timestamp: msg.timestamp });
-          break;
         case 'pause':
-          this.applyRemote({ isPlaying: false, time: msg.time, timestamp: msg.timestamp });
-          break;
         case 'seek':
-          this.applyRemote({ isPlaying: this.localPlaying, time: msg.time, timestamp: msg.timestamp });
+          // Every playback broadcast carries the authoritative `playback`
+          // tuple from the server. Use it so an incoming seek can never
+          // overwrite the room's play/pause state with our (possibly stale)
+          // local state — that made joins look like a pause for everyone.
+          this.applyRemote(msg.playback || {
+            isPlaying: msg.type === 'play',
+            time: msg.time,
+            timestamp: msg.timestamp,
+          });
           break;
         default:
           break;
@@ -180,25 +181,25 @@
     }
 
     applyRemote(msg) {
-      const target = this.estimate(msg);
-      this._lastTarget = target;
-
-      // Ignore the echo of our own action for a beat.
+      // Keep the RAW message (with its timestamp) so the target is re-projected
+      // against the current wall clock whenever we actually apply it — a
+      // joiner's player can take seconds to load, and freezing the position at
+      // join time left it behind the rest of the room.
+      this._lastMsg = msg;
       if (Date.now() - this._suppressed < 500) return;
+      if (!this.ready) return; // applied once the player reports ready
+      this._applyTarget(this.estimate(msg));
+    }
 
-      if (!this.ready) return; // apply once the player reports ready
-
+    _applyTarget(target) {
       const drift = target.time - this.localTime;
       const absDrift = Math.abs(drift);
-      const shouldSeek = absDrift > DRIFT_TOLERANCE && !this.isBuffering;
 
       if (target.isPlaying) {
-        // Nudge position when meaningfully off, then resume if we think we're
-        // paused. (A redundant play is avoided so sync never churns commands.)
-        if (shouldSeek) this.seek(target.time);
+        if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) this.seek(target.time);
         if (!this.localPlaying) this.play();
       } else {
-        // Always pause, in place. One command per pause message — no loop.
+        if (absDrift > SEEK_THRESHOLD && !this.isBuffering) this.seek(target.time);
         this.pause();
       }
     }
@@ -224,7 +225,16 @@
             this._clearReadyTimer();
             this._startPolling();
             this.emit('ready', {});
-            if (this._lastTarget) this.applyRemote(this._lastTarget);
+            if (this._lastMsg) this.applyRemote(this._lastMsg);
+          } else if (this._lastMsg) {
+            // Converge toward the room target. Seek-only here (never re-assert
+            // play/pause, which caused the pause loop) — this recovers a seek
+            // that was issued before the player was actually seekable.
+            const target = this.estimate(this._lastMsg);
+            if (Math.abs(target.time - this.localTime) > SEEK_THRESHOLD && !this.isBuffering) {
+              this.seek(target.time);
+              if (target.isPlaying && !this.localPlaying) this.play();
+            }
           }
           this.emit('progress', {
             time: this.localTime,
@@ -239,7 +249,7 @@
           this._clearReadyTimer();
           this._startPolling();
           this.emit('ready', {});
-          if (this._lastTarget) this.applyRemote(this._lastTarget);
+          if (this._lastMsg) this.applyRemote(this._lastMsg);
           break;
 
         case 'play':
