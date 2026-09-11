@@ -41,6 +41,9 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* clip (not hidden) so the sticky nav keeps working while nothing can
+     ever cause a horizontal scrollbar from oversized artwork. */
+  overflow-x: clip;
 }
 
 body {

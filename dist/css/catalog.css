@@ -107,23 +107,40 @@
   position: relative;
   width: 100%;
   max-width: 100%;
-  /* Fixed (not min-) height: long titles/plots can't stretch the banner. */
-  height: clamp(240px, 32vw, 440px);
+  /* Fixed height: the artwork can never stretch the banner. */
+  height: clamp(190px, 26vw, 360px);
   min-height: 0;
   border-radius: 16px;
   overflow: hidden;
   display: flex;
   align-items: flex-end;
   background-color: var(--bg-elev);
-  background-size: cover;
-  background-position: center 30%;
   box-shadow: var(--shadow);
+}
+
+/* The banner image lives on its own clipped layer, so it can never
+   overflow the hero box (no background-size up-scaling, no spills). */
+.hero__media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.hero__media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
 }
 
 .hero::after {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background: linear-gradient(
     180deg,
     rgba(15, 15, 15, 0.15) 0%,
@@ -202,7 +219,7 @@
 }
 
 .hero__skeleton {
-  height: clamp(240px, 32vw, 440px);
+  height: clamp(190px, 26vw, 360px);
   min-height: 0;
   border-radius: 16px;
   background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
@@ -507,7 +524,7 @@
 /* A compact banner inside the "choose a video" picker. */
 .modal__card--wide .hero,
 .modal__card--wide .hero__skeleton {
-  height: clamp(150px, 22vh, 220px);
+  height: clamp(140px, 20vh, 200px);
   min-height: 0;
   border-radius: 12px;
 }
@@ -738,12 +755,15 @@
 /* ---- Responsive ---------------------------------------------------------------------------- */
 @media (max-width: 720px) {
   .hero {
-    /* On small screens a fixed height can clip; let it size to content. */
+    /* Small screens: size to content but stay bounded by clamps below. */
     height: auto;
-    min-height: clamp(190px, 46vw, 280px);
+    min-height: clamp(170px, 40vw, 240px);
   }
   .hero__content {
-    padding: 18px;
+    padding: 16px;
+  }
+  .hero__overview {
+    -webkit-line-clamp: 2;
   }
   .card-item {
     flex-basis: 128px;

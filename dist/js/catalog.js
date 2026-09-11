@@ -324,7 +324,23 @@
       return;
     }
     const hero = h('div', 'hero');
-    if (item.backdrop) hero.style.backgroundImage = `url("${item.backdrop}")`;
+
+    // Banner art on its own clipped layer — it can never overflow the hero.
+    const media = h('div', 'hero__media');
+    const artSrc = item.backdrop || item.poster || '';
+    if (artSrc) {
+      const im = document.createElement('img');
+      im.src = artSrc;
+      im.alt = '';
+      im.setAttribute('aria-hidden', 'true');
+      // If the backdrop fails, fall back to the poster instead.
+      im.onerror = () => {
+        if (item.poster && im.src !== item.poster) im.src = item.poster;
+        else im.remove();
+      };
+      media.appendChild(im);
+    }
+    hero.appendChild(media);
 
     const content = h('div', 'hero__content');
     content.appendChild(h('span', 'hero__badge', typeLabel(item)));
