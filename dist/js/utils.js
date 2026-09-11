@@ -168,6 +168,38 @@
     return null;
   }
 
+  // A little dictionary so nobody has to think up a handle.
+  const NAME_ADJECTIVES = [
+    'Bold', 'Brave', 'Calm', 'Cheerful', 'Chill', 'Clever', 'Cozy', 'Crisp',
+    'Curious', 'Daring', 'Dreamy', 'Electric', 'Epic', 'Fancy', 'Fearless',
+    'Fierce', 'Friendly', 'Gentle', 'Golden', 'Happy', 'Hidden', 'Jolly',
+    'Kind', 'Lazy', 'Lucky', 'Lunar', 'Mellow', 'Mysterious', 'Nimble',
+    'Noble', 'Plucky', 'Quick', 'Quiet', 'Radiant', 'Retro', 'Rogue',
+    'Rustic', 'Silver', 'Sleepy', 'Smooth', 'Solar', 'Speedy', 'Stellar',
+    'Swift', 'Tidy', 'Tropical', 'Velvet', 'Vivid', 'Wander', 'Whimsical',
+    'Wild', 'Witty', 'Zesty',
+  ];
+
+  const NAME_NOUNS = [
+    'Badger', 'Bandicoot', 'Bison', 'Blizzard', 'Comet', 'Coyote', 'Cricket',
+    'Dolphin', 'Dragon', 'Eagle', 'Ember', 'Falcon', 'Fennec', 'Flamingo',
+    'Fox', 'Gecko', 'Giraffe', 'Grizzly', 'Harrier', 'Hawk', 'Hedgehog',
+    'Heron', 'Ibex', 'Iguana', 'Jaguar', 'Koala', 'Lemur', 'Llama', 'Lynx',
+    'Mango', 'Meerkat', 'Meteor', 'Moose', 'Narwhal', 'Nebula', 'Ocelot',
+    'Otter', 'Panda', 'Panther', 'Parrot', 'Penguin', 'Phoenix', 'Pigeon',
+    'Puffin', 'Quokka', 'Raccoon', 'Rocket', 'Salamander', 'Sphinx',
+    'Starling', 'Tiger', 'Toucan', 'Vulcan', 'Walrus', 'Wolf', 'Wombat',
+    'Yeti', 'Zebra',
+  ];
+
+  /** Generate a friendly randomized handle, e.g. "Bold Falcon" or "Quiet Comet 42". */
+  function randomName() {
+    const adj = NAME_ADJECTIVES[Math.floor(Math.random() * NAME_ADJECTIVES.length)];
+    const noun = NAME_NOUNS[Math.floor(Math.random() * NAME_NOUNS.length)];
+    const suffix = Math.random() < 0.25 ? ' ' + (10 + Math.floor(Math.random() * 90)) : '';
+    return adj + ' ' + noun + suffix;
+  }
+
   /** Parse a pasted video link into a normalized embed URL. */
   function normalizeVideoInput(input) {
     const raw = String(input || '').trim();
@@ -194,5 +226,6 @@
     genRoomCode,
     roomIdFromLink,
     normalizeVideoInput,
+    randomName,
   };
 })(window);

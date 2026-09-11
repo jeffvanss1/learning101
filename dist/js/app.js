@@ -48,10 +48,13 @@
       const input = $('name-input');
       const err = $('name-error');
       try {
-        input.value = savedName();
-      } catch (_) {}
+        input.value = savedName() || WP.randomName();
+      } catch (_) {
+        input.value = WP.randomName();
+      }
       modal.hidden = false;
       input.focus();
+      input.select();
 
       const done = (name) => {
         modal.hidden = true;
@@ -77,10 +80,11 @@
 
   function openJoin() {
     $('join-modal').hidden = false;
-    $('join-name').value = state.name || savedName();
+    $('join-name').value = state.name || savedName() || WP.randomName();
     $('join-code').value = '';
     $('join-error').textContent = '';
     $('join-name').focus();
+    $('join-name').select();
   }
 
   function closeModal(id) {
@@ -93,6 +97,21 @@
 
     document.querySelectorAll('.modal__close').forEach((btn) => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));
+    });
+
+    // Random-handle dice buttons — no typing required.
+    $('name-shuffle').addEventListener('click', () => {
+      const input = $('name-input');
+      input.value = WP.randomName();
+      $('name-error').textContent = '';
+      input.focus();
+      input.select();
+    });
+    $('join-shuffle').addEventListener('click', () => {
+      const input = $('join-name');
+      input.value = WP.randomName();
+      input.focus();
+      input.select();
     });
 
     $('join-form').addEventListener('submit', async (e) => {

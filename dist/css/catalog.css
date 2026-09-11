@@ -38,7 +38,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 20px 4px;
+  padding: 14px 16px 4px;
   max-width: 1400px;
   margin: 0 auto;
   flex-wrap: wrap;
@@ -100,19 +100,22 @@
 .browse__hero {
   max-width: 1400px;
   margin: 6px auto 0;
-  padding: 0 20px;
+  padding: 0 16px;
 }
 
 .hero {
   position: relative;
-  min-height: 420px;
+  width: 100%;
+  max-width: 100%;
+  /* Fluid height: scales with the viewport instead of overflowing the layout. */
+  min-height: clamp(240px, 32vw, 440px);
   border-radius: 16px;
   overflow: hidden;
   display: flex;
   align-items: flex-end;
   background-color: var(--bg-elev);
   background-size: cover;
-  background-position: center top;
+  background-position: center 30%;
   box-shadow: var(--shadow);
 }
 
@@ -131,8 +134,10 @@
 .hero__content {
   position: relative;
   z-index: 1;
-  padding: 32px;
-  max-width: 720px;
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+  padding: clamp(20px, 3vw, 40px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -152,11 +157,12 @@
 
 .hero__title {
   margin: 0;
-  font-size: clamp(28px, 4vw, 46px);
-  line-height: 1.05;
+  font-size: clamp(24px, 3.4vw, 44px);
+  line-height: 1.06;
   letter-spacing: -0.5px;
   font-weight: 700;
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+  overflow-wrap: anywhere;
 }
 
 .hero__meta {
@@ -165,6 +171,7 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 
 .hero__overview {
@@ -176,17 +183,19 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
 }
 
 .hero__actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
   margin-top: 6px;
 }
 
 .hero__skeleton {
-  min-height: 420px;
+  min-height: clamp(240px, 32vw, 440px);
   border-radius: 16px;
   background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
   background-size: 200% 100%;
@@ -203,7 +212,7 @@
 .browse__rows {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 8px 20px 48px;
+  padding: 8px 16px 48px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -415,6 +424,13 @@
 .modal__card--wide .browse {
   min-height: 0;
   overflow-y: auto;
+}
+
+/* A compact banner inside the "choose a video" picker. */
+.modal__card--wide .hero,
+.modal__card--wide .hero__skeleton {
+  min-height: clamp(170px, 24vh, 250px);
+  border-radius: 12px;
 }
 
 .modal__head {
@@ -635,10 +651,10 @@
 /* ---- Responsive ---------------------------------------------------------------------------- */
 @media (max-width: 720px) {
   .hero {
-    min-height: 320px;
+    min-height: clamp(190px, 46vw, 280px);
   }
   .hero__content {
-    padding: 20px;
+    padding: 18px;
   }
   .card-item {
     flex-basis: 128px;

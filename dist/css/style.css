@@ -265,6 +265,27 @@ button {
   display: none;
 }
 
+.field__row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.field__row .field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.shuffle-btn {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  color: var(--text-dim);
+}
+
+.shuffle-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+
 .divider {
   display: flex;
   align-items: center;

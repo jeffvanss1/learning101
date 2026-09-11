@@ -159,7 +159,16 @@
       <form id="name-form" autocomplete="off">
         <label class="field">
           <span class="field__label">Your name</span>
-          <input id="name-input" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" required />
+          <div class="field__row">
+            <input id="name-input" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" required />
+            <button id="name-shuffle" class="btn btn--ghost btn--sm shuffle-btn" type="button" aria-label="Random name" title="Random name">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line>
+                <polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line>
+                <line x1="4" y1="4" x2="9" y2="9"></line>
+              </svg>
+            </button>
+          </div>
           <span class="field__error" id="name-error"></span>
         </label>
         <button class="btn btn--primary btn--block" type="submit">Continue</button>
@@ -177,7 +186,16 @@
       <form id="join-form" autocomplete="off">
         <label class="field">
           <span class="field__label">Your name</span>
-          <input id="join-name" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" />
+          <div class="field__row">
+            <input id="join-name" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" />
+            <button id="join-shuffle" class="btn btn--ghost btn--sm shuffle-btn" type="button" aria-label="Random name" title="Random name">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line>
+                <polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line>
+                <line x1="4" y1="4" x2="9" y2="9"></line>
+              </svg>
+            </button>
+          </div>
         </label>
         <label class="field">
           <span class="field__label">Room link</span>
