@@ -29,7 +29,6 @@
   'use strict';
 
   const DRIFT_TOLERANCE = 0.75; // seconds before nudging the local player
-  const SEEK_THRESHOLD = 3.5; // seconds before forcing a hard seek
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
 
@@ -96,15 +95,18 @@
     }
 
     play(time) {
-      if (time !== undefined && time !== null) this.seek(time);
+      this._seekTo(time);
       this.post({ command: 'play' });
       this.localPlaying = true;
       this.localUpdatedAt = Date.now();
     }
 
     pause(time) {
-      if (time !== undefined && time !== null) this.seek(time);
+      // Pause BEFORE seeking: a seek can make some players resume playback,
+      // so we stop first and then nudge the position (a paused seek stays
+      // paused). This is what makes a host pause actually stop every client.
       this.post({ command: 'pause' });
+      this._seekTo(time);
       this.localPlaying = false;
       this.localUpdatedAt = Date.now();
     }
@@ -113,6 +115,16 @@
       this.post({ command: 'seek', time: Number(time) || 0 });
       this.localTime = Number(time) || 0;
       this.localUpdatedAt = Date.now();
+    }
+
+    // Seek only when the target is meaningfully different from where we are.
+    // A "seek" to the current position can make some players resume playback,
+    // which broke pause sync on remote clients.
+    _seekTo(time) {
+      const t = Number(time);
+      if (Number.isFinite(t) && Math.abs(t - this.localTime) > 0.5) {
+        this.seek(t);
+      }
     }
 
     // ---- host actions (optimistic local apply + broadcast intent) ----------
@@ -179,21 +191,21 @@
 
       const drift = target.time - this.localTime;
       const absDrift = Math.abs(drift);
+      const shouldSeek = absDrift > DRIFT_TOLERANCE && !this.isBuffering;
 
       if (target.isPlaying) {
-        if (!this.localPlaying) {
-          this.play(this.isBuffering ? undefined : target.time);
-        } else if (absDrift > SEEK_THRESHOLD) {
-          this.seek(target.time);
-        } else if (absDrift > DRIFT_TOLERANCE) {
-          this.seek(target.time);
-        }
+        // Assert playback unconditionally: localPlaying can be stale (e.g. the
+        // player paused itself while buffering), and a redundant play is
+        // harmless. Seek first when we are meaningfully off target.
+        if (shouldSeek) this.seek(target.time);
+        this.play();
       } else {
-        if (this.localPlaying) {
-          this.pause(target.time);
-        } else if (absDrift > SEEK_THRESHOLD) {
-          this.seek(target.time);
-        }
+        // Assert pause unconditionally. Never rely on localPlaying, which can
+        // be stale (autoplay during load, or a seek racing a pause) and left
+        // remote clients playing after the host paused. A redundant pause is
+        // harmless; the playerstatus re-assert below keeps the player honest.
+        if (shouldSeek) this.pause(target.time);
+        else this.pause();
       }
     }
 
@@ -213,6 +225,12 @@
           if (typeof d.duration === 'number') this.duration = d.duration;
           if (typeof d.playing === 'boolean') this.localPlaying = d.playing;
           this.isBuffering = false;
+          // The room says "paused" but the player just reported it is playing
+          // again (autoplay, or a seek resuming playback). Re-assert the pause
+          // so a host pause reliably stops every client.
+          if (this._lastTarget && !this._lastTarget.isPlaying && this.localPlaying) {
+            this.pause(this.localTime);
+          }
           if (!this.ready) {
             this.ready = true;
             this._clearReadyTimer();

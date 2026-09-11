@@ -21,6 +21,46 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* The search bar lives in the same top bar as the logo, always on top. */
+.topnav__search {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 600px;
+  min-width: 0;
+}
+
+.topnav__search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.topnav__search-input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 10px 18px 10px 42px;
+  font-size: 14.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.topnav__search-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+}
+
+.topnav__search-input::placeholder {
+  color: var(--text-muted);
 }
 
 /* ---- Home ---------------------------------------------------------------------- */
@@ -883,6 +923,21 @@
     width: 160px;
   }
   .topnav {
-    padding: 10px 12px;
+    padding: 8px 12px;
+    gap: 10px;
+  }
+  .topnav__search-input {
+    padding: 9px 14px 9px 38px;
+    font-size: 13.5px;
+  }
+}
+
+@media (max-width: 520px) {
+  /* Leave room for the search bar: logo text and the secondary action yield. */
+  .brand__name {
+    display: none;
+  }
+  #nav-new-room {
+    display: none;
   }
 }

@@ -763,6 +763,8 @@
     }
     state.browseHandle = WP.Catalog.mountBrowse($('browse'), {
       onSelect: (video) => startRoomWithVideo(video),
+      // The search bar lives in the top nav, in the same bar as the logo.
+      searchInput: $('topnav-search-input'),
     });
     renderHistory();
   }

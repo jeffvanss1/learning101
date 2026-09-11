@@ -543,18 +543,12 @@
   function mountBrowse(container, opts) {
     opts = opts || {};
     const onSelect = opts.onSelect || function () {};
+    const externalInput = opts.searchInput || null;
 
     container.classList.add('browse');
     container.innerHTML = '';
 
-    // Search bar + filters
-    const search = h('div', 'browse__search');
-    const input = h('input', 'browse__search-input');
-    input.type = 'text';
-    input.placeholder = 'Search movies & series\u2026';
-    input.autocomplete = 'off';
-    search.appendChild(input);
-
+    // Filter chips (only shown while search results are active).
     const filters = h('div', 'browse__filters');
     filters.hidden = true;
     const FILTERS = [
@@ -576,8 +570,23 @@
       chipEls[key] = c;
       filters.appendChild(c);
     });
-    search.appendChild(filters);
-    container.appendChild(search);
+
+    // Search input: the home page supplies the sticky top-nav search bar (the
+    // same bar the logo lives in); other surfaces (the room's change-video
+    // modal) get an inline search bar instead.
+    let input = externalInput;
+    if (!input) {
+      const search = h('div', 'browse__search');
+      input = h('input', 'browse__search-input');
+      input.type = 'text';
+      input.placeholder = 'Search movies & series\u2026';
+      input.autocomplete = 'off';
+      search.appendChild(input);
+      search.appendChild(filters);
+      container.appendChild(search);
+    } else {
+      container.appendChild(filters);
+    }
 
     const heroWrap = h('div', 'browse__hero');
     const rowsWrap = h('div', 'browse__rows');
@@ -631,7 +640,7 @@
       rowsWrap.appendChild(wrap);
     }
 
-    input.addEventListener('input', () => {
+    const onInput = () => {
       const q = input.value.trim();
       clearTimeout(searchTimer);
       if (!q) {
@@ -664,7 +673,8 @@
           );
         }
       }, 350);
-    });
+    };
+    input.addEventListener('input', onInput);
 
     function renderLoading() {
       heroWrap.innerHTML = '<div class="hero__skeleton"></div>';
@@ -720,8 +730,10 @@
       destroy() {
         destroyed = true;
         closePreview();
+        input.removeEventListener('input', onInput);
         container.innerHTML = '';
         container.classList.remove('browse');
+        if (externalInput) externalInput.value = '';
       },
       refresh() {
         loadBrowse();
