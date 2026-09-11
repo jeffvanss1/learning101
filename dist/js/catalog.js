@@ -9,7 +9,10 @@
   'use strict';
 
   const PROXY = '/api/bingr';
+  const DIRECT = 'https://api.bingr.one';
   const BINGR_WATCH = 'https://bingr.one/watch';
+  const CACHE_KEY_PREFIX = 'wp:cat:';
+  const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
   // ---- tiny DOM helpers ------------------------------------------------------
   function h(tag, cls, text) {
@@ -19,13 +22,44 @@
     return el;
   }
 
-  function api(path) {
-    return fetch(PROXY + path, { headers: { Accept: 'application/json' } }).then(
-      (r) => {
-        if (!r.ok) throw new Error('Bingr API ' + r.status);
-        return r.json();
+  function cacheGet(path) {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY_PREFIX + path);
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (Date.now() - o.ts < CACHE_TTL_MS) return o.data;
+    } catch (_) {}
+    return null;
+  }
+
+  function cacheSet(path, data) {
+    try {
+      localStorage.setItem(CACHE_KEY_PREFIX + path, JSON.stringify({ ts: Date.now(), data }));
+    } catch (_) {}
+  }
+
+  async function fetchJson(base, path) {
+    const res = await fetch(base + path, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  // Try the Worker proxy first (CORS-safe), then the API directly, then a
+  // cached copy. Cache every success so a later outage never blanks the home.
+  async function api(path) {
+    const errors = [];
+    for (const base of [PROXY, DIRECT]) {
+      try {
+        const data = await fetchJson(base, path);
+        cacheSet(path, data);
+        return data;
+      } catch (e) {
+        errors.push(base + ' \u2192 ' + e.message);
       }
-    );
+    }
+    const cached = cacheGet(path);
+    if (cached) return cached;
+    throw new Error(errors.join(' | ') || 'unreachable');
   }
 
   // ---- video model --------------------------------------------------------------
@@ -391,6 +425,19 @@
       rowsWrap.appendChild(grid);
     }
 
+    function showError(detail) {
+      heroWrap.innerHTML = '';
+      rowsWrap.innerHTML = '';
+      const wrap = h('div', 'browse__error');
+      wrap.appendChild(h('div', 'browse__empty', 'Could not load the library.'));
+      if (detail) wrap.appendChild(h('div', 'browse__error-detail', String(detail)));
+      const retry = h('button', 'btn btn--ghost btn--sm', 'Retry');
+      retry.type = 'button';
+      retry.addEventListener('click', () => loadBrowse());
+      wrap.appendChild(retry);
+      rowsWrap.appendChild(wrap);
+    }
+
     input.addEventListener('input', () => {
       const q = input.value.trim();
       clearTimeout(searchTimer);
@@ -466,12 +513,9 @@
         if (all.length) {
           renderRow(rowsWrap, 'Trending Now', all.slice(0, 18), choose);
         }
-      } catch (_) {
+      } catch (e) {
         if (destroyed || mySeq !== seq) return;
-        rowsWrap.innerHTML = '';
-        rowsWrap.appendChild(
-          h('div', 'browse__empty', 'Could not load the library \u2014 check your connection.')
-        );
+        showError(e && e.message ? e.message : null);
       }
     }
 

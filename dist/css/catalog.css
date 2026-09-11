@@ -353,6 +353,26 @@
   padding: 40px 0;
 }
 
+.browse__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  text-align: center;
+}
+
+.browse__error .browse__empty {
+  padding: 0;
+}
+
+.browse__error-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 560px;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Modals -------------------------------------------------------------------------- */
 .modal {
   position: fixed;

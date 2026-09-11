@@ -66,8 +66,14 @@ window.addEventListener("message", ({ data }) => {
 
 ## The Bingr catalog API (library)
 
-The frontend never talks to `api.bingr.one` directly — the Worker proxies
-`/api/bingr/*` to it (CORS-safe, with a short cache). Endpoints used:
+The frontend loads the library through a resilient, multi-source loader:
+
+1. **Worker proxy** `/api/bingr/*` → `api.bingr.one` (CORS-safe, cached, sends a
+   browser-like `User-Agent`/`Referer`).
+2. **Direct browser fetch** to `api.bingr.one` if the proxy is unreachable.
+3. **Local cache** (30 min) — a previously loaded library keeps working offline.
+
+Endpoints used:
 
 - `/trending/all`, `/trending/movie`, `/trending/tv`
 - `/discover/movie?sort_by=...&genre=...`, `/discover/tv?sort_by=...`

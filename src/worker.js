@@ -63,8 +63,15 @@ async function proxyBingr(path, search) {
   const upstream = await fetch(target, {
     method: 'GET',
     headers: {
-      Accept: 'application/json',
-      'User-Agent': 'watchparty-app/1.0 (+Cloudflare Workers)',
+      Accept: 'application/json, text/plain, */*',
+      // Present a realistic browser fingerprint — api.bingr.one rejects
+      // non-browser User-Agents.
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      Referer: 'https://bingr.one/',
+      Origin: 'https://bingr.one',
+      'Accept-Language': 'en-US,en;q=0.9',
     },
   });
 
