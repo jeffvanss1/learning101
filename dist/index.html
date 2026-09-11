@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="WatchParty — sync video with friends in real time. Create or join a room, stream together, and chat live." />
+  <meta name="description" content="WatchParty — browse movies, series and anime, then watch together in perfect sync with live chat." />
   <meta name="theme-color" content="#0f0f0f" />
   <title>WatchParty — Watch together, live</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -11,73 +11,30 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/catalog.css" />
 </head>
 <body>
   <!-- Toast / notification surface -->
   <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
 
-  <!-- Lobby (name + create/join) -->
-  <main id="lobby" class="lobby">
-    <header class="lobby__header">
-      <a class="brand" href="/" aria-label="WatchParty home">
-        <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-        </span>
-        <span class="brand__name">Watch<em>Party</em></span>
-      </a>
-      <a class="ghost-link" href="https://developers.cloudflare.com/durable-objects/" target="_blank" rel="noopener">Powered by Cloudflare Durable Objects</a>
-    </header>
-
-    <div class="lobby__body">
-      <div class="lobby__copy">
-        <h1>Watch together,<br /><span>perfectly in sync.</span></h1>
-        <p>
-          Create a room, drop in any video link, and stream with friends.
-          Playback stays locked in sync for everyone, with live chat on the side.
-        </p>
-        <ul class="feature-list">
-          <li><span class="dot dot--red"></span>Live playback sync</li>
-          <li><span class="dot dot--blue"></span>Realtime chat &amp; reactions</li>
-          <li><span class="dot dot--green"></span>No account needed</li>
-        </ul>
-      </div>
-
-      <form id="lobby-form" class="card" autocomplete="off">
-        <h2 id="lobby-title">Create a watch room</h2>
-
-        <label class="field">
-          <span class="field__label">Your name</span>
-          <input id="name-input" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" required />
-        </label>
-
-        <label class="field">
-          <span class="field__label">Video link <span class="field__hint">optional — you can pick one later</span></span>
-          <input id="video-input" class="field__input" type="text" placeholder="https://embed.bingr.one/…" />
-          <span class="field__error" id="video-error"></span>
-        </label>
-
-        <button id="lobby-submit" class="btn btn--primary btn--block" type="submit">
-          <span class="btn__label">Create room</span>
-          <span class="btn__spinner" aria-hidden="true"></span>
-        </button>
-
-        <div class="divider"><span>or</span></div>
-
-        <button id="join-toggle" class="btn btn--ghost btn--block" type="button">Join with a room link</button>
-
-        <label class="field" id="join-code-wrap" hidden>
-          <span class="field__label">Room link</span>
-          <input id="join-code-input" class="field__input" type="text" placeholder="Paste a WatchParty link" />
-          <span class="field__error" id="join-error"></span>
-        </label>
-
-        <button id="join-submit" class="btn btn--secondary btn--block" type="button" hidden>Join room</button>
-
-        <p class="muted">Rooms live on Cloudflare Durable Objects — link-only access, no signup.</p>
-      </form>
+  <!-- Home / browse -->
+  <nav class="topnav" id="home-nav">
+    <a class="brand" href="/" aria-label="WatchParty home">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </span>
+      <span class="brand__name">Watch<em>Party</em></span>
+    </a>
+    <div class="topnav__right">
+      <button id="nav-new-room" class="btn btn--ghost btn--sm" type="button">Start a room</button>
+      <button id="nav-join" class="btn btn--primary btn--sm" type="button">Join</button>
     </div>
+  </nav>
+
+  <main id="home" class="home">
+    <div id="browse" class="browse"></div>
   </main>
 
   <!-- Watch room -->
@@ -119,7 +76,7 @@
               id="video-frame"
               title="Video player"
               referrerpolicy="strict-origin-when-cross-origin"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+              allow="autoplay; fullscreen; picture-in-picture"
               allowfullscreen
             ></iframe>
             <div id="player-fallback" class="player__fallback">
@@ -128,8 +85,8 @@
                   <polygon points="5 3 19 12 5 21 5 3"></polygon>
                 </svg>
               </div>
-              <p>No video loaded yet.</p>
-              <p class="muted">The host can paste a <strong>video link</strong> below to start the stream.</p>
+              <p>Nothing playing yet.</p>
+              <p class="muted">Browse the library and pick something — the host controls playback for everyone.</p>
             </div>
           </div>
           <div id="sync-indicator" class="sync-indicator sync-indicator--synced" hidden>
@@ -139,28 +96,33 @@
         </div>
 
         <div class="stage__under">
-          <div id="video-bar" class="video-bar">
+          <div class="video-bar">
             <div class="video-bar__title">
               <span id="video-title" class="video-title">Nothing playing yet</span>
               <span id="host-chip" class="host-chip" hidden>You're the host</span>
             </div>
             <div class="video-bar__controls">
-              <div id="video-form-wrap" class="video-form-wrap" hidden>
-                <form id="video-form" class="video-form" autocomplete="off">
-                  <input id="video-url-input" class="field__input" type="text" placeholder="Paste a video link (https://embed.bingr.one/…)" />
-                  <button class="btn btn--primary btn--sm" type="submit">Load</button>
-                </form>
-                <span class="field__error" id="video-bar-error"></span>
-              </div>
-              <div id="video-actions" class="video-actions">
+              <div class="video-actions" id="video-actions">
                 <button id="toggle-play" class="btn btn--primary btn--sm" type="button" disabled>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   <span>Play</span>
                 </button>
-                <button id="change-video" class="btn btn--ghost btn--sm" type="button" disabled>Change video</button>
+                <button id="change-video" class="btn btn--ghost btn--sm" type="button" disabled>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>
+                  </svg>
+                  <span>Browse</span>
+                </button>
               </div>
             </div>
           </div>
+
+          <div class="progress-row">
+            <span id="time-current" class="progress-row__time">0:00</span>
+            <input id="seek-bar" class="progress-row__bar" type="range" min="0" max="1000" value="0" step="0.1" disabled />
+            <span id="time-duration" class="progress-row__time">0:00</span>
+          </div>
+
           <div class="video-bar__description">
             <span id="video-hint" class="muted">The host controls playback for everyone.</span>
           </div>
@@ -190,9 +152,58 @@
     </div>
   </main>
 
+  <!-- Name modal -->
+  <div class="modal" id="name-modal" hidden>
+    <div class="modal__card">
+      <h2 class="modal__title">What should we call you?</h2>
+      <form id="name-form" autocomplete="off">
+        <label class="field">
+          <span class="field__label">Your name</span>
+          <input id="name-input" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" required />
+          <span class="field__error" id="name-error"></span>
+        </label>
+        <button class="btn btn--primary btn--block" type="submit">Continue</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Join modal -->
+  <div class="modal" id="join-modal" hidden>
+    <div class="modal__card">
+      <div class="modal__head">
+        <h2 class="modal__title">Join a room</h2>
+        <button class="modal__close" type="button" data-close="join-modal" aria-label="Close">&times;</button>
+      </div>
+      <form id="join-form" autocomplete="off">
+        <label class="field">
+          <span class="field__label">Your name</span>
+          <input id="join-name" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" />
+        </label>
+        <label class="field">
+          <span class="field__label">Room link</span>
+          <input id="join-code" class="field__input" type="text" placeholder="Paste a WatchParty link" />
+          <span class="field__error" id="join-error"></span>
+        </label>
+        <button class="btn btn--primary btn--block" type="submit">Join room</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change-video browse modal -->
+  <div class="modal" id="browse-modal" hidden>
+    <div class="modal__card modal__card--wide">
+      <div class="modal__head">
+        <h2 class="modal__title">Choose a video</h2>
+        <button class="modal__close" type="button" data-close="browse-modal" aria-label="Close">&times;</button>
+      </div>
+      <div id="browse-modal-body" class="browse"></div>
+    </div>
+  </div>
+
   <script src="/js/utils.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/player.js"></script>
+  <script src="/js/catalog.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

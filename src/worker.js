@@ -5,7 +5,9 @@
 //      (asset-first routing; unmatched navigation requests fall back to the
 //      SPA shell via `not_found_handling = "single-page-application"`).
 //   2. Expose a tiny JSON API for room creation/lookup.
-//   3. Upgrade WebSocket connections and forward them to the `WatchRoom`
+//   3. Proxy the Bingr catalog API (`api.bingr.one`) so the browser never has
+//      to worry about CORS or exposing its origin.
+//   4. Upgrade WebSocket connections and forward them to the `WatchRoom`
 //      Durable Object, which terminates the socket (Hibernation API).
 //
 // No `socket.io` server, no Node-only dependencies.
@@ -16,6 +18,13 @@ export { WatchRoom };
 
 const ROOM_RE = /^\/api\/room\/([A-Za-z0-9_-]+)\/?$/;
 const HEALTH_RE = /^\/room\/([A-Za-z0-9_-]+)\/health\/?$/;
+const BINGR_ORIGIN = 'https://api.bingr.one';
+
+// Best-effort in-memory cache for the Bingr catalog proxy (resets with the
+// isolate; the `Cache-Control` header also lets Cloudflare cache responses).
+const catalogCache = new Map();
+const CACHE_TTL_MS = 180_000;
+const CACHE_MAX = 300;
 
 function corsHeaders() {
   return {
@@ -32,6 +41,52 @@ function json(data, status = 200, extra = {}) {
       'Content-Type': 'application/json; charset=utf-8',
       ...corsHeaders(),
       ...extra,
+    },
+  });
+}
+
+async function proxyBingr(path, search) {
+  const target = BINGR_ORIGIN + path + search;
+
+  const hit = catalogCache.get(target);
+  if (hit && hit.expires > Date.now()) {
+    return new Response(hit.body, {
+      status: 200,
+      headers: {
+        'Content-Type': hit.contentType || 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=180',
+        ...corsHeaders(),
+      },
+    });
+  }
+
+  const upstream = await fetch(target, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'watchparty-app/1.0 (+Cloudflare Workers)',
+    },
+  });
+
+  const contentType =
+    upstream.headers.get('content-type') || 'application/json; charset=utf-8';
+  const body = await upstream.text();
+
+  if (upstream.ok) {
+    if (catalogCache.size >= CACHE_MAX) catalogCache.clear();
+    catalogCache.set(target, {
+      body,
+      contentType,
+      expires: Date.now() + CACHE_TTL_MS,
+    });
+  }
+
+  return new Response(body, {
+    status: upstream.status,
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': upstream.ok ? 'public, max-age=180' : 'no-store',
+      ...corsHeaders(),
     },
   });
 }
@@ -55,6 +110,22 @@ export default {
       const id = env.WATCH_ROOM.idFromString(roomId);
       const stub = env.WATCH_ROOM.get(id);
       return stub.fetch(request);
+    }
+
+    // --- Bingr catalog proxy ------------------------------------------------
+    if (path.startsWith('/api/bingr/')) {
+      if (request.method !== 'GET') {
+        return json({ error: 'Method not allowed' }, 405);
+      }
+      const rest = path.slice('/api/bingr'.length) || '/';
+      try {
+        return await proxyBingr(rest, url.search);
+      } catch (e) {
+        return json(
+          { error: 'Bingr catalog unavailable', detail: String(e) },
+          502
+        );
+      }
     }
 
     // --- REST API ------------------------------------------------------------
@@ -94,7 +165,7 @@ export default {
       return json({ error: 'Not found' }, 404);
     }
 
-    // --- Durable Object health (non-navigation requests only) ---------------
+    // --- Durable Object health ------------------------------------------------
     const healthMatch = path.match(HEALTH_RE);
     if (healthMatch && request.method === 'GET') {
       try {
@@ -107,8 +178,6 @@ export default {
     }
 
     // --- Static assets (Workers Static Assets) -------------------------------
-    // GET/HEAD requests that don't match an API route are forwarded to the
-    // ASSETS binding, which serves the file or the SPA shell.
     if (request.method === 'GET' || request.method === 'HEAD') {
       return env.ASSETS.fetch(request);
     }

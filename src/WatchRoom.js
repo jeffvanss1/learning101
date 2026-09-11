@@ -81,12 +81,24 @@ function sanitizeName(s) {
   return String(s ?? '').trim().slice(0, 40);
 }
 
+function sanitizeNum(n) {
+  const x = Number(n);
+  return Number.isFinite(x) && x > 0 ? x : null;
+}
+
 function sanitizeMeta(video) {
   const v = video || {};
   return {
+    type: sanitizeText(v.type).slice(0, 20),
     id: sanitizeText(v.id),
+    src: sanitizeText(v.src).slice(0, 600),
     title: sanitizeText(v.title).slice(0, 300),
-    thumb: sanitizeText(v.thumb).slice(0, 600),
+    poster: sanitizeText(v.poster || v.thumb).slice(0, 600),
+    backdrop: sanitizeText(v.backdrop).slice(0, 600),
+    thumb: sanitizeText(v.thumb || v.poster).slice(0, 600),
+    year: sanitizeText(v.year).slice(0, 20),
+    season: sanitizeNum(v.season),
+    episode: sanitizeNum(v.episode),
   };
 }
 
