@@ -113,7 +113,7 @@ Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
 ## Avatars & watch history
 
 - **Avatars** come from the free [DiceBear](https://www.dicebear.com/introduction/)
-  HTTP API: `https://api.dicebear.com/10.x/adventurer/svg?seed=<name>`. The seed
+  HTTP API: `https://api.dicebear.com/10.x/critters/svg?seed=<name>`. The seed
   is the user's handle, so everyone keeps a consistent picture (chat + peer
   list + a live preview in the name dialog). If the API is unreachable, the app
   falls back to the colored initials.

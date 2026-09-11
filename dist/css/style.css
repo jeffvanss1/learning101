@@ -296,8 +296,8 @@ button {
 }
 
 .avatar-preview img {
-  width: 76px;
-  height: 76px;
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -770,8 +770,8 @@ button {
 
 .peer-avatar {
   position: relative;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: 2px solid var(--bg-soft);
   display: grid;
@@ -817,13 +817,13 @@ button {
 
 .peer-row__avatar {
   position: relative;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: #fff;
   overflow: hidden;
@@ -938,16 +938,17 @@ button {
 }
 
 .chat-msg__avatar {
+  position: relative; /* required so the absolute <img> is clipped inside */
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--bg-elev);
   display: grid;
   place-items: center;
   overflow: hidden;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   color: #fff;
 }
 

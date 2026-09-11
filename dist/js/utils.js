@@ -29,7 +29,7 @@
 
   // ---- DiceBear avatars --------------------------------------------------------
   // Same seed -> same avatar, so each name keeps one consistent picture.
-  const DICEBEAR_STYLE = 'adventurer';
+  const DICEBEAR_STYLE = 'critters';
   function avatarUrl(name) {
     const seed = String(name || '').trim() || 'anon';
     return (
