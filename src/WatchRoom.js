@@ -29,6 +29,9 @@ export const MSG = {
   PLAY: 'play',
   PAUSE: 'pause',
   SEEK: 'seek',
+  TRANSFER: 'transfer',
+  GRANT: 'grant',
+  REVOKE: 'revoke',
   PING: 'ping',
   PONG: 'pong',
   ERROR: 'error',
@@ -102,12 +105,14 @@ function sanitizeMeta(video) {
   };
 }
 
-function sanitizePeer(peer) {
+function sanitizePeer(peer, allowedSet) {
+  const allowed = allowedSet instanceof Set && allowedSet.has(peer.id);
   return {
     id: peer.id,
     name: String(peer.name ?? '').slice(0, 40),
     emote: peer.emote || null,
     owner: !!peer.owner,
+    allowed,
   };
 }
 
@@ -139,6 +144,7 @@ export class WatchRoom {
       id: this.ctx.id.toString(),
       createdAt: (meta && meta.createdAt) || now(),
       ownerId: (meta && meta.ownerId) || null,
+      allowed: Array.isArray(meta && meta.allowed) ? meta.allowed : [],
       video: sanitizeMeta(meta && meta.video),
       ...(meta && typeof meta.topic === 'string' ? { topic: meta.topic } : {}),
     };
@@ -219,10 +225,11 @@ export class WatchRoom {
     }
 
     if (url.pathname === '/state') {
+      const allowed = this.allowedSet();
       return new Response(
         JSON.stringify({
           ...this.snapshotState(),
-          peers: this.sessions.slice(0, 50).map(sanitizePeer),
+          peers: this.sessions.slice(0, 50).map((p) => sanitizePeer(p, allowed)),
         }),
         { headers: { 'Content-Type': 'application/json' } }
       );
@@ -272,6 +279,11 @@ export class WatchRoom {
       ws.close(1000, 'bye');
     } catch (_) {}
 
+    // A leaving peer loses any playback grant.
+    if (Array.isArray(this.meta.allowed)) {
+      this.meta.allowed = this.meta.allowed.filter((id) => id !== peer.id);
+    }
+
     this.broadcastPeers();
     if (peer.name) {
       this.broadcastSystem(`${peer.name} left`);
@@ -312,7 +324,7 @@ export class WatchRoom {
         this.send(ws, {
           type: MSG.STATE,
           ...this.snapshotState(),
-          you: sanitizePeer(peer),
+          you: sanitizePeer(peer, this.allowedSet()),
           chat: this.chat.slice(-100),
         });
         this.broadcastPeers();
@@ -348,7 +360,7 @@ export class WatchRoom {
       }
 
       case MSG.VIDEO_CHANGE: {
-        if (!this.isOwner(peer)) break;
+        if (!this.canControl(peer)) break;
         const video = sanitizeMeta(msg.video);
         if (!video.id) break;
         this.meta.video = video;
@@ -364,7 +376,7 @@ export class WatchRoom {
       }
 
       case MSG.PLAY: {
-        if (!this.isOwner(peer)) break;
+        if (!this.canControl(peer)) break;
         const t = this.clampTime(msg.time);
         this.playback.isPlaying = true;
         this.playback.time = t;
@@ -381,7 +393,7 @@ export class WatchRoom {
       }
 
       case MSG.PAUSE: {
-        if (!this.isOwner(peer)) break;
+        if (!this.canControl(peer)) break;
         const t = this.clampTime(msg.time);
         this.playback.isPlaying = false;
         this.playback.time = t;
@@ -398,7 +410,7 @@ export class WatchRoom {
       }
 
       case MSG.SEEK: {
-        if (!this.isOwner(peer)) break;
+        if (!this.canControl(peer)) break;
         const t = this.clampTime(msg.time);
         this.playback.time = t;
         this.playback.timestamp = now();
@@ -409,6 +421,55 @@ export class WatchRoom {
           playback: this.playback,
           by: peer.name,
         });
+        dirty = true;
+        break;
+      }
+
+      case MSG.TRANSFER: {
+        if (!this.isOwner(peer)) break;
+        const targetId = sanitizeText(msg.peerId);
+        if (!targetId || targetId === peer.id) break;
+        const target = this.sessions.find((p) => p.id === targetId);
+        if (!target) break;
+        peer.owner = false;
+        target.owner = true;
+        this.meta.ownerId = target.id;
+        // The new host no longer needs an explicit grant.
+        this.meta.allowed = this.meta.allowed.filter((id) => id !== targetId);
+        this.sendToPeer(target.id, {
+          type: MSG.STATE,
+          ...this.snapshotState(),
+          you: sanitizePeer(target, this.allowedSet()),
+        });
+        this.broadcastPeers();
+        this.broadcastSystem(`${target.name || 'Someone'} is now the host`);
+        dirty = true;
+        break;
+      }
+
+      case MSG.GRANT: {
+        if (!this.isOwner(peer)) break;
+        const targetId = sanitizeText(msg.peerId);
+        if (!targetId) break;
+        const target = this.sessions.find((p) => p.id === targetId);
+        if (!target || target.owner) break;
+        if (!this.meta.allowed.includes(targetId)) this.meta.allowed.push(targetId);
+        this.broadcastPeers();
+        this.broadcastSystem(`${peer.name || 'The host'} gave ${target.name || 'a guest'} playback controls`);
+        dirty = true;
+        break;
+      }
+
+      case MSG.REVOKE: {
+        if (!this.isOwner(peer)) break;
+        const targetId = sanitizeText(msg.peerId);
+        if (!targetId) break;
+        const target = this.sessions.find((p) => p.id === targetId);
+        this.meta.allowed = this.meta.allowed.filter((id) => id !== targetId);
+        this.broadcastPeers();
+        if (target) {
+          this.broadcastSystem(`${peer.name || 'The host'} removed ${target.name || 'a guest'}'s playback controls`);
+        }
         dirty = true;
         break;
       }
@@ -424,9 +485,17 @@ export class WatchRoom {
     if (dirty) await this.persist();
   }
 
-  // ---- Ownership ----------------------------------------------------------
+  // ---- Ownership / permissions ---------------------------------------------
+  allowedSet() {
+    return new Set(Array.isArray(this.meta.allowed) ? this.meta.allowed : []);
+  }
+
   isOwner(peer) {
     return !!(peer && this.meta.ownerId && peer.id === this.meta.ownerId);
+  }
+
+  canControl(peer) {
+    return this.isOwner(peer) || this.allowedSet().has(peer && peer.id);
   }
 
   hasLiveOwner() {
@@ -443,10 +512,12 @@ export class WatchRoom {
     if (next) {
       next.owner = true;
       this.meta.ownerId = next.id;
+      // The promoted peer no longer needs an explicit grant.
+      this.meta.allowed = this.meta.allowed.filter((id) => id !== next.id);
       this.sendToPeer(next.id, {
         type: MSG.STATE,
         ...this.snapshotState(),
-        you: sanitizePeer(next),
+        you: sanitizePeer(next, this.allowedSet()),
       });
       this.broadcastSystem(`${next.name || 'Someone'} is now the host`);
     } else {
@@ -516,9 +587,10 @@ export class WatchRoom {
   }
 
   broadcastPeers() {
+    const allowed = this.allowedSet();
     this.broadcast({
       type: MSG.PEERS,
-      peers: this.sessions.slice(0, 50).map(sanitizePeer),
+      peers: this.sessions.slice(0, 50).map((p) => sanitizePeer(p, allowed)),
     });
   }
 

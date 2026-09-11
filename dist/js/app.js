@@ -9,6 +9,7 @@
     name: '',
     roomId: null,
     isOwner: false,
+    amAllowed: false,
     myPeerId: null,
     peers: [],
     video: null,
@@ -21,6 +22,11 @@
     _hostMirror: null,
     _lastHistoryKey: null,
   };
+
+  // May I drive playback? (host or a guest the host has granted controls to)
+  function canControl() {
+    return !!(state.isOwner || state.amAllowed);
+  }
 
   // --------------------------------------------------------------------------
   // Name / join modals
@@ -178,6 +184,7 @@
     state.peers = [];
     state.myPeerId = null;
     state.isOwner = false;
+    state.amAllowed = false;
     state._hostMirror = null;
     state.chatLoaded = false;
 
@@ -230,7 +237,7 @@
     });
     seek.addEventListener('change', () => {
       state.scrubbing = false;
-      if (state.isOwner && state.sync) {
+      if (canControl() && state.sync) {
         state.sync.localSeek(parseFloat(seek.value));
       }
     });
@@ -255,6 +262,7 @@
       if (msg.you) {
         state.myPeerId = msg.you.id;
         state.isOwner = !!msg.you.owner;
+        state.amAllowed = !!msg.you.allowed;
       } else if (msg.ownerId !== undefined && state.myPeerId) {
         state.isOwner = msg.ownerId === state.myPeerId;
       }
@@ -275,6 +283,7 @@
       if (state.myPeerId) {
         const me = state.peers.find((p) => p.id === state.myPeerId);
         state.isOwner = !!(me && me.owner);
+        state.amAllowed = !!(me && me.allowed);
         updateHostUI();
       }
       updatePeerUI();
@@ -315,7 +324,7 @@
     sync.on('video', () => updateVideoUI());
 
     sync.on('control', ({ action, time }) => {
-      if (!state.client || !state.isOwner) return;
+      if (!state.client || !canControl()) return;
       sync._suppressed = Date.now();
       if (action === 'play') state.client.send({ type: 'play', time });
       else if (action === 'pause') state.client.send({ type: 'pause', time });
@@ -324,8 +333,8 @@
 
     sync.on('progress', ({ time, playing, duration }) => {
       updateProgress(time, playing, duration);
-      // Mirror host actions taken inside the embedded player itself.
-      if (state.isOwner && state.client) {
+      // Mirror controller actions taken inside the embedded player itself.
+      if (canControl() && state.client) {
         mirrorHostState(time, playing);
       }
     });
@@ -369,14 +378,14 @@
       seek.value = String(time || 0);
       $('time-current').textContent = WP.formatDuration(time || 0);
     }
-    // Host may scrub only once we know the duration.
-    seek.disabled = !(state.isOwner && duration != null && duration > 0);
+    // Controllers may scrub only once we know the duration.
+    seek.disabled = !(canControl() && duration != null && duration > 0);
     updatePlayerControls(playing);
   }
 
   function updatePlayerControls(playing) {
     const btn = $('toggle-play');
-    if (!state.isOwner) {
+    if (!canControl()) {
       btn.disabled = true;
       return;
     }
@@ -418,23 +427,25 @@
         img.remove();
       }
       hideFallback();
-      $('toggle-play').disabled = !state.isOwner;
-      $('change-video').disabled = !state.isOwner;
+      $('toggle-play').disabled = !canControl();
+      $('change-video').disabled = !canControl();
     } else {
       $('video-title').textContent = 'Nothing playing yet';
       if (img) img.remove();
       showFallback();
       $('toggle-play').disabled = true;
-      $('change-video').disabled = !state.isOwner;
+      $('change-video').disabled = !canControl();
     }
     $('video-hint').textContent = state.isOwner
       ? 'You are the host \u2014 playback controls sync to everyone.'
-      : 'The host controls playback for everyone.';
+      : state.amAllowed
+        ? 'You have playback controls.'
+        : 'The host controls playback for everyone.';
   }
 
   function updateHostUI() {
     $('host-chip').hidden = !state.isOwner;
-    $('video-actions').hidden = !state.isOwner;
+    $('video-actions').hidden = !canControl();
     updateVideoUI();
   }
 
@@ -447,14 +458,14 @@
   }
 
   function onTogglePlay() {
-    if (!state.isOwner || !state.sync || !state.video || !state.video.src) return;
+    if (!canControl() || !state.sync || !state.video || !state.video.src) return;
     if (state.sync.localPlaying) state.sync.localPause(state.sync.localTime);
     else state.sync.localPlay(state.sync.localTime);
   }
 
-  // Browse-to-change-video (host only)
+  // Browse-to-change-video (host / granted controllers only)
   function onOpenBrowse() {
-    if (!state.isOwner) return;
+    if (!canControl()) return;
     $('browse-modal').hidden = false;
     const body = $('browse-modal-body');
     state.roomBrowseHandle = WP.Catalog.mountBrowse(body, {
@@ -569,6 +580,82 @@
       more.textContent = `+${count - 4}`;
       stack.appendChild(more);
     }
+
+    renderPeerList();
+  }
+
+  function peerBadge(text) {
+    const b = document.createElement('span');
+    b.className = 'peer-badge';
+    b.textContent = text;
+    return b;
+  }
+
+  function renderPeerList() {
+    const list = $('peer-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const peers = state.peers.slice();
+    if (!peers.length) {
+      list.hidden = true;
+      return;
+    }
+    list.hidden = false;
+
+    peers.forEach((p) => {
+      const row = document.createElement('div');
+      row.className = 'peer-row';
+
+      const av = document.createElement('div');
+      av.className = 'peer-row__avatar';
+      const [bg, fg] = WP.colorFor(p.name);
+      av.style.background = bg;
+      av.style.color = fg;
+      av.textContent = WP.initialFor(p.name);
+      const img = document.createElement('img');
+      img.src = WP.avatarUrl(p.name);
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = () => img.remove();
+      av.appendChild(img);
+
+      const name = document.createElement('span');
+      name.className = 'peer-row__name';
+      name.textContent = p.name || 'Anonymous';
+
+      row.appendChild(av);
+      row.appendChild(name);
+
+      if (p.owner) row.appendChild(peerBadge('host'));
+      else if (p.allowed) row.appendChild(peerBadge('controls'));
+
+      // Only the host manages the roster; never for the host themselves.
+      if (state.isOwner && !p.owner && p.id !== state.myPeerId) {
+        const actions = document.createElement('div');
+        actions.className = 'peer-row__actions';
+        const makeHost = document.createElement('button');
+        makeHost.type = 'button';
+        makeHost.className = 'peer-btn';
+        makeHost.textContent = 'Make host';
+        makeHost.addEventListener('click', () => {
+          if (state.client) state.client.send({ type: 'transfer', peerId: p.id });
+        });
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'peer-btn';
+        toggle.textContent = p.allowed ? 'Revoke' : 'Allow';
+        toggle.addEventListener('click', () => {
+          if (state.client) {
+            state.client.send({ type: p.allowed ? 'revoke' : 'grant', peerId: p.id });
+          }
+        });
+        actions.appendChild(makeHost);
+        actions.appendChild(toggle);
+        row.appendChild(actions);
+      }
+
+      list.appendChild(row);
+    });
   }
 
   // --------------------------------------------------------------------------

@@ -138,7 +138,9 @@
     const aimg = document.createElement('img');
     aimg.alt = '';
     aimg.loading = 'lazy';
-    aimg.src = msg.emote || avatarUrl(msg.author);
+    // `emote` from the server is an opaque id (ev_...), not an image URL, so
+    // only use it when it actually looks like a URL; otherwise use DiceBear.
+    aimg.src = /^https?:\/\//i.test(msg.emote || '') ? msg.emote : avatarUrl(msg.author);
     aimg.onerror = () => aimg.remove();
     avatar.appendChild(aimg);
 

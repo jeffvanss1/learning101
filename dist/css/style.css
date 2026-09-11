@@ -798,6 +798,102 @@ button {
   font-size: 10px;
 }
 
+/* ---- Peer list (host roster management) ------------------------------------- */
+.peer-list {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.peer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  flex-wrap: wrap;
+}
+
+.peer-row__avatar {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  overflow: hidden;
+}
+
+.peer-row__avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.peer-row__name {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.peer-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.peer-row .peer-badge:first-of-type {
+  color: #ffccd5;
+  background: rgba(255, 0, 51, 0.16);
+  border: 1px solid rgba(255, 0, 51, 0.4);
+}
+
+.peer-badge {
+  color: #b9e3ff;
+  background: rgba(62, 166, 255, 0.14);
+  border: 1px solid rgba(62, 166, 255, 0.4);
+}
+
+.peer-row__actions {
+  flex: 1 1 100%;
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.peer-btn {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.peer-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+  border-color: var(--blue);
+}
+
 .chat {
   flex: 1;
   overflow-y: auto;

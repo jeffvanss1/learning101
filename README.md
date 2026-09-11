@@ -189,11 +189,23 @@ Durable Object namespaces on Cloudflare's free plan).
 
 Clients connect to `/ws?room=<id>` and exchange JSON messages:
 
-- Client → server: `join`, `chat`, `videoChange`, `play`, `pause`, `seek`, `ping`
+- Client → server: `join`, `chat`, `videoChange`, `play`, `pause`, `seek`,
+  `transfer`, `grant`, `revoke`, `ping`
 - Server → client: `state`, `peers`, `system`, `chat`, `videoChange`,
   `play`, `pause`, `seek`, `pong`
 
-The first connected client becomes the **host** (playback owner). If the host
-leaves, ownership transfers to the oldest remaining peer automatically. The
-shared `video` object carries `{ type, id, src, title, poster, backdrop, year,
-season, episode }` so every client can load the exact same title and episode.
+The first connected client becomes the **host** (playback owner). The host can:
+
+- **transfer** ownership to any guest (`{ type: "transfer", peerId }`) — the
+  new host immediately takes over playback control;
+- **grant** / **revoke** playback controls to/from a guest
+  (`{ type: "grant" | "revoke", peerId }`) — granted guests can play, pause,
+  seek, and change the movie/series/anime, but can't manage the roster.
+
+Only the host or a granted guest may send `videoChange`, `play`, `pause`, or
+`seek`; the server silently ignores those messages from anyone else. The
+`peers` list marks each entry with `owner` and `allowed` flags so every client
+can render the roster and gate its own controls. If the host leaves, ownership
+transfers to the oldest remaining peer automatically. The shared `video` object
+carries `{ type, id, src, title, poster, backdrop, year, season, episode }` so
+every client can load the exact same title and episode.
