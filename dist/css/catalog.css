@@ -422,8 +422,17 @@
 }
 
 /* ---- Cards ------------------------------------------------------------------------ */
+/* One source of truth for the poster-card size. Every card is exactly this
+   wide and its poster exactly this tall — in rows, in the search grid, and
+   in the modal. No aspect-ratio, no padding trick, nothing can stretch it. */
+:root {
+  --card-w: 158px;
+  --card-h: 237px; /* fixed 2:3 poster height */
+}
+
 .card-item {
-  flex: 0 0 158px;
+  flex: 0 0 var(--card-w);
+  width: var(--card-w);
   cursor: pointer;
   scroll-snap-align: start;
   border-radius: 10px;
@@ -437,23 +446,24 @@
 }
 
 .card-item__poster {
-  /* A fixed 2:3 box, derived from the card's fixed width via padding.
-     This is identical on every card and every browser — the artwork inside
-     can never change it, stretch it, or leak out of the grid. */
+  /* Fixed pixel size, identical on every card and every browser. */
   position: relative;
+  display: block;
   width: 100%;
-  height: 0;
-  padding-bottom: 150%;
+  height: var(--card-h);
   border-radius: 10px;
   overflow: hidden;
   background: var(--bg-elev);
   border: 1px solid var(--border-soft);
 }
 
-/* The artwork sits on its own clipped layer, hard-locked to the box above. */
+/* The artwork is a clipped layer hard-locked to the box above. */
 .card-item__poster img {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
   height: 100%;
   max-width: 100%;
@@ -597,14 +607,14 @@
   display: grid;
   /* Fixed columns so every search-result card is exactly the same size as
      the row cards — no stretching, no uneven poster heights. */
-  grid-template-columns: repeat(auto-fill, 158px);
+  grid-template-columns: repeat(auto-fill, var(--card-w));
   gap: 14px;
   margin-top: 12px;
   justify-content: center;
 }
 
 .grid .card-item {
-  width: 100%;
+  width: var(--card-w);
   flex: none;
 }
 
@@ -924,11 +934,15 @@
   .hero__overview {
     -webkit-line-clamp: 2;
   }
+  :root {
+    --card-w: 128px;
+    --card-h: 192px;
+  }
   .card-item {
-    flex-basis: 128px;
+    flex-basis: var(--card-w);
   }
   .grid {
-    grid-template-columns: repeat(auto-fill, 128px);
+    grid-template-columns: repeat(auto-fill, var(--card-w));
   }
   .detail__top {
     flex-direction: column;
