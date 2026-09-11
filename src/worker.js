@@ -1,14 +1,12 @@
 // worker.js — Cloudflare Worker entry point
 //
 // Responsibilities:
-//   1. Serve the static frontend build from `dist/` via Workers Static Assets
-//      (asset-first routing; unmatched navigation requests fall back to the
-//      SPA shell via `not_found_handling = "single-page-application"`).
+//   1. Serve the static frontend build from `dist/` via Workers Static Assets.
 //   2. Expose a tiny JSON API for room creation/lookup.
-//   3. Proxy the Bingr catalog API (`api.bingr.one`) so the browser never has
-//      to worry about CORS or exposing its origin.
-//   4. Upgrade WebSocket connections and forward them to the `WatchRoom`
-//      Durable Object, which terminates the socket (Hibernation API).
+//   3. Proxy The Movie Database (TMDB) API at `/api/tmdb/*`, injecting the
+//      server-side `TMDB_API_KEY` so it never reaches the browser.
+//   4. Upgrade WebSocket connections to the `WatchRoom` Durable Object
+//      (Hibernation API).
 //
 // No `socket.io` server, no Node-only dependencies.
 
@@ -18,10 +16,10 @@ export { WatchRoom };
 
 const ROOM_RE = /^\/api\/room\/([A-Za-z0-9_-]+)\/?$/;
 const HEALTH_RE = /^\/room\/([A-Za-z0-9_-]+)\/health\/?$/;
-const BINGR_ORIGIN = 'https://api.bingr.one';
+const TMDB_ORIGIN = 'https://api.themoviedb.org/3';
 
-// Best-effort in-memory cache for the Bingr catalog proxy (resets with the
-// isolate; the `Cache-Control` header also lets Cloudflare cache responses).
+// Best-effort in-memory cache for the TMDB proxy (resets with the isolate;
+// the `Cache-Control` header also lets Cloudflare cache responses).
 const catalogCache = new Map();
 const CACHE_TTL_MS = 180_000;
 const CACHE_MAX = 300;
@@ -45,8 +43,13 @@ function json(data, status = 200, extra = {}) {
   });
 }
 
-async function proxyBingr(path, search) {
-  const target = BINGR_ORIGIN + path + search;
+// Looks like a TMDB v4 "API Read Access Token" (JWT)? Then use Bearer auth.
+function looksLikeToken(key) {
+  return typeof key === 'string' && key.length > 60 && key.split('.').length === 3;
+}
+
+async function proxyTmdb(path, search, apiKey) {
+  const target = TMDB_ORIGIN + path + search;
 
   const hit = catalogCache.get(target);
   if (hit && hit.expires > Date.now()) {
@@ -60,18 +63,15 @@ async function proxyBingr(path, search) {
     });
   }
 
-  const upstream = await fetch(target, {
+  const useBearer = looksLikeToken(apiKey);
+  const separator = search.includes('?') ? '&' : '?';
+  const url = useBearer ? target : target + separator + 'api_key=' + encodeURIComponent(apiKey);
+
+  const upstream = await fetch(url, {
     method: 'GET',
     headers: {
-      Accept: 'application/json, text/plain, */*',
-      // Present a realistic browser fingerprint — api.bingr.one rejects
-      // non-browser User-Agents.
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      Referer: 'https://bingr.one/',
-      Origin: 'https://bingr.one',
-      'Accept-Language': 'en-US,en;q=0.9',
+      Accept: 'application/json',
+      ...(useBearer ? { Authorization: 'Bearer ' + apiKey } : {}),
     },
   });
 
@@ -119,19 +119,26 @@ export default {
       return stub.fetch(request);
     }
 
-    // --- Bingr catalog proxy ------------------------------------------------
-    if (path.startsWith('/api/bingr/')) {
+    // --- TMDB catalog proxy ------------------------------------------------
+    if (path.startsWith('/api/tmdb/')) {
       if (request.method !== 'GET') {
         return json({ error: 'Method not allowed' }, 405);
       }
-      const rest = path.slice('/api/bingr'.length) || '/';
-      try {
-        return await proxyBingr(rest, url.search);
-      } catch (e) {
+      const apiKey = env.TMDB_API_KEY;
+      if (!apiKey) {
         return json(
-          { error: 'Bingr catalog unavailable', detail: String(e) },
-          502
+          {
+            error: 'TMDB_API_KEY is not configured. Add it as a Worker secret ' +
+              '(`wrangler secret put TMDB_API_KEY`) or to .dev.vars for local dev.',
+          },
+          503
         );
+      }
+      const rest = path.slice('/api/tmdb'.length) || '/';
+      try {
+        return await proxyTmdb(rest, url.search, apiKey);
+      } catch (e) {
+        return json({ error: 'TMDB unavailable', detail: String(e) }, 502);
       }
     }
 

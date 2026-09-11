@@ -7,6 +7,12 @@ directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
+[vars]
+# The Movie Database API key (v3 key or v4 read-access token).
+# Prefer a Worker secret in production: `wrangler secret put TMDB_API_KEY`.
+# For local dev, put it in `.dev.vars` (gitignored) instead of committing here.
+TMDB_API_KEY = ""
+
 [durable_objects]
 bindings = [
   { name = "WATCH_ROOM", class_name = "WatchRoom" }

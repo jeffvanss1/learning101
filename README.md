@@ -64,26 +64,34 @@ window.addEventListener("message", ({ data }) => {
 > Note: remote control is only available on Bingr's own player; "Server 2"
 > fallback embeds don't accept commands (the app shows a notice if so).
 
-## The Bingr catalog API (library)
+## The TMDB catalog API (library)
 
-The frontend loads the library through a resilient, multi-source loader:
+Browse data comes from **The Movie Database (TMDB)** — whose IDs are exactly
+the IDs Bingr uses for watch URLs — so every title maps 1:1 to playback:
 
-1. **Worker proxy** `/api/bingr/*` → `api.bingr.one` (CORS-safe, cached, sends a
-   browser-like `User-Agent`/`Referer`).
-2. **Direct browser fetch** to `api.bingr.one` if the proxy is unreachable.
-3. **Local cache** (30 min) — a previously loaded library keeps working offline.
+| Type   | TMDB item      | Bingr watch URL                                |
+| ------ | -------------- | ---------------------------------------------- |
+| Movie  | `/movie/{id}`  | `https://bingr.one/watch/movie/{tmdbId}`       |
+| Series | `/tv/{id}`     | `https://bingr.one/watch/tv/{tmdbId}/{s}/{e}`  |
+| Anime  | TMDB anime TV  | `https://bingr.one/watch/tv/{tmdbId}/{s}/{e}`  |
 
-Endpoints used:
+The Worker proxies `/api/tmdb/*` → `api.themoviedb.org/3/*`, injecting the
+server-side `TMDB_API_KEY` so it never reaches the browser. Results are cached
+in the browser (30 min) so a later outage never blanks the home.
 
-- `/trending/all`, `/trending/movie`, `/trending/tv`
-- `/discover/movie?sort_by=...&genre=...`, `/discover/tv?sort_by=...`
-- `/anime/discover?sort=TRENDING_DESC`
-- `/search?q=` (movies + series) and `/anime/search?q=` (anime)
-- `/details/movie/{id}`, `/details/tv/{id}` (seasons/episodes)
-- `/anime/{id}` (episode counts)
+**Setup:** get a free key at <https://www.themoviedb.org/settings/api>, then
 
-Each title resolves to a Bingr watch URL via the table above; series and anime
-open a season/episode picker before playback starts.
+```bash
+# local dev
+echo 'TMDB_API_KEY="your_key_here"' > .dev.vars
+
+# production
+npx wrangler secret put TMDB_API_KEY
+```
+
+Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
+`/discover/tv?with_keywords=210024` (anime), `/search/multi`, `/movie/{id}`,
+`/tv/{id}`, `/tv/{id}/season/{n}`.
 
 ## Synchronization model
 
