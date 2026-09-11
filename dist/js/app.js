@@ -19,6 +19,7 @@
     roomBrowseHandle: null,
     scrubbing: false,
     _hostMirror: null,
+    _lastHistoryKey: null,
   };
 
   // --------------------------------------------------------------------------
@@ -55,6 +56,7 @@
       modal.hidden = false;
       input.focus();
       input.select();
+      refreshNameAvatar(input.value);
 
       const done = (name) => {
         modal.hidden = true;
@@ -76,6 +78,11 @@
         if (e.target === modal) done(null);
       }, { once: true });
     });
+  }
+
+  function refreshNameAvatar(name) {
+    const img = $('name-avatar');
+    if (img) img.src = WP.avatarUrl(name || 'anon');
   }
 
   function openJoin() {
@@ -106,12 +113,21 @@
       $('name-error').textContent = '';
       input.focus();
       input.select();
+      refreshNameAvatar(input.value);
+    });
+    $('name-input').addEventListener('input', () => {
+      refreshNameAvatar($('name-input').value);
     });
     $('join-shuffle').addEventListener('click', () => {
       const input = $('join-name');
       input.value = WP.randomName();
       input.focus();
       input.select();
+    });
+
+    $('history-clear').addEventListener('click', () => {
+      WP.historyClear();
+      renderHistory();
     });
 
     $('join-form').addEventListener('submit', async (e) => {
@@ -384,6 +400,12 @@
 
     if (v && v.src) {
       $('video-title').textContent = v.title || 'Now playing';
+      // Remember what was watched so the home page can show a history row.
+      const hk = v.id + '|' + (v.season != null ? v.season : '') + '|' + (v.episode != null ? v.episode : '');
+      if (hk !== state._lastHistoryKey) {
+        state._lastHistoryKey = hk;
+        WP.historyAdd(v);
+      }
       if (v.poster) {
         if (!img) {
           img = document.createElement('img');
@@ -532,7 +554,13 @@
       av.style.background = bg;
       av.style.color = fg;
       av.title = p.name + (p.owner ? ' (host)' : '');
-      av.textContent = WP.initialFor(p.name);
+      av.textContent = WP.initialFor(p.name); // fallback
+      const img = document.createElement('img');
+      img.src = WP.avatarUrl(p.name);
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = () => img.remove();
+      av.appendChild(img);
       stack.appendChild(av);
     });
     if (count > 4) {
@@ -588,6 +616,57 @@
   }
 
   // --------------------------------------------------------------------------
+  // Watch history
+  // --------------------------------------------------------------------------
+  function renderHistory() {
+    const sec = $('history');
+    const scroller = $('history-scroller');
+    if (!sec || !scroller) return;
+    const items = WP.historyGet();
+    if (!items.length) {
+      sec.hidden = true;
+      scroller.innerHTML = '';
+      return;
+    }
+    sec.hidden = false;
+    scroller.innerHTML = '';
+    items.forEach((v) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'history-card';
+      card.title = v.title;
+
+      const poster = document.createElement('div');
+      poster.className = 'history-card__poster';
+      const src = v.backdrop || v.poster;
+      if (src) {
+        const im = document.createElement('img');
+        im.src = src;
+        im.alt = '';
+        im.loading = 'lazy';
+        im.onerror = () => im.remove();
+        poster.appendChild(im);
+      }
+      const body = document.createElement('div');
+      body.className = 'history-card__body';
+      const title = document.createElement('div');
+      title.className = 'history-card__title';
+      title.textContent = v.title;
+      const meta = document.createElement('div');
+      meta.className = 'history-card__meta';
+      const ep = v.season != null ? `S${v.season} E${v.episode} · ` : '';
+      meta.textContent = ep + WP.timeAgo(v.watchedAt);
+      body.appendChild(title);
+      body.appendChild(meta);
+
+      card.appendChild(poster);
+      card.appendChild(body);
+      card.addEventListener('click', () => startRoomWithVideo(v));
+      scroller.appendChild(card);
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Home browse
   // --------------------------------------------------------------------------
   function mountHome() {
@@ -598,6 +677,7 @@
     state.browseHandle = WP.Catalog.mountBrowse($('browse'), {
       onSelect: (video) => startRoomWithVideo(video),
     });
+    renderHistory();
   }
 
   // --------------------------------------------------------------------------

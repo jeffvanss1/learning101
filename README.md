@@ -10,7 +10,9 @@ Cloudflare stack:
 
 Browse a full library of **movies, TV series and anime** (with hero banners and
 poster rows, just like YouTube), then stream any title in lockstep with friends
-while chatting live — powered by the **Bingr Embed API**.
+while chatting live — powered by the **Bingr Embed API**. Every user gets a
+deterministic **DiceBear avatar** from their handle, and every title you watch
+is saved to your local **watch history** so you can jump back in.
 
 ## Architecture
 
@@ -108,6 +110,18 @@ Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
 `/discover/tv?with_keywords=210024` (anime), `/search/multi`, `/movie/{id}`,
 `/tv/{id}`, `/tv/{id}/season/{n}`, `/movie/{id}/videos`, `/tv/{id}/videos`.
 
+## Avatars & watch history
+
+- **Avatars** come from the free [DiceBear](https://www.dicebear.com/introduction/)
+  HTTP API: `https://api.dicebear.com/10.x/adventurer/svg?seed=<name>`. The seed
+  is the user's handle, so everyone keeps a consistent picture (chat + peer
+  list + a live preview in the name dialog). If the API is unreachable, the app
+  falls back to the colored initials.
+- **Watch history** is stored locally (`localStorage` key `wp:history`, newest
+  first, de-duplicated by title + season/episode, capped at 40). The home page
+  shows a "Watch history" row of landscape thumbnails; click one to instantly
+  start a room with that title (or exact episode). It never leaves the browser.
+
 ## Synchronization model
 
 The room owns one authoritative playback clock. The host's play/pause/seek
@@ -130,7 +144,7 @@ dist/                # static frontend (no build step required)
   index.html
   css/style.css      # room / chat / player chrome
   css/catalog.css    # browse, hero, rows, cards, hover preview, modals, seek bar
-  js/utils.js        # DOM helpers, formatting, URL parsing, random names
+  js/utils.js        # DOM helpers, formatting, DiceBear avatars, watch history, random names
   js/api.js          # REST + WebSocket client w/ auto-reconnect
   js/player.js       # PlaybackSyncManager (Bingr postMessage bridge)
   js/catalog.js      # TMDB library: browse, search, trailer hover, episode picker

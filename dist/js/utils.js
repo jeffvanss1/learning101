@@ -27,6 +27,84 @@
     return PALETTE[hashStr(name || 'anon') % PALETTE.length];
   }
 
+  // ---- DiceBear avatars --------------------------------------------------------
+  // Same seed -> same avatar, so each name keeps one consistent picture.
+  const DICEBEAR_STYLE = 'adventurer';
+  function avatarUrl(name) {
+    const seed = String(name || '').trim() || 'anon';
+    return (
+      'https://api.dicebear.com/10.x/' +
+      DICEBEAR_STYLE +
+      '/svg?seed=' +
+      encodeURIComponent(seed)
+    );
+  }
+
+  // ---- Watch history -----------------------------------------------------------
+  const HISTORY_KEY = 'wp:history';
+  const HISTORY_MAX = 40;
+
+  function historyGet() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function historyKey(v) {
+    return `${v.id}|${v.season != null ? v.season : ''}|${v.episode != null ? v.episode : ''}`;
+  }
+
+  function historyAdd(video) {
+    if (!video || !video.src || !video.title) return historyGet();
+    let arr = historyGet();
+    const key = historyKey(video);
+    arr = arr.filter((e) => historyKey(e) !== key);
+    arr.unshift({
+      type: video.type,
+      id: video.id,
+      src: video.src,
+      title: video.title,
+      year: video.year || '',
+      poster: video.poster || '',
+      backdrop: video.backdrop || '',
+      season: video.season != null ? video.season : null,
+      episode: video.episode != null ? video.episode : null,
+      rating: video.rating != null ? video.rating : null,
+      watchedAt: Date.now(),
+    });
+    arr = arr.slice(0, HISTORY_MAX);
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr));
+    } catch (_) {}
+    return arr;
+  }
+
+  function historyClear() {
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch (_) {}
+  }
+
+  function timeAgo(ts) {
+    const s = Math.max(0, Math.floor((Date.now() - (ts || 0)) / 1000));
+    if (s < 60) return 'just now';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    const d = Math.floor(h / 24);
+    if (d < 7) return d + 'd ago';
+    const w = Math.floor(d / 7);
+    if (w < 5) return w + 'w ago';
+    const mo = Math.floor(d / 30);
+    if (mo < 12) return mo + 'mo ago';
+    return Math.floor(d / 365) + 'y ago';
+  }
+
   function el(id) {
     return document.getElementById(id);
   }
@@ -53,18 +131,16 @@
 
     const avatar = document.createElement('div');
     avatar.className = 'chat-msg__avatar';
-    if (msg.emote) {
-      const img = document.createElement('img');
-      img.src = msg.emote;
-      img.alt = '';
-      img.loading = 'lazy';
-      avatar.appendChild(img);
-    } else {
-      avatar.textContent = initialFor(msg.author);
-    }
+    avatar.textContent = initialFor(msg.author); // fallback while the image loads / if offline
     const [bg, fg] = colorFor(msg.author);
     avatar.style.background = bg;
     avatar.style.color = fg;
+    const aimg = document.createElement('img');
+    aimg.alt = '';
+    aimg.loading = 'lazy';
+    aimg.src = msg.emote || avatarUrl(msg.author);
+    aimg.onerror = () => aimg.remove();
+    avatar.appendChild(aimg);
 
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
@@ -218,6 +294,7 @@
     el,
     colorFor,
     hashStr,
+    avatarUrl,
     chatMessageNode,
     initialFor,
     formatTime,
@@ -227,5 +304,9 @@
     roomIdFromLink,
     normalizeVideoInput,
     randomName,
+    historyGet,
+    historyAdd,
+    historyClear,
+    timeAgo,
   };
 })(window);

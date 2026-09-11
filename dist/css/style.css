@@ -289,6 +289,22 @@ button {
   color: var(--text);
 }
 
+.avatar-preview {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 18px;
+}
+
+.avatar-preview img {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  object-fit: cover;
+}
+
 .divider {
   display: flex;
   align-items: center;
@@ -753,6 +769,7 @@ button {
 }
 
 .peer-avatar {
+  position: relative;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -764,6 +781,15 @@ button {
   color: #fff;
   margin-left: -7px;
   overflow: hidden;
+}
+
+.peer-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .peer-avatar--more {
@@ -830,9 +856,12 @@ button {
 }
 
 .chat-msg__avatar img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: inherit;
 }
 
 .chat-msg__body {
