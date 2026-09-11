@@ -101,12 +101,11 @@
       this.localUpdatedAt = Date.now();
     }
 
-    pause(time) {
-      // Pause BEFORE seeking: a seek can make some players resume playback,
-      // so we stop first and then nudge the position (a paused seek stays
-      // paused). This is what makes a host pause actually stop every client.
+    pause() {
+      // Pause in place — do NOT seek. A seek around a pause makes some
+      // players resume playback, which turned one host pause into an endless
+      // "pausing every second" loop on remote clients.
       this.post({ command: 'pause' });
-      this._seekTo(time);
       this.localPlaying = false;
       this.localUpdatedAt = Date.now();
     }
@@ -133,8 +132,8 @@
       this.emit('control', { action: 'play', time: this.localTime });
     }
 
-    localPause(time) {
-      this.pause(time !== undefined ? time : this.localTime);
+    localPause() {
+      this.pause();
       this.emit('control', { action: 'pause', time: this.localTime });
     }
 
@@ -194,18 +193,13 @@
       const shouldSeek = absDrift > DRIFT_TOLERANCE && !this.isBuffering;
 
       if (target.isPlaying) {
-        // Assert playback unconditionally: localPlaying can be stale (e.g. the
-        // player paused itself while buffering), and a redundant play is
-        // harmless. Seek first when we are meaningfully off target.
+        // Nudge position when meaningfully off, then resume if we think we're
+        // paused. (A redundant play is avoided so sync never churns commands.)
         if (shouldSeek) this.seek(target.time);
-        this.play();
+        if (!this.localPlaying) this.play();
       } else {
-        // Assert pause unconditionally. Never rely on localPlaying, which can
-        // be stale (autoplay during load, or a seek racing a pause) and left
-        // remote clients playing after the host paused. A redundant pause is
-        // harmless; the playerstatus re-assert below keeps the player honest.
-        if (shouldSeek) this.pause(target.time);
-        else this.pause();
+        // Always pause, in place. One command per pause message — no loop.
+        this.pause();
       }
     }
 
@@ -225,12 +219,6 @@
           if (typeof d.duration === 'number') this.duration = d.duration;
           if (typeof d.playing === 'boolean') this.localPlaying = d.playing;
           this.isBuffering = false;
-          // The room says "paused" but the player just reported it is playing
-          // again (autoplay, or a seek resuming playback). Re-assert the pause
-          // so a host pause reliably stops every client.
-          if (this._lastTarget && !this._lastTarget.isPlaying && this.localPlaying) {
-            this.pause(this.localTime);
-          }
           if (!this.ready) {
             this.ready = true;
             this._clearReadyTimer();
