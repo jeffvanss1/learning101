@@ -14,4 +14,4 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["WatchRoom"]
+new_sqlite_classes = ["WatchRoom"]
