@@ -32,6 +32,7 @@
   const SEEK_THRESHOLD = 3.5; // seconds before forcing a hard seek
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
+  const PAUSE_ASSERT_MS = 2500; // min gap between pause re-asserts (anti-loop)
 
   class PlaybackSyncManager {
     constructor(iframeEl) {
@@ -46,11 +47,16 @@
       this.ready = false;
       this._suppressed = 0;
       this._lastMsg = null;
+      this._iframeLoaded = false;
+      this._lastPauseAssert = 0;
       this._statusTimer = null;
       this._readyTimer = null;
+      this._syncTimer = null;
       this._handlers = new Map();
       this._boundMessage = this._onWindowMessage.bind(this);
+      this._boundIframeLoad = this._onIframeLoad.bind(this);
       window.addEventListener('message', this._boundMessage);
+      if (this.iframe) this.iframe.addEventListener('load', this._boundIframeLoad);
     }
 
     on(type, fn) {
@@ -86,13 +92,39 @@
       this.localPlaying = false;
       this.duration = null;
       this._lastMsg = null;
+      this._clearSyncTimer();
       this._stopPolling();
       this.emit('video', { video: this.video });
 
-      if (!video || !video.src) return;
+      if (!video || !video.src) {
+        this._iframeLoaded = false;
+        return;
+      }
+
       // Changing the iframe src is how the Bingr player loads a title.
-      this.iframe.src = video.src;
-      this._armReadyTimer();
+      const sameSrc = this.iframe && this.iframe.getAttribute('src') === video.src;
+      if (sameSrc) {
+        // Already loaded; nothing to reload. Re-apply any pending target.
+        this._iframeLoaded = true;
+        this._startPolling();
+        this._syncToTarget();
+      } else {
+        this._iframeLoaded = false;
+        this.iframe.src = video.src;
+        this._armReadyTimer();
+      }
+    }
+
+    // The embed page finished loading. The Bingr player does NOT autoplay on
+    // its own — it sits at "click to play" until we drive it — so this is the
+    // moment to apply the room's play/seek state for a joining client.
+    _onIframeLoad() {
+      this._iframeLoaded = true;
+      this._startPolling(); // learn status even if it never announces ready
+      if (this._lastMsg) {
+        // Give the player a beat to finish booting, then sync.
+        this._scheduleSync(300);
+      }
     }
 
     play(time) {
@@ -187,20 +219,53 @@
       // join time left it behind the rest of the room.
       this._lastMsg = msg;
       if (Date.now() - this._suppressed < 500) return;
-      if (!this.ready) return; // applied once the player reports ready
-      this._applyTarget(this.estimate(msg));
+      this._syncToTarget();
     }
 
-    _applyTarget(target) {
-      const drift = target.time - this.localTime;
-      const absDrift = Math.abs(drift);
+    // Converge the local player onto the room's authoritative target. Safe to
+    // call repeatedly (status polls, iframe load, follow-up timers): play is
+    // only sent when we think we're paused (so it self-stops once playing),
+    // and pause re-asserts are throttled so they can never loop.
+    _syncToTarget() {
+      const msg = this._lastMsg;
+      if (!msg || !this._iframeLoaded) return;
+      const target = this.estimate(msg);
+      const absDrift = Math.abs(target.time - this.localTime);
 
       if (target.isPlaying) {
-        if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) this.seek(target.time);
+        // Autoplay a joiner: seek into position first, then resume. A
+        // redundant play is harmless, so always assert it when we're not
+        // already playing.
+        if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) {
+          this.seek(target.time);
+          this._scheduleSync(600); // re-check once the seek settles
+        }
         if (!this.localPlaying) this.play();
       } else {
-        if (absDrift > SEEK_THRESHOLD && !this.isBuffering) this.seek(target.time);
-        this.pause();
+        if (absDrift > SEEK_THRESHOLD && !this.isBuffering) {
+          this.seek(target.time);
+          this._scheduleSync(600);
+        }
+        // Pause a joiner landing in a paused room — throttled against loops.
+        if (this.localPlaying && Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS) {
+          this.pause();
+          this._lastPauseAssert = Date.now();
+        }
+      }
+    }
+
+    _scheduleSync(delay) {
+      this._clearSyncTimer();
+      this._syncTimer = setTimeout(() => {
+        this._syncTimer = null;
+        this._syncToTarget();
+      }, delay);
+    }
+
+    _clearSyncTimer() {
+      if (this._syncTimer) {
+        clearTimeout(this._syncTimer);
+        this._syncTimer = null;
       }
     }
 
@@ -225,17 +290,10 @@
             this._clearReadyTimer();
             this._startPolling();
             this.emit('ready', {});
-            if (this._lastMsg) this.applyRemote(this._lastMsg);
-          } else if (this._lastMsg) {
-            // Converge toward the room target. Seek-only here (never re-assert
-            // play/pause, which caused the pause loop) — this recovers a seek
-            // that was issued before the player was actually seekable.
-            const target = this.estimate(this._lastMsg);
-            if (Math.abs(target.time - this.localTime) > SEEK_THRESHOLD && !this.isBuffering) {
-              this.seek(target.time);
-              if (target.isPlaying && !this.localPlaying) this.play();
-            }
           }
+          // Every status report is a chance to converge: recovers a play/seek
+          // command that raced a seek, and heals a joiner that got stuck.
+          this._syncToTarget();
           this.emit('progress', {
             time: this.localTime,
             playing: this.localPlaying,
@@ -249,7 +307,7 @@
           this._clearReadyTimer();
           this._startPolling();
           this.emit('ready', {});
-          if (this._lastMsg) this.applyRemote(this._lastMsg);
+          this._syncToTarget();
           break;
 
         case 'play':
@@ -318,6 +376,9 @@
           // fallback embed, which does not support remote control).
           this.emit('unavailable', {});
           this._requestStatus();
+          // Still try to drive the target once — the iframe may be loaded
+          // even if it never emits a status event.
+          this._syncToTarget();
         }
       }, READY_TIMEOUT_MS);
     }
@@ -331,8 +392,10 @@
 
     destroy() {
       this._clearReadyTimer();
+      this._clearSyncTimer();
       this._stopPolling();
       window.removeEventListener('message', this._boundMessage);
+      if (this.iframe) this.iframe.removeEventListener('load', this._boundIframeLoad);
     }
   }
 
