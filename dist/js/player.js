@@ -528,6 +528,11 @@
     }
 
     destroy() {
+      // Stop the embedded player and unload its document so nothing can keep
+      // playing (audio or video) after the session ends. A hidden iframe's
+      // media keeps playing, so posting `pause` alone isn't enough — we also
+      // navigate the iframe to a blank document, which tears its media down.
+      this.post({ command: 'pause' });
       this._clearReadyTimer();
       this._clearSyncTimer();
       if (this._mirrorTimer) {
@@ -536,7 +541,21 @@
       }
       this._stopPolling();
       window.removeEventListener('message', this._boundMessage);
-      if (this.iframe) this.iframe.removeEventListener('load', this._boundIframeLoad);
+      if (this.iframe) {
+        // Remove the load listener BEFORE blanking so the blank document's
+        // `load` event can't re-arm polling.
+        this.iframe.removeEventListener('load', this._boundIframeLoad);
+        try {
+          if (this.iframe.getAttribute('src')) this.iframe.src = 'about:blank';
+        } catch (_) {}
+      }
+      this.localPlaying = false;
+      this.localUpdatedAt = Date.now();
+      this.ready = false;
+      this._hasPlayed = false;
+      this._iframeLoaded = false;
+      this._lastMsg = null;
+      this._lastAppliedTs = 0;
     }
   }
 

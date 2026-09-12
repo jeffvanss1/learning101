@@ -113,6 +113,10 @@
     $('nav-join').addEventListener('click', openJoin);
     $('nav-new-room').addEventListener('click', () => startRoomWithVideo(null));
 
+    // Keep the view in sync with history traversal (browser Back/Forward, or
+    // the `history.back()` we call when leaving a room).
+    window.addEventListener('popstate', onPopState);
+
     document.querySelectorAll('.modal__close').forEach((btn) => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));
     });
@@ -922,35 +926,71 @@
     }
   }
 
-  function onLeaveRoom() {
-    if (state.client) state.client.close();
-    if (state.sync) state.sync.destroy();
-    if (state.roomBrowseHandle) state.roomBrowseHandle.destroy();
-    state.client = null;
-    state.sync = null;
-    state.roomBrowseHandle = null;
+  function isRoomPath() {
+    return /^\/room\/[A-Za-z0-9_-]+\/?$/.test(location.pathname);
+  }
+
+  // Fully tear down the room session, including stopping/unloading the player
+  // so its audio cannot keep playing after the user leaves.
+  function teardownRoomSession() {
+    if (state.client) {
+      state.client.close();
+      state.client = null;
+    }
+    if (state.sync) {
+      state.sync.destroy(); // posts pause + unloads the iframe
+      state.sync = null;
+    }
+    if (state.roomBrowseHandle) {
+      state.roomBrowseHandle.destroy();
+      state.roomBrowseHandle = null;
+    }
     state.chatLoaded = false;
     state.video = null;
     state.isOwner = false;
+    state.amAllowed = false;
     state.myPeerId = null;
+    state.roomId = null;
     state._lastRecKey = null;
     resetRecs();
     $('browse-modal').hidden = true;
+  }
 
-    if (state._pushedRoom) {
+  // Show the home surface. Idempotent: re-mounts the browse UI only when we
+  // are not already on the home view.
+  function showHome() {
+    const alreadyHome = $('room').hidden && !$('home').hidden;
+    $('room').hidden = true;
+    $('home-nav').hidden = false;
+    $('home').hidden = false;
+    if (!alreadyHome) mountHome();
+  }
+
+  function onLeaveRoom() {
+    const pushed = state._pushedRoom;
+    teardownRoomSession();
+    if (pushed) {
       // We navigated here from the home page — step back to it in history.
+      // Restore home immediately; the popstate handler re-affirms (no-op).
       state._pushedRoom = false;
+      showHome();
       history.back();
       return;
     }
 
     // Deep-linked straight into the room: no home page behind us, so render
     // home in place.
-    $('room').hidden = true;
-    $('home-nav').hidden = false;
-    $('home').hidden = false;
     history.replaceState(null, '', '/');
-    mountHome();
+    showHome();
+  }
+
+  // Keep the view in sync with the URL when the user (or `history.back()`)
+  // traverses history. Landing on a non-room path means "back at home": tear
+  // down any room session (killing the player) and show the home surface.
+  function onPopState() {
+    if (isRoomPath()) return; // back into a room entry — handled elsewhere
+    if (!$('room').hidden || state.client || state.sync) teardownRoomSession();
+    showHome();
   }
 
   // --------------------------------------------------------------------------
