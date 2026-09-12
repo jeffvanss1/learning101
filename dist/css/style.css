@@ -703,6 +703,11 @@ button {
 /* ---- Video bar (under player) --------------------------------------------------------- */
 .stage__under {
   flex: 0 0 auto;
+  /* Cap the under-player area so it can never squeeze the video: the similar
+     titles sit at the bottom and are reached by scrolling. */
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 12px 16px 14px;
   background: var(--bg-soft);
   border-top: 1px solid var(--border);
@@ -776,9 +781,11 @@ button {
   margin-top: 8px;
 }
 
-/* ---- Similar-content recommendations (under the player) ------------------- */
+/* ---- Similar-content recommendations (below the player, on the scroll) ---- */
 .recs {
-  margin-top: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
 }
 
 .recs__head {
