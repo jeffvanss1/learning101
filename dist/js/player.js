@@ -50,6 +50,8 @@
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
   const PAUSE_ASSERT_MS = 2500; // min gap between pause re-asserts (anti-loop)
+  const CONTROL_DEBOUNCE_MS = 400; // in-player state must persist this long to mirror
+  const CONTROL_SUPPRESS_MS = 1200; // ignore mirror right after our own command
 
   class PlaybackSyncManager {
     constructor(iframeEl) {
@@ -62,10 +64,17 @@
       this.duration = null;
       this.isBuffering = false;
       this.ready = false;
+      this.isController = false; // set by app.js when this client can drive playback
       this._lastMsg = null; // latest authoritative playback tuple (with timestamp)
       this._lastAppliedTs = 0; // staleness guard: ignore older server snapshots
       this._iframeLoaded = false;
       this._lastPauseAssert = 0;
+      this._hasPlayed = false; // has the player actually played since load?
+      this._suppressed = 0; // last time we sent a command (mirror suppression)
+      this._doNotForceUntil = 0; // while set, don't force play/pause on a controller
+      this._mirroredPlaying = null; // play/pause state the room already knows
+      this._mirrorCandidate = { playing: null, since: 0 };
+      this._mirrorTimer = null;
       this._statusTimer = null;
       this._readyTimer = null;
       this._syncTimer = null;
@@ -110,6 +119,15 @@
       this.duration = null;
       this._lastMsg = null;
       this._lastAppliedTs = 0;
+      this._hasPlayed = false;
+      this._suppressed = 0;
+      this._doNotForceUntil = 0;
+      this._mirroredPlaying = null;
+      this._mirrorCandidate = { playing: null, since: 0 };
+      if (this._mirrorTimer) {
+        clearTimeout(this._mirrorTimer);
+        this._mirrorTimer = null;
+      }
       this._clearSyncTimer();
       this._stopPolling();
       this.emit('video', { video: this.video });
@@ -150,6 +168,7 @@
       this.post({ command: 'play' });
       this.localPlaying = true;
       this.localUpdatedAt = Date.now();
+      this._suppressed = Date.now(); // our own command — don't mirror it back
     }
 
     pause() {
@@ -158,12 +177,14 @@
       this.post({ command: 'pause' });
       this.localPlaying = false;
       this.localUpdatedAt = Date.now();
+      this._suppressed = Date.now(); // our own command — don't mirror it back
     }
 
     seek(time) {
       this.post({ command: 'seek', time: Number(time) || 0 });
       this.localTime = Number(time) || 0;
       this.localUpdatedAt = Date.now();
+      this._suppressed = Date.now(); // a seek can flicker play state; don't mirror
     }
 
     // Seek only when the target is meaningfully different from where we are.
@@ -241,6 +262,9 @@
       // against the current wall clock whenever we actually apply it — a
       // joiner's player can take seconds to load.
       this._lastMsg = msg;
+      // For a controller, whatever the room state is now becomes the mirror
+      // baseline, so only a later in-player change gets broadcast.
+      if (this.isController) this._mirroredPlaying = !!msg.isPlaying;
       this._syncToTarget();
     }
 
@@ -254,6 +278,39 @@
       const target = this.estimate(msg);
       const absDrift = Math.abs(target.time - this.localTime);
 
+      if (this.isController) {
+        // The controller's own player is the source of truth for play/pause,
+        // so we never fight a user action made inside the player itself. While
+        // the "don't force" window is open (the player just changed on its own
+        // and its change is being mirrored to the room), we only correct the
+        // position. Outside that window we follow the room (e.g. a granted
+        // guest or a new host drove the room).
+        const noForce = Date.now() < this._doNotForceUntil;
+
+        if (target.isPlaying) {
+          if (!this.localPlaying && !noForce) {
+            // Autoplay a fresh load, or follow a guest/room that started play.
+            if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) this.seek(target.time);
+            this.play();
+          } else if (this.localPlaying && absDrift > DRIFT_TOLERANCE && !this.isBuffering) {
+            // Playing and drifted: correct the position (safe while playing).
+            this.seek(target.time);
+            this._scheduleSync(600);
+          }
+        } else {
+          if (absDrift > SEEK_THRESHOLD && !this.isBuffering) {
+            this.seek(target.time);
+            this._scheduleSync(600);
+          }
+          if (this.localPlaying && !noForce && Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS) {
+            this.pause();
+            this._lastPauseAssert = Date.now();
+          }
+        }
+        return;
+      }
+
+      // Guest (non-controller): the room is authoritative for everything.
       if (target.isPlaying) {
         // Autoplay a joiner: seek into position first, then resume. A
         // redundant play is harmless, so assert it whenever we're not playing.
@@ -273,6 +330,58 @@
           this._lastPauseAssert = Date.now();
         }
       }
+    }
+
+    // For the controller only: detect a genuine in-player play/pause (not a
+    // buffering flicker, not the echo of our own command) and broadcast it so
+    // the whole room follows the controller's player.
+    _maybeMirrorControl() {
+      if (!this.isController) return;
+      const now = Date.now();
+      const playing = this.localPlaying;
+      const time = this.localTime;
+
+      // Just sent a command (UI button / autoplay) — adopt whatever the
+      // player settles into as known, without broadcasting.
+      if (now - this._suppressed < CONTROL_SUPPRESS_MS) {
+        this._mirroredPlaying = playing;
+        this._mirrorCandidate = { playing, since: now };
+        return;
+      }
+
+      // A "pause" at the very start just means the video never began (autoplay
+      // blocked) — never treat that as a user pause for the room.
+      if (!playing && time < 0.5) {
+        this._mirroredPlaying = playing;
+        this._mirrorCandidate = { playing, since: now };
+        return;
+      }
+
+      // State changed on its own: record the candidate and re-check shortly.
+      // A genuine user action stays changed; a buffering flicker flips back
+      // before the check, so it never broadcasts. While undecided, hold off
+      // forcing convergence so we don't fight the user's action.
+      if (this._mirrorCandidate.playing !== playing) {
+        this._mirrorCandidate = { playing, since: now };
+        this._doNotForceUntil = now + CONTROL_SUPPRESS_MS;
+        this._scheduleMirrorCheck(CONTROL_DEBOUNCE_MS);
+        return;
+      }
+
+      // State has been stable long enough and differs from what the room knows.
+      if (playing !== this._mirroredPlaying && now - this._mirrorCandidate.since >= CONTROL_DEBOUNCE_MS) {
+        this._mirroredPlaying = playing;
+        this._doNotForceUntil = now + CONTROL_SUPPRESS_MS;
+        this.emit('control', { action: playing ? 'play' : 'pause', time });
+      }
+    }
+
+    _scheduleMirrorCheck(delay) {
+      if (this._mirrorTimer) clearTimeout(this._mirrorTimer);
+      this._mirrorTimer = setTimeout(() => {
+        this._mirrorTimer = null;
+        this._maybeMirrorControl();
+      }, delay);
     }
 
     _scheduleSync(delay) {
@@ -304,7 +413,10 @@
             this.localUpdatedAt = Date.now();
           }
           if (typeof d.duration === 'number') this.duration = d.duration;
-          if (typeof d.playing === 'boolean') this.localPlaying = d.playing;
+          if (typeof d.playing === 'boolean') {
+            this.localPlaying = d.playing;
+            if (d.playing) this._hasPlayed = true;
+          }
           this.isBuffering = false;
           if (!this.ready) {
             this.ready = true;
@@ -312,6 +424,9 @@
             this._startPolling();
             this.emit('ready', {});
           }
+          // Controller: mirror a genuine in-player play/pause to the room
+          // BEFORE converging, so convergence never fights the user's action.
+          this._maybeMirrorControl();
           // Every status report is a chance to converge: recovers a play/seek
           // command that raced a seek, and heals a joiner that got stuck.
           this._syncToTarget();
@@ -334,6 +449,7 @@
         case 'play':
         case 'playing':
           this.localPlaying = true;
+          this._hasPlayed = true;
           this.isBuffering = false;
           this.emit('progress', {
             time: this.localTime,
@@ -414,6 +530,10 @@
     destroy() {
       this._clearReadyTimer();
       this._clearSyncTimer();
+      if (this._mirrorTimer) {
+        clearTimeout(this._mirrorTimer);
+        this._mirrorTimer = null;
+      }
       this._stopPolling();
       window.removeEventListener('message', this._boundMessage);
       if (this.iframe) this.iframe.removeEventListener('load', this._boundIframeLoad);

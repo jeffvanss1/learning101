@@ -186,6 +186,16 @@
     state.amAllowed = false;
     state.chatLoaded = false;
 
+    // Tear down any previous session so listeners/commands never stack.
+    if (state.sync) {
+      state.sync.destroy();
+      state.sync = null;
+    }
+    if (state.client) {
+      state.client.close();
+      state.client = null;
+    }
+
     // Swap views.
     $('home-nav').hidden = true;
     $('home').hidden = true;
@@ -222,23 +232,26 @@
 
     resetProgress();
 
-    $('chat-form').addEventListener('submit', onChatSubmit);
-    $('copy-link').addEventListener('click', onCopyLink);
-    $('leave-room').addEventListener('click', onLeaveRoom);
-    $('toggle-play').addEventListener('click', onTogglePlay);
-    $('change-video').addEventListener('click', onOpenBrowse);
+    // Property assignment (not addEventListener) so re-entering a room never
+    // stacks duplicate handlers — a duplicate toggle handler was a source of
+    // the host play/pause loop.
+    $('chat-form').onsubmit = onChatSubmit;
+    $('copy-link').onclick = onCopyLink;
+    $('leave-room').onclick = onLeaveRoom;
+    $('toggle-play').onclick = onTogglePlay;
+    $('change-video').onclick = onOpenBrowse;
 
     const seek = $('seek-bar');
-    seek.addEventListener('input', () => {
+    seek.oninput = () => {
       state.scrubbing = true;
       $('time-current').textContent = WP.formatDuration(parseFloat(seek.value));
-    });
-    seek.addEventListener('change', () => {
+    };
+    seek.onchange = () => {
       state.scrubbing = false;
       if (canControl() && state.sync) {
         state.sync.localSeek(parseFloat(seek.value));
       }
-    });
+    };
   }
 
   function resetProgress() {
@@ -425,6 +438,8 @@
   function updateHostUI() {
     $('host-chip').hidden = !state.isOwner;
     $('video-actions').hidden = !canControl();
+    // Keep the sync manager aware of whether this client drives playback.
+    if (state.sync) state.sync.isController = canControl();
     updateVideoUI();
   }
 
