@@ -109,6 +109,90 @@
     );
   }
 
+  // ---- direct (browser -> AniList) lookup ------------------------------------
+  // Fallback when the Worker's /api/anilist route isn't reachable: AniList's
+  // GraphQL API is public and CORS-enabled, so the browser can resolve a title
+  // straight to an AniList id without any server round-trip or API key.
+  const ANILIST_ORIGIN = 'https://graphql.anilist.co';
+  const ANILIST_QUERY = `query ($search: String) {
+    Page(page: 1, perPage: 10) {
+      media(search: $search, type: ANIME, isAdult: false, sort: [SEARCH_MATCH]) {
+        id
+        title { romaji english native }
+        episodes
+        startDate { year }
+      }
+    }
+  }`;
+
+  function normalizeTitle(s) {
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function matchAniMedia(title, year, media) {
+    const want = normalizeTitle(title);
+    if (!want) return null;
+    const y = Number(year) || null;
+    let best = null;
+    let bestScore = -Infinity;
+    for (const m of media || []) {
+      if (!m || !m.id) continue;
+      const t = m.title || {};
+      const norm = [t.romaji, t.english, t.native]
+        .filter(Boolean)
+        .map(normalizeTitle)
+        .filter(Boolean);
+      let score = 0;
+      if (norm.some((n) => n === want)) score += 100;
+      else if (norm.some((n) => n.length > 2 && (n.includes(want) || want.includes(n)))) score += 60;
+      const my = m.startDate && m.startDate.year ? Number(m.startDate.year) : null;
+      if (y && my) {
+        if (my === y) score += 50;
+        else if (Math.abs(my - y) <= 1) score += 15;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = m;
+      }
+    }
+    return bestScore >= 60 ? best : null;
+  }
+
+  async function anilistDirect(title, year) {
+    const cacheKey = ANILIST_CACHE_PREFIX + 'direct:' + normalizeTitle(title) + ':' + (year || '');
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const o = JSON.parse(raw);
+        if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data || null;
+      }
+    } catch (_) {}
+    try {
+      const res = await fetch(ANILIST_ORIGIN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query: ANILIST_QUERY, variables: { search: title || '' } }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const media = (data && data.data && data.data.Page && data.data.Page.media) || [];
+      const best = matchAniMedia(title, year, media);
+      const result = best ? { id: best.id, episodes: best.episodes || null } : null;
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: result }));
+      } catch (_) {}
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ---- normalization -----------------------------------------------------------
   function normMovie(m) {
     return {
@@ -462,27 +546,34 @@
           renderDetailBody(body, item, extra, null, onPick, close);
         } else {
           const extra = await api('/tv/' + encodeURIComponent(item.id));
-          // Classify: anime (AniList id, episode-only) or a regular series?
-          // The `/api/anilist` lookup can fail (network, or the worker route
-          // not being deployed), so keep a flag to distinguish "lookup failed"
-          // from "this is definitively a regular series".
+          // Resolve anime classification + AniList id. Try the Worker endpoint
+          // first (TMDB keywords + AniList match); if that's unreachable or
+          // can't find a match, fall back to a direct browser -> AniList lookup
+          // (public, keyless GraphQL API). Anime never falls back to /watch/tv/.
           let info = null;
-          let lookupFailed = false;
           try {
             info = await anilistApi(item.id);
           } catch (_) {
-            lookupFailed = true;
             info = null;
           }
-          if (info && info.anime && info.anilistId != null) {
+          const isAnime = !!(item.isAnime || (info && info.anime));
+          if (isAnime) {
             item.isAnime = true;
-            item.anilistId = info.anilistId;
-            renderAnimeBody(body, item, extra, info, onPick, close);
-          } else if ((info && info.anime) || (item.isAnime && (lookupFailed || !info))) {
-            // Known anime but no AniList id: never fall back to /watch/tv/…,
-            // which would hand Bingr a TMDB id in an anime URL.
-            item.isAnime = true;
-            renderAnimeUnresolved(body, item, extra);
+            let anilistId = info && info.anilistId != null ? info.anilistId : null;
+            let episodes = info && info.episodes != null ? info.episodes : null;
+            if (anilistId == null) {
+              const direct = await anilistDirect(item.title, item.year);
+              if (direct && direct.id != null) {
+                anilistId = direct.id;
+                episodes = direct.episodes || null;
+              }
+            }
+            if (anilistId != null) {
+              item.anilistId = anilistId;
+              renderAnimeBody(body, item, extra, { episodes }, onPick, close);
+            } else {
+              renderAnimeUnresolved(body, item, extra);
+            }
           } else {
             renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
           }
