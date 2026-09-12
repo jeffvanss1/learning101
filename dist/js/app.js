@@ -191,10 +191,7 @@
     state.amAllowed = false;
     state.chatLoaded = false;
     state._lastRecKey = null;
-    const recs = $('recs');
-    if (recs) recs.hidden = true;
-    const scroller = $('recs-scroller');
-    if (scroller) scroller.innerHTML = '';
+    resetRecs();
 
     // Tear down any previous session so listeners/commands never stack.
     if (state.sync) {
@@ -250,6 +247,7 @@
     $('leave-room').onclick = onLeaveRoom;
     $('toggle-play').onclick = onTogglePlay;
     $('change-video').onclick = onOpenBrowse;
+    $('recs-toggle').onclick = onToggleRecs;
 
     // Mobile chat sheet toggle (header button + tapping the chat header).
     const chatToggle = $('chat-toggle');
@@ -509,6 +507,42 @@
     if (open) scrollChat();
   }
 
+  // Similar-titles panel: collapsed by default, expanded via a small button.
+  function onToggleRecs() {
+    const body = $('recs-body');
+    const btn = $('recs-toggle');
+    if (!body || !btn) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    btn.classList.toggle('is-open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const label = $('recs-toggle-label');
+    if (label) label.textContent = open ? 'Hide similar titles' : 'Show similar titles';
+  }
+
+  function collapseRecs() {
+    const body = $('recs-body');
+    if (body) body.hidden = true;
+    const btn = $('recs-toggle');
+    if (btn) {
+      btn.classList.remove('is-open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    const label = $('recs-toggle-label');
+    if (label) label.textContent = 'Show similar titles';
+  }
+
+  // Hide the panel, empty the scroller, and collapse it back to the toggle.
+  function resetRecs() {
+    const recs = $('recs');
+    if (recs) recs.hidden = true;
+    const scroller = $('recs-scroller');
+    if (scroller) scroller.innerHTML = '';
+    const count = $('recs-count');
+    if (count) count.hidden = true;
+    collapseRecs();
+  }
+
   // Browse: controllers pick what plays immediately; guests propose a title
   // and the host approves it from chat.
   function onOpenBrowse() {
@@ -549,27 +583,22 @@
   }
 
   // "Similar content" under the player, refreshed on every video change and
-  // excluding the title currently playing.
+  // excluding the title currently playing. Stays collapsed behind a toggle so
+  // it never crowds the player controls.
   async function renderRecommendations() {
     const recs = $('recs');
     const scroller = $('recs-scroller');
     if (!recs || !scroller) return;
     const v = state.video;
     const mySeq = ++recSeq;
-    if (!v || !v.id || !v.type) {
-      recs.hidden = true;
-      scroller.innerHTML = '';
-      return;
-    }
-    recs.hidden = false;
+    resetRecs();
+    if (!v || !v.id || !v.type) return;
+
     const hint = $('recs-hint');
     if (hint) hint.textContent = canControl()
       ? 'Pick one to play it for the room'
       : 'Pick one to request it from the host';
-    scroller.innerHTML = '';
-    for (let i = 0; i < 6; i++) {
-      scroller.appendChild(document.createElement('div')).className = 'rec-card rec-card--skeleton';
-    }
+
     let items = [];
     try {
       items = await WP.Catalog.fetchRecommendations(v);
@@ -579,11 +608,16 @@
     if (mySeq !== recSeq) return; // the video changed while we were fetching
     const filtered = items.filter((it) => it && it.id && it.id !== String(v.id));
     scroller.innerHTML = '';
-    if (!filtered.length) {
-      recs.hidden = true;
-      return;
+    if (!filtered.length) return; // panel stays hidden entirely
+
+    const count = $('recs-count');
+    if (count) {
+      count.hidden = false;
+      count.textContent = String(filtered.length);
     }
     filtered.slice(0, 12).forEach((it) => scroller.appendChild(recCard(it)));
+    collapseRecs(); // collapsed by default; the toggle reveals it
+    recs.hidden = false;
   }
 
   function recCard(item) {
@@ -842,10 +876,7 @@
     state.isOwner = false;
     state.myPeerId = null;
     state._lastRecKey = null;
-    const recs = $('recs');
-    if (recs) recs.hidden = true;
-    const recScroller = $('recs-scroller');
-    if (recScroller) recScroller.innerHTML = '';
+    resetRecs();
     $('browse-modal').hidden = true;
     $('room').hidden = true;
     $('home-nav').hidden = false;

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=5" />
+  <link rel="stylesheet" href="/css/style.css?v=6" />
   <link rel="stylesheet" href="/css/catalog.css?v=4" />
 </head>
 <body>
@@ -147,11 +147,20 @@
           </div>
 
           <div class="recs" id="recs" hidden>
-            <div class="recs__head">
-              <h3 class="recs__title">Similar titles</h3>
-              <span class="recs__hint muted" id="recs-hint">Pick one to play it for the room</span>
+            <button id="recs-toggle" class="recs__toggle" type="button" aria-expanded="false" aria-controls="recs-body">
+              <svg class="recs__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+              <span id="recs-toggle-label">Show similar titles</span>
+              <span class="recs__count" id="recs-count" hidden></span>
+            </button>
+            <div class="recs__body" id="recs-body" hidden>
+              <div class="recs__head">
+                <h3 class="recs__title">Similar titles</h3>
+                <span class="recs__hint muted" id="recs-hint">Pick one to play it for the room</span>
+              </div>
+              <div class="recs__scroller" id="recs-scroller"></div>
             </div>
-            <div class="recs__scroller" id="recs-scroller"></div>
           </div>
         </div>
       </section>
