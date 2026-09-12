@@ -463,17 +463,24 @@
         } else {
           const extra = await api('/tv/' + encodeURIComponent(item.id));
           // Classify: anime (AniList id, episode-only) or a regular series?
+          // The `/api/anilist` lookup can fail (network, or the worker route
+          // not being deployed), so keep a flag to distinguish "lookup failed"
+          // from "this is definitively a regular series".
           let info = null;
+          let lookupFailed = false;
           try {
             info = await anilistApi(item.id);
           } catch (_) {
+            lookupFailed = true;
             info = null;
           }
           if (info && info.anime && info.anilistId != null) {
             item.isAnime = true;
             item.anilistId = info.anilistId;
             renderAnimeBody(body, item, extra, info, onPick, close);
-          } else if (info && info.anime) {
+          } else if ((info && info.anime) || (item.isAnime && (lookupFailed || !info))) {
+            // Known anime but no AniList id: never fall back to /watch/tv/…,
+            // which would hand Bingr a TMDB id in an anime URL.
             item.isAnime = true;
             renderAnimeUnresolved(body, item, extra);
           } else {
