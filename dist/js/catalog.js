@@ -805,7 +805,11 @@
   function mountBrowse(container, opts) {
     opts = opts || {};
     const onSelect = opts.onSelect || function () {};
-    const externalInput = opts.searchInput || null;
+    const externalInputs = Array.isArray(opts.searchInputs)
+      ? opts.searchInputs.filter(Boolean)
+      : opts.searchInput
+        ? [opts.searchInput]
+        : null;
 
     container.classList.add('browse');
     container.innerHTML = '';
@@ -838,17 +842,17 @@
       filters.appendChild(c);
     });
 
-    // Search input: the home page supplies the sticky top-nav search bar (the
-    // same bar the logo lives in); other surfaces (the room's change-video
-    // modal) get an inline search bar instead.
-    let input = externalInput;
-    if (!input) {
+    // Search input(s): the home page supplies the top-nav and side-nav inputs
+    // (both drive the same search, kept in sync); other surfaces (the room's
+    // change-video modal) get an inline search bar instead.
+    let inlineInput = null;
+    if (!externalInputs) {
       const search = h('div', 'browse__search');
-      input = h('input', 'browse__search-input');
-      input.type = 'text';
-      input.placeholder = 'Search movies & series\u2026';
-      input.autocomplete = 'off';
-      search.appendChild(input);
+      inlineInput = h('input', 'browse__search-input');
+      inlineInput.type = 'text';
+      inlineInput.placeholder = 'Search movies & series\u2026';
+      inlineInput.autocomplete = 'off';
+      search.appendChild(inlineInput);
       search.appendChild(filters);
       container.appendChild(search);
     } else {
@@ -865,80 +869,132 @@
     let destroyed = false;
     let seq = 0;
 
-    // ---- infinite scroll state ----
+    // ---- browse feed (vertical infinite scroll) --------------------------------
+    // The home feed is an ordered list of sections. New sections appear as you
+    // scroll toward the bottom (vertical infinite scroll); each section is a
+    // horizontal row that also deepens page by page. Sections are addressable
+    // by `key` so the side rail can jump straight to them.
+    const ROW_DEFS = [
+      { key: 'movie', title: 'Popular Movies', path: (p) => `/movie/popular?page=${p}`, map: normMovie },
+      { key: 'tv', title: 'Popular TV Shows', path: (p) => `/tv/popular?page=${p}`, map: (t) => normTv(t, false) },
+      { key: 'anime', title: 'Popular Anime', path: (p) => `/discover/tv?with_keywords=${ANIME_KEYWORD}&sort_by=popularity.desc&page=${p}`, map: (t) => normTv(t, true) },
+      { key: 'trending', title: 'Trending Now', path: (p) => `/trending/all/week?page=${p}`, map: normAny },
+      { key: 'topMovies', title: 'Top Rated Movies', path: (p) => `/movie/top_rated?page=${p}`, map: normMovie },
+      { key: 'topTv', title: 'Top Rated Series', path: (p) => `/tv/top_rated?page=${p}`, map: (t) => normTv(t, false) },
+      { key: 'nowPlaying', title: 'In Theaters', path: (p) => `/movie/now_playing?page=${p}`, map: normMovie },
+      { key: 'airingToday', title: 'Airing Today', path: (p) => `/tv/airing_today?page=${p}`, map: (t) => normTv(t, false) },
+    ];
+    const INITIAL_SECTIONS = 4;
+
+    let sections = [];
+    let paginateIdx = 0; // round-robin cursor for deepening existing sections
+
     let mode = 'browse'; // 'browse' | 'search'
     let searchQuery = '';
     let gridEl = null;
-    const rowScrollers = {}; // source key -> scroller element
-    const pages = { movie: 1, tv: 1, anime: 1, trending: 1, search: 1 };
-    const done = { movie: false, tv: false, anime: false, trending: false, search: false };
+    let searchPage = 1;
+    let searchDone = false;
     let loadingMore = false;
     let io = null;
     const sentinel = h('div', 'browse__sentinel');
+
+    function resetSections() {
+      sections = ROW_DEFS.map((d) => ({
+        key: d.key,
+        title: d.title,
+        path: d.path,
+        map: d.map,
+        page: 0,
+        done: false,
+        el: null,
+        loading: false,
+      }));
+      paginateIdx = 0;
+    }
 
     function resetRows() {
       rowsWrap.innerHTML = '';
       rowsWrap.appendChild(sentinel);
       gridEl = null;
-      rowScrollers.movie = rowScrollers.tv = rowScrollers.anime = rowScrollers.trending = null;
     }
 
-    function addRow(key, title, items) {
-      if (!items || !items.length) return;
+    function makeSectionRow(def, items) {
       const sec = h('section', 'row');
-      sec.dataset.row = key; // lets the side nav scroll to this section
-      sec.appendChild(h('h2', 'row__title', title));
+      sec.dataset.row = def.key; // lets the side nav scroll to this section
+      sec.appendChild(h('h2', 'row__title', def.title));
       const scroller = h('div', 'row__scroller');
       items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
       sec.appendChild(scroller);
       rowsWrap.insertBefore(sec, sentinel);
-      rowScrollers[key] = scroller;
+      def.el = sec;
+      return scroller;
     }
 
-    function appendToRow(key, items) {
-      const scroller = rowScrollers[key];
-      if (!scroller || !items || !items.length) return;
+    function appendToSection(def, items) {
+      if (!def || !def.el || !items || !items.length) return;
+      const scroller = def.el.querySelector('.row__scroller');
       items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
     }
 
-    async function loadMoreBrowse() {
-      const tasks = [];
-      const fetchPage = (key, path, map) => {
-        pages[key]++;
-        const sep = path.indexOf('?') === -1 ? '?' : '&';
-        return api(path + sep + 'page=' + pages[key])
-          .then((d) => {
-            const items = (d.results || []).map(map).filter(Boolean);
-            if (destroyed || mode !== 'browse') return;
-            appendToRow(key, items);
-            if (!items.length || d.page >= (d.total_pages || 1)) done[key] = true;
-          })
-          .catch(() => { done[key] = true; });
-      };
-      if (!done.movie) tasks.push(fetchPage('movie', '/movie/popular', normMovie));
-      if (!done.tv) tasks.push(fetchPage('tv', '/tv/popular', (t) => normTv(t, false)));
-      if (!done.anime) tasks.push(fetchPage('anime', '/discover/tv?with_keywords=' + ANIME_KEYWORD + '&sort_by=popularity.desc', (t) => normTv(t, true)));
-      if (!done.trending) tasks.push(fetchPage('trending', '/trending/all/week', normAny));
-      await Promise.all(tasks);
+    async function createSection(idx) {
+      const def = sections[idx];
+      if (!def || def.done || def.el || def.loading) return;
+      def.loading = true;
+      try {
+        const data = await api(def.path(1));
+        if (destroyed) return;
+        const items = (data.results || []).map(def.map).filter(Boolean);
+        if (items.length) makeSectionRow(def, items);
+        if (!items.length || data.page >= (data.total_pages || 1)) def.done = true;
+        def.page = 1;
+      } catch (_) {
+        def.done = true;
+      } finally {
+        def.loading = false;
+      }
     }
 
-    async function loadMoreSearch() {
-      if (done.search || !searchQuery) return;
-      pages.search++;
+    async function paginateSection(idx) {
+      const def = sections[idx];
+      if (!def || def.done || def.loading || !def.el) return;
+      def.loading = true;
       try {
-        const data = await api('/search/multi?query=' + encodeURIComponent(searchQuery) + '&include_adult=false&page=' + pages.search);
-        if (destroyed || mode !== 'search') return;
-        const items = (data.results || []).map(normAny).filter(Boolean);
-        if (!items.length || data.page >= (data.total_pages || 1)) done.search = true;
-        results = results.concat(items);
-        if (gridEl) {
-          const empty = gridEl.querySelector('.browse__empty');
-          if (empty) empty.remove();
-          items.filter(matchesFilter).forEach((it) => gridEl.appendChild(cardNode(it, choose)));
-        }
+        const next = def.page + 1;
+        const data = await api(def.path(next));
+        if (destroyed) return;
+        const items = (data.results || []).map(def.map).filter(Boolean);
+        appendToSection(def, items);
+        def.page = next;
+        if (!items.length || data.page >= (data.total_pages || 1)) def.done = true;
       } catch (_) {
-        done.search = true;
+        def.done = true;
+      } finally {
+        def.loading = false;
       }
+    }
+
+    // Load the next chunk of the vertical feed: create the next not-yet-created
+    // section until all sections exist, then deepen existing sections page by
+    // page. Returns false once the whole feed is exhausted.
+    async function loadNextChunk() {
+      if (destroyed || mode !== 'browse') return true;
+      for (let i = 0; i < sections.length; i++) {
+        const def = sections[i];
+        if (!def.done && !def.el && !def.loading) {
+          await createSection(i);
+          return true;
+        }
+      }
+      for (let i = 0; i < sections.length; i++) {
+        const idx = (paginateIdx + i) % sections.length;
+        const def = sections[idx];
+        if (!def.done && def.el && !def.loading) {
+          paginateIdx = (idx + 1) % sections.length;
+          await paginateSection(idx);
+          return !sections.every((s) => s.done);
+        }
+      }
+      return false;
     }
 
     async function loadMore() {
@@ -946,7 +1002,7 @@
       loadingMore = true;
       try {
         if (mode === 'search' && searchQuery) await loadMoreSearch();
-        else if (mode === 'browse') await loadMoreBrowse();
+        else if (mode === 'browse') await loadNextChunk();
       } finally {
         loadingMore = false;
       }
@@ -954,9 +1010,10 @@
 
     function setupInfiniteScroll() {
       if (typeof IntersectionObserver === 'undefined') return; // graceful fallback
+      if (io) io.disconnect();
       io = new IntersectionObserver((entries) => {
         if (entries.some((e) => e.isIntersecting)) loadMore();
-      }, { rootMargin: '800px 0px' });
+      }, { rootMargin: '900px 0px' });
       io.observe(sentinel);
     }
 
@@ -1002,26 +1059,58 @@
       rowsWrap.appendChild(wrap);
     }
 
-    const onInput = () => {
-      const q = input.value.trim();
+    // Keep all external search inputs showing the same query.
+    const setInputsValue = (q) => {
+      if (externalInputs) {
+        externalInputs.forEach((inp) => {
+          if (inp.value !== q) inp.value = q;
+        });
+      }
+    };
+
+    async function loadMoreSearch() {
+      if (searchDone || !searchQuery) return;
+      const mySeq = seq;
+      searchPage++;
+      try {
+        const data = await api('/search/multi?query=' + encodeURIComponent(searchQuery) + '&include_adult=false&page=' + searchPage);
+        if (destroyed || mySeq !== seq) return;
+        const items = (data.results || []).map(normAny).filter(Boolean);
+        if (!items.length || data.page >= (data.total_pages || 1)) searchDone = true;
+        results = results.concat(items);
+        if (gridEl) {
+          const empty = gridEl.querySelector('.browse__empty');
+          if (empty) empty.remove();
+          items.filter(matchesFilter).forEach((it) => gridEl.appendChild(cardNode(it, choose)));
+        }
+      } catch (_) {
+        searchDone = true;
+      }
+    }
+
+    const onInput = (ev) => {
+      const q = String((ev && ev.target && ev.target.value) || '').trim();
       clearTimeout(searchTimer);
       if (!q) {
         seq++;
         results = [];
+        setInputsValue('');
         mode = 'browse';
         searchQuery = '';
-        Object.keys(pages).forEach((k) => { pages[k] = 1; done[k] = false; });
+        searchPage = 1;
+        searchDone = false;
         filters.hidden = true;
         heroWrap.style.display = '';
         loadBrowse();
         return;
       }
+      setInputsValue(q);
       searchTimer = setTimeout(async () => {
         const mySeq = ++seq;
         mode = 'search';
         searchQuery = q;
-        pages.search = 1;
-        done.search = false;
+        searchPage = 1;
+        searchDone = false;
         results = [];
         resetRows();
         const grid = h('div', 'grid');
@@ -1032,7 +1121,7 @@
           const data = await api('/search/multi?query=' + encodeURIComponent(q) + '&include_adult=false');
           if (destroyed || mySeq !== seq) return;
           results = (data.results || []).map(normAny).filter(Boolean);
-          if (!results.length || data.page >= (data.total_pages || 1)) done.search = true;
+          if (!results.length || data.page >= (data.total_pages || 1)) searchDone = true;
           if (activeFilter === 'anime') await classifyAnime(results);
           if (destroyed || mySeq !== seq) return;
           renderResults();
@@ -1047,7 +1136,11 @@
         }
       }, 350);
     };
-    input.addEventListener('input', onInput);
+
+    const inputs = externalInputs || [inlineInput];
+    inputs.forEach((inp) => {
+      if (inp) inp.addEventListener('input', onInput);
+    });
 
     function renderLoading() {
       heroWrap.innerHTML = '<div class="hero__skeleton"></div>';
@@ -1061,44 +1154,47 @@
       const mySeq = ++seq;
       mode = 'browse';
       searchQuery = '';
-      Object.keys(pages).forEach((k) => { pages[k] = 1; done[k] = false; });
+      searchPage = 1;
+      searchDone = false;
+      resetSections();
       renderLoading();
+      // Hero from trending page 1 (trending is also one of the feed sections).
       try {
-        const [trendingAll, movies, tv, anime] = await Promise.allSettled([
-          api('/trending/all/week'),
-          api('/movie/popular'),
-          api('/tv/popular'),
-          api('/discover/tv?with_keywords=' + ANIME_KEYWORD + '&sort_by=popularity.desc'),
-        ]);
+        const d = await api('/trending/all/week');
         if (destroyed || mySeq !== seq) return;
-
-        const all =
-          trendingAll.status === 'fulfilled' && trendingAll.value && trendingAll.value.results
-            ? trendingAll.value.results.map(normAny).filter(Boolean)
-            : [];
+        const all = (d.results || []).map(normAny).filter(Boolean);
         renderHero(heroWrap, all.find((x) => x.backdrop) || all[0] || null, choose);
-
-        resetRows();
-        if (movies.status === 'fulfilled') {
-          addRow('movie', 'Popular Movies', (movies.value.results || []).map(normMovie).slice(0, 18));
-        }
-        if (tv.status === 'fulfilled') {
-          addRow('tv', 'Popular TV Shows', (tv.value.results || []).map((t) => normTv(t, false)).slice(0, 18));
-        }
-        if (anime.status === 'fulfilled') {
-          addRow('anime', 'Popular Anime', (anime.value.results || []).map((t) => normTv(t, true)).slice(0, 18));
-        }
-        if (all.length) {
-          addRow('trending', 'Trending Now', all.slice(0, 18));
-        }
-
-        const anyFailed = [trendingAll, movies, tv, anime].some((r) => r.status === 'rejected');
-        if (anyFailed && !rowsWrap.querySelector('.row')) {
-          showError('Some sections failed to load.');
-        }
-      } catch (e) {
+      } catch (_) {
         if (destroyed || mySeq !== seq) return;
-        showError(e && e.message ? e.message : null);
+      }
+      if (destroyed || mySeq !== seq) return;
+      resetRows();
+      for (let i = 0; i < INITIAL_SECTIONS; i++) await createSection(i);
+      if (destroyed || mySeq !== seq) return;
+      if (!sections.some((s) => s.el)) {
+        showError('The catalog could not be reached. Check your connection and try again.');
+      }
+    }
+
+    // Clear any search, (re)load the feed if needed, then reveal a section by
+    // key (used by the side rail). Creates any sections needed along the way.
+    async function scrollToSection(key) {
+      setInputsValue('');
+      const haveSection = mode === 'browse' && sections.some((s) => s.key === key && s.el);
+      if (!haveSection) await loadBrowse();
+      const idx = sections.findIndex((s) => s.key === key);
+      if (idx < 0) return;
+      for (let i = 0; i <= idx; i++) {
+        if (!sections[i].done && !sections[i].el) await createSection(i);
+      }
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const el = sections[idx] && sections[idx].el;
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        if (sections[idx] && sections[idx].done) return; // no content for this section
+        await new Promise((r) => setTimeout(r, 150));
       }
     }
 
@@ -1109,14 +1205,17 @@
       destroy() {
         destroyed = true;
         closePreview();
-        input.removeEventListener('input', onInput);
+        inputs.forEach((inp) => {
+          if (inp) inp.removeEventListener('input', onInput);
+        });
         container.innerHTML = '';
         container.classList.remove('browse');
-        if (externalInput) externalInput.value = '';
+        if (externalInputs) externalInputs.forEach((inp) => { if (inp) inp.value = ''; });
       },
       refresh() {
         loadBrowse();
       },
+      scrollToSection,
     };
   }
 

@@ -1061,21 +1061,56 @@
   }
 
   // --------------------------------------------------------------------------
-  // Home guide rail (left sidebar)
+  // Home guide rail (left sidebar) — persistent across home and room views
   // --------------------------------------------------------------------------
+  // Nav keys map to the feed section keys exposed by mountBrowse so the rail can
+  // jump straight to a section (and create it on demand if it is not yet there).
+  const ROW_KEYS = {
+    movies: 'movie',
+    series: 'tv',
+    anime: 'anime',
+    trending: 'trending',
+    'top-movies': 'topMovies',
+    'top-tv': 'topTv',
+    'now-playing': 'nowPlaying',
+    'airing-today': 'airingToday',
+  };
+
+  // Leave the room (if any) and land on the home surface, preserving the
+  // browser Back behavior used everywhere else in the app.
+  function goHome() {
+    const pushed = state._pushedRoom;
+    teardownRoomSession();
+    if (pushed) {
+      state._pushedRoom = false;
+      showHome();
+      history.back();
+    } else {
+      history.replaceState(null, '', '/');
+      showHome();
+    }
+  }
+
   function scrollToBrowseRow(key) {
-    const sel = '.browse [data-row="' + key + '"]';
-    let tries = 0;
-    const attempt = () => {
-      const el = document.querySelector(sel);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
-      }
-      if (++tries < 12) setTimeout(attempt, 160);
-      else toast('That section is still loading\u2026', true);
-    };
-    attempt();
+    if (state.browseHandle && state.browseHandle.scrollToSection) {
+      state.browseHandle.scrollToSection(key);
+      return;
+    }
+    const el = document.querySelector('.browse [data-row="' + key + '"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function scrollHomeTop() {
+    const home = $('home');
+    if (home && home.scrollTo) home.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function clearSearchInputs() {
+    const input = $('topnav-search-input');
+    if (input && input.value) input.value = '';
+    const sideInput = $('sidenav-search-input');
+    if (sideInput && sideInput.value) sideInput.value = '';
   }
 
   function setupSidenav() {
@@ -1089,26 +1124,19 @@
     items.forEach((it) => {
       it.addEventListener('click', () => {
         const key = it.dataset.nav;
+        const inRoom = !$('room').hidden;
+
         if (key === 'home') {
-          // Reset any search and reload the default hero + rows.
-          const input = $('topnav-search-input');
-          if (input && input.value) input.value = '';
+          if (inRoom) {
+            goHome();
+            return;
+          }
+          clearSearchInputs();
           if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
           setActive('home');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        } else if (key === 'movies' || key === 'series' || key === 'anime') {
-          const ROW_KEYS = { movies: 'movie', series: 'tv', anime: 'anime' };
-          const rowKey = ROW_KEYS[key] || key;
-          // If the row isn't rendered (e.g. we're in a search grid), reset to
-          // browse first so the row exists, then scroll to it.
-          if (!document.querySelector('.browse [data-row="' + rowKey + '"]')) {
-            const input = $('topnav-search-input');
-            if (input && input.value) input.value = '';
-            if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
-          }
-          setActive(key);
-          scrollToBrowseRow(rowKey);
+          scrollHomeTop();
         } else if (key === 'history') {
+          if (inRoom) goHome();
           const sec = $('history');
           if (sec && !sec.hidden) {
             setActive('history');
@@ -1118,6 +1146,12 @@
           }
         } else if (key === 'start-room') {
           startRoomWithVideo(null);
+        } else {
+          // Library section (movies, series, anime, trending, top-rated, ...).
+          const sectionKey = ROW_KEYS[key] || key;
+          if (inRoom) goHome();
+          setActive(key);
+          scrollToBrowseRow(sectionKey);
         }
       });
     });
@@ -1152,8 +1186,9 @@
     }
     state.browseHandle = WP.Catalog.mountBrowse($('browse'), {
       onSelect: (video) => startRoomWithVideo(video),
-      // The search bar lives in the top nav, in the same bar as the logo.
-      searchInput: $('topnav-search-input'),
+      // Two search bars drive the same search (kept in sync): the top-nav bar
+      // that shares the logo row and the side-rail's dedicated search bar.
+      searchInputs: [$('topnav-search-input'), $('sidenav-search-input')],
     });
     renderHistory();
   }

@@ -4,8 +4,7 @@
 
 /* ---- Top nav ----------------------------------------------------------------- */
 .topnav {
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   z-index: 50;
   display: flex;
   align-items: center;
@@ -84,19 +83,12 @@
 
 /* ---- Home ---------------------------------------------------------------------- */
 .home {
-  min-height: 100vh;
-  background: var(--bg);
-}
-
-/* Two-column shell: sticky guide rail on the left, content on the right. */
-.home__layout {
-  display: flex;
-  align-items: stretch;
-}
-
-.home__content {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  background: var(--bg);
+  scroll-behavior: smooth;
 }
 
 .browse {
@@ -104,13 +96,10 @@
 }
 
 /* ---- Side navigation (left guide rail) ------------------------------------------ */
+/* The rail lives at the app-shell level, so it stays visible on every view. */
 .sidenav {
-  position: sticky;
-  top: var(--topnav-h);
-  align-self: flex-start;
   flex: 0 0 var(--sidenav-w);
   width: var(--sidenav-w);
-  height: calc(100vh - var(--topnav-h));
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px 8px;
@@ -120,6 +109,54 @@
   flex-direction: column;
   gap: 10px;
   transition: width 0.2s ease, flex-basis 0.2s ease;
+}
+
+.sidenav__search {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 4px 4px;
+}
+
+.sidenav__search svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.sidenav__search-input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 10px 16px 10px 40px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidenav__search-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+}
+
+.sidenav__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.sidenav__heading {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 12px 4px;
+  white-space: nowrap;
 }
 
 .sidenav__group {
@@ -183,7 +220,9 @@ body.sidenav-collapsed .sidenav__item {
   gap: 0;
 }
 
-body.sidenav-collapsed .sidenav__label {
+body.sidenav-collapsed .sidenav__label,
+body.sidenav-collapsed .sidenav__heading,
+body.sidenav-collapsed .sidenav__search {
   display: none;
 }
 
@@ -1101,53 +1140,26 @@ body.sidenav-collapsed .sidenav__label {
     font-size: 13.5px;
   }
 
-  /* The guide rail becomes a horizontal, scrollable chip bar under the nav —
-     no drawer to open, everything stays one tap away. */
-  .home__layout {
-    flex-direction: column;
-  }
+  /* On small screens the guide rail collapses to a slim icon-only strip so the
+     player/content keeps the screen — the rail is still always visible. */
   .sidenav {
-    position: sticky;
-    top: var(--topnav-h);
-    flex: none;
-    width: 100%;
-    height: auto;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px 12px;
-    border-right: none;
-    border-bottom: 1px solid var(--border-soft);
-    display: flex;
-    flex-direction: row;
+    flex-basis: 56px;
+    width: 56px;
+    padding: 8px 6px;
     gap: 6px;
-    align-items: center;
   }
-  .sidenav__group {
-    display: contents; /* flatten groups into a single row of chips */
-  }
-  .sidenav__group--bottom {
-    margin-top: 0;
+  .sidenav__search,
+  .sidenav__heading,
+  .sidenav__label {
+    display: none;
   }
   .sidenav__item {
-    flex: 0 0 auto;
-    width: auto;
-    padding: 7px 14px;
-    gap: 8px;
-    border-radius: 999px;
-    background: var(--bg-elev);
-  }
-  body.sidenav-collapsed .sidenav {
-    width: 100%;
-  }
-  body.sidenav-collapsed .sidenav__item {
-    justify-content: flex-start;
-    gap: 8px;
-  }
-  body.sidenav-collapsed .sidenav__label {
-    display: inline;
+    justify-content: center;
+    gap: 0;
+    padding: 11px 0;
   }
   .topnav__hamburger {
-    display: none; /* the horizontal rail is already always visible */
+    display: none; /* the icon rail is already as slim as it gets */
   }
 }
 
