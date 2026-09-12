@@ -124,13 +124,19 @@ Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
 
 ## Synchronization model
 
-The room owns one authoritative playback clock. The host's play/pause/seek
-commands update it; the Durable Object broadcasts the new
-`(isPlaying, time, timestamp)` tuple. Every client — including the host —
-projects that tuple forward in wall-clock time and nudges its local player
-whenever it drifts beyond a tolerance threshold, giving sub-second sync without
-any clock negotiation. Host actions made inside the embedded player itself are
-detected and mirrored back to the room.
+The room owns one authoritative playback clock. The host's (or a granted
+guest's) explicit play/pause/seek commands update it; the Durable Object
+broadcasts the new `(isPlaying, time, timestamp)` tuple. Every client —
+including the controller — projects that tuple forward in wall-clock time and
+nudges its local player whenever it drifts beyond a tolerance threshold,
+giving sub-second sync without any clock negotiation.
+
+Picking a title **autoplays**: `videoChange` (and the first video set by the
+host on join) starts playback at `0` for the whole room, so nobody has to
+press a play button to begin watching. Playback state is changed only by the
+explicit controls — the player's own internal play/pause state is never
+mirrored back to the room (that caused the host to pause itself), so guests
+can never desync the room by clicking inside their own player.
 
 ## Project layout
 

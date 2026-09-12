@@ -317,7 +317,11 @@ export class WatchRoom {
         if (becameOwner) {
           peer.owner = true;
           this.meta.ownerId = peer.id;
-          if (video.id) this.meta.video = video;
+          if (video.id) {
+            this.meta.video = video;
+            // Picking a title starts the watch party — autoplay from 0.
+            this.playback = { isPlaying: true, time: 0, timestamp: now() };
+          }
         }
 
         // A freshly joined client starts from the room's shared timeline.
@@ -364,7 +368,9 @@ export class WatchRoom {
         const video = sanitizeMeta(msg.video);
         if (!video.id) break;
         this.meta.video = video;
-        this.playback = { isPlaying: false, time: 0, timestamp: now() };
+        // Choosing a video begins playback for the whole room — no need to
+        // press the UI play button to start.
+        this.playback = { isPlaying: true, time: 0, timestamp: now() };
         this.broadcast({
           type: MSG.VIDEO_CHANGE,
           video,
