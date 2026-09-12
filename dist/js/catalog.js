@@ -4,10 +4,13 @@
  * filters + a season/episode picker). Data comes from TMDB through the Worker
  * proxy at `/api/tmdb/...`, which injects the server-side API key.
  *
- * Playback still uses the Bingr watch URLs, whose IDs are TMDB IDs, so every
- * title maps 1:1 to a `bingr.one/watch/...` iframe:
+ * Playback still uses the Bingr watch URLs:
  *   movie -> /watch/movie/{tmdbId}
  *   tv    -> /watch/tv/{tmdbId}/{season}/{episode}
+ *   anime -> /watch/anime/{anilistId}/{episode}   (AniList ID, episode only)
+ *
+ * The catalog is TMDB-only, so anime (TMDB keyword 210024) is classified and
+ * mapped to an AniList ID via the Worker endpoint /api/anilist/{tmdbId}.
  */
 (function (global) {
   'use strict';
@@ -18,6 +21,8 @@
   const CACHE_KEY_PREFIX = 'wp:cat:';
   const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
   const ANIME_KEYWORD = 210024; // TMDB keyword id for "anime"
+  const ANILIST_CACHE_PREFIX = 'wp:anilist:';
+  const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
   // ---- tiny DOM helpers ------------------------------------------------------
   function h(tag, cls, text) {
@@ -62,6 +67,48 @@
     return data;
   }
 
+  // Resolve a TMDB TV id into { anime, anilistId, episodes, title } via the
+  // Worker (classifies with TMDB keywords, then looks the title up on AniList).
+  async function anilistApi(tmdbId) {
+    const cacheKey = ANILIST_CACHE_PREFIX + tmdbId;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const o = JSON.parse(raw);
+        if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data;
+      }
+    } catch (_) {}
+    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId), {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+    } catch (_) {}
+    return data;
+  }
+
+  // Lazily classify a batch of TV items as anime (used by the search filter).
+  async function classifyAnime(list) {
+    const tvs = (list || []).filter(
+      (r) => r && r.type === 'tv' && r._animeChecked !== true
+    );
+    if (!tvs.length) return;
+    await Promise.all(
+      tvs.map(async (r) => {
+        r._animeChecked = true;
+        try {
+          const info = await anilistApi(r.id);
+          r.isAnime = !!info.anime;
+          r.anilistId = info.anilistId != null ? info.anilistId : null;
+        } catch (_) {
+          r.isAnime = false;
+        }
+      })
+    );
+  }
+
   // ---- normalization -----------------------------------------------------------
   function normMovie(m) {
     return {
@@ -103,28 +150,35 @@
   function watchUrl(item, opts) {
     opts = opts || {};
     if (item.type === 'movie') return `${BINGR_WATCH}/movie/${item.id}`;
+    if (item.type === 'anime') {
+      const anilistId = item.anilistId != null ? item.anilistId : item.id;
+      return `${BINGR_WATCH}/anime/${anilistId}/${opts.episode || 1}`;
+    }
     return `${BINGR_WATCH}/tv/${item.id}/${opts.season || 1}/${opts.episode || 1}`;
   }
 
   function buildVideo(item, opts) {
     opts = opts || {};
+    const isAnime = item.type === 'anime' || !!item.isAnime;
+    const type = item.type === 'movie' ? 'movie' : (isAnime ? 'anime' : 'tv');
     return {
-      type: item.type === 'movie' ? 'movie' : 'tv',
+      type,
       id: String(item.id),
-      src: watchUrl(item, opts),
+      anilistId: item.anilistId != null ? String(item.anilistId) : null,
+      src: watchUrl({ type, id: item.id, anilistId: item.anilistId }, opts),
       title: item.title || '',
       year: item.year || '',
       poster: item.poster || '',
       backdrop: item.backdrop || '',
       rating: item.rating != null ? item.rating : null,
       overview: item.overview || '',
-      season: item.type === 'movie' ? null : opts.season || 1,
-      episode: item.type === 'movie' ? null : opts.episode || 1,
+      season: type === 'tv' ? opts.season || 1 : null,
+      episode: type === 'movie' ? null : opts.episode || 1,
     };
   }
 
   function typeLabel(item) {
-    if (item.isAnime) return 'Anime';
+    if (item.type === 'anime' || item.isAnime) return 'Anime';
     return item.type === 'movie' ? 'Movie' : 'Series';
   }
 
@@ -408,7 +462,23 @@
           renderDetailBody(body, item, extra, null, onPick, close);
         } else {
           const extra = await api('/tv/' + encodeURIComponent(item.id));
-          renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
+          // Classify: anime (AniList id, episode-only) or a regular series?
+          let info = null;
+          try {
+            info = await anilistApi(item.id);
+          } catch (_) {
+            info = null;
+          }
+          if (info && info.anime && info.anilistId != null) {
+            item.isAnime = true;
+            item.anilistId = info.anilistId;
+            renderAnimeBody(body, item, extra, info, onPick, close);
+          } else if (info && info.anime) {
+            item.isAnime = true;
+            renderAnimeUnresolved(body, item, extra);
+          } else {
+            renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
+          }
         }
       } catch (e) {
         body.innerHTML = '';
@@ -549,6 +619,90 @@
     renderEpisodes(usable[0], true);
   }
 
+  // Anime detail: episode-only picker (absolute numbering, AniList total).
+  function renderAnimeBody(body, item, extra, info, onPick, close) {
+    body.innerHTML = '';
+
+    const top = h('div', 'detail__top');
+    const poster = document.createElement('img');
+    poster.className = 'detail__poster';
+    poster.alt = '';
+    poster.src = (extra && extra.poster_path ? img(extra.poster_path, 'w500') : '') || item.poster || '';
+    poster.onerror = () => poster.remove();
+    top.appendChild(poster);
+
+    const infoEl = h('div', 'detail__info');
+    infoEl.appendChild(h('div', 'detail__title', (extra && (extra.name || extra.title)) || item.title));
+
+    const count = Math.max(
+      1,
+      Number(info && info.episodes) || Number(extra && extra.number_of_episodes) || 1
+    );
+    const metaParts = [];
+    if ((extra && extra.vote_average) || item.rating) {
+      metaParts.push('★ ' + Number((extra && extra.vote_average) || item.rating).toFixed(1));
+    }
+    const y = (extra && extra.first_air_date) || item.year || '';
+    if (y) metaParts.push(String(y).slice(0, 4));
+    metaParts.push('Anime');
+    metaParts.push(count + ' eps');
+    infoEl.appendChild(h('div', 'detail__meta', metaParts.join(' · ')));
+
+    const overview = (extra && extra.overview) || item.overview || '';
+    if (overview) infoEl.appendChild(h('p', 'detail__overview', overview));
+    top.appendChild(infoEl);
+    body.appendChild(top);
+
+    const section = h('div', 'detail__section');
+    section.appendChild(h('p', 'detail__label', 'Episode'));
+    const epGrid = h('div', 'detail__episodes');
+    const pick = (n) => {
+      onPick(buildVideo(item, { episode: n }));
+      close();
+    };
+
+    if (count > 120) {
+      const wrap = h('div', 'detail__actions');
+      const num = h('input', 'field__input');
+      num.type = 'number';
+      num.min = '1';
+      num.max = String(count);
+      num.value = '1';
+      num.style.width = '120px';
+      const go = h('button', 'btn btn--primary', 'Play episode');
+      go.type = 'button';
+      go.addEventListener('click', () => {
+        pick(Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1))));
+      });
+      wrap.appendChild(num);
+      wrap.appendChild(go);
+      epGrid.appendChild(wrap);
+    } else {
+      for (let n = 1; n <= count; n++) {
+        const b = h('button', 'ep-btn', String(n));
+        b.type = 'button';
+        b.addEventListener('click', () => pick(n));
+        epGrid.appendChild(b);
+      }
+    }
+    section.appendChild(epGrid);
+    body.appendChild(section);
+  }
+
+  // Detected as anime, but AniList lookup failed to yield an ID.
+  function renderAnimeUnresolved(body, item, extra) {
+    body.innerHTML = '';
+    const title = (extra && (extra.name || extra.title)) || item.title || 'This title';
+    body.appendChild(h('div', 'detail__title', title));
+    body.appendChild(
+      h(
+        'div',
+        'browse__empty',
+        "This looks like anime, but we couldn't match it on AniList, so it can't be played through the anime player yet."
+      )
+    );
+  }
+
   // ---- browse surface -----------------------------------------------------------------
   function mountBrowse(container, opts) {
     opts = opts || {};
@@ -572,9 +726,14 @@
     FILTERS.forEach(([key, label]) => {
       const c = h('button', 'chip' + (key === 'all' ? ' chip--active' : ''), label);
       c.type = 'button';
-      c.addEventListener('click', () => {
+      c.addEventListener('click', async () => {
         activeFilter = key;
         Object.keys(chipEls).forEach((k) => chipEls[k].classList.toggle('chip--active', k === key));
+        // The "Anime" filter needs each result classified (TMDB → AniList).
+        if (key === 'anime' && results.length) {
+          await classifyAnime(results);
+          if (destroyed) return;
+        }
         renderResults();
       });
       chipEls[key] = c;
@@ -775,6 +934,8 @@
           if (destroyed || mySeq !== seq) return;
           results = (data.results || []).map(normAny).filter(Boolean);
           if (!results.length || data.page >= (data.total_pages || 1)) done.search = true;
+          if (activeFilter === 'anime') await classifyAnime(results);
+          if (destroyed || mySeq !== seq) return;
           renderResults();
         } catch (e) {
           if (destroyed || mySeq !== seq) return;
@@ -862,6 +1023,7 @@
 
   global.WP.Catalog = {
     api,
+    anilistApi,
     buildVideo,
     watchUrl,
     typeLabel,

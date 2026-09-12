@@ -99,6 +99,7 @@ function sanitizeMeta(video) {
   return {
     type: sanitizeText(v.type).slice(0, 20),
     id: sanitizeText(v.id),
+    anilistId: sanitizeNum(v.anilistId),
     src: sanitizeText(v.src).slice(0, 600),
     title: sanitizeText(v.title).slice(0, 300),
     poster: sanitizeText(v.poster || v.thumb).slice(0, 600),

@@ -439,8 +439,12 @@
     const parts = [];
     if (v.rating) parts.push('\u2605 ' + Number(v.rating).toFixed(1));
     if (v.year) parts.push(String(v.year));
-    parts.push(v.type === 'movie' ? 'Movie' : 'Series');
-    if (v.type === 'tv' && v.season) {
+    if (v.type === 'movie') parts.push('Movie');
+    else if (v.type === 'anime') parts.push('Anime');
+    else parts.push('Series');
+    if (v.type === 'anime' && v.episode) {
+      parts.push('Ep ' + v.episode);
+    } else if (v.type === 'tv' && v.season) {
       parts.push('S' + v.season + (v.episode ? 'E' + v.episode : ''));
     }
     return parts.filter(Boolean).join(' \u00b7 ');
@@ -458,7 +462,7 @@
 
     if (v && v.src) {
       $('video-title').textContent = v.title || 'Now playing';
-      $('video-meta-line').textContent = videoMetaLine(v) || (v.type === 'movie' ? 'Movie' : 'Series');
+      $('video-meta-line').textContent = videoMetaLine(v) || (v.type === 'movie' ? 'Movie' : v.type === 'anime' ? 'Anime' : 'Series');
 
       // Overview / description box (collapsed to a few lines, YouTube-style).
       const desc = $('video-desc');
@@ -498,7 +502,7 @@
       }
     } else {
       $('video-title').textContent = 'Nothing playing yet';
-      $('video-meta-line').textContent = 'Movie';
+      $('video-meta-line').textContent = '';
       const desc = $('video-desc');
       if (desc) desc.hidden = true;
       if (img) img.remove();
@@ -708,9 +712,16 @@
     b.appendChild(body);
 
     b.addEventListener('click', () => {
-      const video = WP.Catalog.buildVideo(item);
-      if (canControl()) setRoomVideo(video);
-      else requestVideo(video);
+      const play = (video) => {
+        if (canControl()) setRoomVideo(video);
+        else requestVideo(video);
+      };
+      if (item.type === 'movie') {
+        play(WP.Catalog.buildVideo(item));
+      } else {
+        // Series/anime: open the picker so anime gets classified (AniList id).
+        WP.Catalog.openDetail(item, play);
+      }
     });
     return b;
   }

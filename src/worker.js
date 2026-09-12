@@ -11,18 +11,38 @@
 // No `socket.io` server, no Node-only dependencies.
 
 import { WatchRoom } from './WatchRoom.js';
+import { classifyIsAnime, matchAnilist } from './anilist.js';
 
 export { WatchRoom };
 
 const ROOM_RE = /^\/api\/room\/([A-Za-z0-9_-]+)\/?$/;
 const HEALTH_RE = /^\/room\/([A-Za-z0-9_-]+)\/health\/?$/;
+const ANILIST_RE = /^\/api\/anilist\/(\d+)\/?$/;
 const TMDB_ORIGIN = 'https://api.themoviedb.org/3';
+const ANILIST_ORIGIN = 'https://graphql.anilist.co';
+const ANIME_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const ANILIST_QUERY = `query ($search: String) {
+  Page(page: 1, perPage: 10) {
+    media(search: $search, type: ANIME, isAdult: false, sort: [SEARCH_MATCH]) {
+      id
+      idMal
+      title { romaji english native }
+      episodes
+      format
+      startDate { year }
+    }
+  }
+}`;
 
 // Best-effort in-memory cache for the TMDB proxy (resets with the isolate;
 // the `Cache-Control` header also lets Cloudflare cache responses).
 const catalogCache = new Map();
 const CACHE_TTL_MS = 180_000;
 const CACHE_MAX = 300;
+
+// TMDB → AniList resolution cache (7 days; the response is also CDN-cached).
+const animeCache = new Map();
+const ANIME_CACHE_MAX = 500;
 
 function corsHeaders() {
   return {
@@ -98,6 +118,62 @@ async function proxyTmdb(path, search, apiKey) {
   });
 }
 
+// Fetch and parse a TMDB JSON resource directly (server-side API key).
+async function tmdbJson(path, apiKey) {
+  const useBearer = looksLikeToken(apiKey);
+  const sep = path.includes('?') ? '&' : '?';
+  const url = useBearer
+    ? TMDB_ORIGIN + path
+    : TMDB_ORIGIN + path + sep + 'api_key=' + encodeURIComponent(apiKey);
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      ...(useBearer ? { Authorization: 'Bearer ' + apiKey } : {}),
+    },
+  });
+  if (!res.ok) throw new Error('TMDB ' + res.status);
+  return res.json();
+}
+
+// Classify a TMDB TV title and, when it is anime, resolve its AniList ID.
+async function resolveAnime(tmdbId, apiKey) {
+  const [show, keywords] = await Promise.all([
+    tmdbJson(`/tv/${tmdbId}`, apiKey),
+    tmdbJson(`/tv/${tmdbId}/keywords`, apiKey),
+  ]);
+  if (!show || !show.id) return { anime: false };
+  if (!classifyIsAnime(show, keywords)) return { anime: false };
+
+  let anilistId = null;
+  let episodes = null;
+  let title = null;
+  try {
+    const res = await fetch(ANILIST_ORIGIN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        query: ANILIST_QUERY,
+        variables: { search: show.name || show.original_name || '' },
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const media = (data && data.data && data.data.Page && data.data.Page.media) || [];
+      const best = matchAnilist(show, media);
+      if (best) {
+        anilistId = best.id;
+        episodes = best.episodes || null;
+        title = (best.title && (best.title.romaji || best.title.english)) || null;
+      }
+    }
+  } catch (_) {
+    // AniList unreachable — the caller gets { anime: true, anilistId: null }.
+  }
+
+  return { anime: true, anilistId, episodes, title };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -146,6 +222,29 @@ export default {
     if (path.startsWith('/api/')) {
       if (request.method !== 'GET') {
         return json({ error: 'Method not allowed' }, 405);
+      }
+
+      // TMDB ID → AniList ID (classification + resolution for anime).
+      if (path.startsWith('/api/anilist/')) {
+        const m = path.match(ANILIST_RE);
+        if (!m) return json({ error: 'Not found' }, 404);
+        const apiKey = env.TMDB_API_KEY;
+        if (!apiKey) {
+          return json({ error: 'TMDB_API_KEY is not configured' }, 503);
+        }
+        const tmdbId = m[1];
+        const hit = animeCache.get(tmdbId);
+        if (hit && hit.expires > Date.now()) {
+          return json(hit.data, 200, { 'Cache-Control': 'public, max-age=604800' });
+        }
+        try {
+          const data = await resolveAnime(tmdbId, apiKey);
+          if (animeCache.size >= ANIME_CACHE_MAX) animeCache.clear();
+          animeCache.set(tmdbId, { data, expires: Date.now() + ANIME_TTL_MS });
+          return json(data, 200, { 'Cache-Control': 'public, max-age=604800' });
+        } catch (e) {
+          return json({ error: 'AniList lookup failed', detail: String(e) }, 502);
+        }
       }
 
       if (path === '/api/rooms') {

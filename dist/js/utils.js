@@ -129,7 +129,9 @@
 
   function typeLabelFor(video) {
     if (!video) return '';
-    return video.type === 'movie' ? 'Movie' : 'Series';
+    if (video.type === 'movie') return 'Movie';
+    if (video.type === 'anime') return 'Anime';
+    return 'Series';
   }
 
   /** A video-request card shown in chat; the host can Accept/Reject it. */
@@ -198,6 +200,8 @@
     if (v.year) metaParts.push(String(v.year));
     if (v.type === 'tv' && v.season) {
       metaParts.push('S' + v.season + (v.episode ? 'E' + v.episode : ''));
+    } else if (v.type === 'anime' && v.episode) {
+      metaParts.push('Ep ' + v.episode);
     }
     const meta = document.createElement('div');
     meta.className = 'chat-request__meta';
