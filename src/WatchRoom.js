@@ -107,6 +107,8 @@ function sanitizeMeta(video) {
     year: sanitizeText(v.year).slice(0, 20),
     season: sanitizeNum(v.season),
     episode: sanitizeNum(v.episode),
+    rating: sanitizeNum(v.rating),
+    overview: sanitizeText(v.overview).slice(0, 1000),
   };
 }
 

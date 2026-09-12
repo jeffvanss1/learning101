@@ -419,10 +419,21 @@
   // --------------------------------------------------------------------------
   // Video UI
   // --------------------------------------------------------------------------
+  function videoMetaLine(v) {
+    const parts = [];
+    if (v.rating) parts.push('\u2605 ' + Number(v.rating).toFixed(1));
+    if (v.year) parts.push(String(v.year));
+    parts.push(v.type === 'movie' ? 'Movie' : 'Series');
+    if (v.type === 'tv' && v.season) {
+      parts.push('S' + v.season + (v.episode ? 'E' + v.episode : ''));
+    }
+    return parts.filter(Boolean).join(' \u00b7 ');
+  }
+
   function updateVideoUI() {
     const v = state.video;
-    const titleWrap = document.querySelector('.video-bar__title');
-    let img = titleWrap.querySelector('.video-bar__poster');
+    const thumb = $('video-thumb');
+    let img = thumb ? thumb.querySelector('.video-bar__poster') : null;
 
     // Everyone can browse; controllers change what plays, guests request.
     const cv = $('change-video');
@@ -431,18 +442,30 @@
 
     if (v && v.src) {
       $('video-title').textContent = v.title || 'Now playing';
+      $('video-meta-line').textContent = videoMetaLine(v) || (v.type === 'movie' ? 'Movie' : 'Series');
+
+      // Overview / description box (collapsed to a few lines, YouTube-style).
+      const desc = $('video-desc');
+      const ov = $('video-overview');
+      if (ov && v.overview) {
+        ov.textContent = v.overview;
+        if (desc) desc.hidden = false;
+      } else if (desc) {
+        desc.hidden = true;
+      }
+
       // Remember what was watched so the home page can show a history row.
       const hk = v.id + '|' + (v.season != null ? v.season : '') + '|' + (v.episode != null ? v.episode : '');
       if (hk !== state._lastHistoryKey) {
         state._lastHistoryKey = hk;
         WP.historyAdd(v);
       }
-      if (v.poster) {
+      if (v.poster && thumb) {
         if (!img) {
           img = document.createElement('img');
           img.className = 'video-bar__poster';
           img.alt = '';
-          titleWrap.prepend(img);
+          thumb.appendChild(img);
         }
         if (img.src !== v.poster) img.src = v.poster;
       } else if (img) {
@@ -459,6 +482,9 @@
       }
     } else {
       $('video-title').textContent = 'Nothing playing yet';
+      $('video-meta-line').textContent = 'Movie';
+      const desc = $('video-desc');
+      if (desc) desc.hidden = true;
       if (img) img.remove();
       showFallback();
       $('toggle-play').disabled = true;
@@ -623,42 +649,47 @@
   function recCard(item) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'rec-card';
+    b.className = 'upnext-item';
     b.title = item.title;
 
-    const poster = document.createElement('div');
-    poster.className = 'rec-card__poster';
-    if (item.poster) {
+    const thumb = document.createElement('div');
+    thumb.className = 'upnext-item__thumb';
+    const art = item.backdrop || item.poster;
+    if (art) {
       const im = document.createElement('img');
-      im.src = item.poster;
+      im.src = art;
       im.alt = '';
       im.loading = 'lazy';
       im.onerror = () => {
         im.remove();
-        poster.appendChild(
+        thumb.appendChild(
           document.createTextNode((item.title || '?').slice(0, 1).toUpperCase())
         );
       };
-      poster.appendChild(im);
+      thumb.appendChild(im);
     } else {
-      poster.appendChild(
+      thumb.appendChild(
         document.createTextNode((item.title || '?').slice(0, 1).toUpperCase())
       );
     }
 
+    const body = document.createElement('div');
+    body.className = 'upnext-item__body';
     const title = document.createElement('div');
-    title.className = 'rec-card__title';
+    title.className = 'upnext-item__title';
     title.textContent = item.title;
-
     const meta = document.createElement('div');
-    meta.className = 'rec-card__meta';
-    const parts = [item.type === 'movie' ? 'Movie' : 'Series'];
+    meta.className = 'upnext-item__meta';
+    const parts = [];
+    if (item.rating) parts.push('\u2605 ' + Number(item.rating).toFixed(1));
     if (item.year) parts.push(String(item.year));
-    meta.textContent = parts.join(' · ');
+    parts.push(item.type === 'movie' ? 'Movie' : 'Series');
+    meta.textContent = parts.filter(Boolean).join(' \u00b7 ');
+    body.appendChild(title);
+    body.appendChild(meta);
 
-    b.appendChild(poster);
-    b.appendChild(title);
-    b.appendChild(meta);
+    b.appendChild(thumb);
+    b.appendChild(body);
 
     b.addEventListener('click', () => {
       const video = WP.Catalog.buildVideo(item);

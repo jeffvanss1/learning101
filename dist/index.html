@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=6" />
+  <link rel="stylesheet" href="/css/style.css?v=7" />
   <link rel="stylesheet" href="/css/catalog.css?v=4" />
 </head>
 <body>
@@ -115,12 +115,27 @@
         </div>
 
         <div class="stage__under">
-          <div class="video-bar">
-            <div class="video-bar__title">
-              <span id="video-title" class="video-title">Nothing playing yet</span>
+          <div class="progress-row">
+            <span id="time-current" class="progress-row__time">0:00</span>
+            <input id="seek-bar" class="progress-row__bar" type="range" min="0" max="1000" value="0" step="0.1" disabled />
+            <span id="time-duration" class="progress-row__time">0:00</span>
+          </div>
+
+          <div class="video-info">
+            <div class="video-info__head">
+              <h1 class="video-title" id="video-title">Nothing playing yet</h1>
               <span id="host-chip" class="host-chip" hidden>You're the host</span>
             </div>
-            <div class="video-bar__controls">
+
+            <div class="video-info__row">
+              <div class="video-info__meta">
+                <div class="video-info__thumb" id="video-thumb"></div>
+                <div class="video-info__meta-text">
+                  <div class="video-info__line" id="video-meta-line">Movie</div>
+                  <span class="muted" id="video-hint">The host controls playback for everyone.</span>
+                </div>
+              </div>
+
               <div class="video-actions" id="video-actions">
                 <button id="toggle-play" class="btn btn--primary btn--sm" type="button" disabled>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
@@ -134,32 +149,9 @@
                 </button>
               </div>
             </div>
-          </div>
 
-          <div class="progress-row">
-            <span id="time-current" class="progress-row__time">0:00</span>
-            <input id="seek-bar" class="progress-row__bar" type="range" min="0" max="1000" value="0" step="0.1" disabled />
-            <span id="time-duration" class="progress-row__time">0:00</span>
-          </div>
-
-          <div class="video-bar__description">
-            <span id="video-hint" class="muted">The host controls playback for everyone.</span>
-          </div>
-
-          <div class="recs" id="recs" hidden>
-            <button id="recs-toggle" class="recs__toggle" type="button" aria-expanded="false" aria-controls="recs-body">
-              <svg class="recs__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-              <span id="recs-toggle-label">Show similar titles</span>
-              <span class="recs__count" id="recs-count" hidden></span>
-            </button>
-            <div class="recs__body" id="recs-body" hidden>
-              <div class="recs__head">
-                <h3 class="recs__title">Similar titles</h3>
-                <span class="recs__hint muted" id="recs-hint">Pick one to play it for the room</span>
-              </div>
-              <div class="recs__scroller" id="recs-scroller"></div>
+            <div class="video-info__desc" id="video-desc" hidden>
+              <p id="video-overview" class="video-info__overview"></p>
             </div>
           </div>
         </div>
@@ -186,6 +178,23 @@
             </svg>
           </button>
         </form>
+
+        <div class="recs" id="recs" hidden>
+          <button id="recs-toggle" class="recs__toggle" type="button" aria-expanded="false" aria-controls="recs-body">
+            <svg class="recs__chevron" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            <span id="recs-toggle-label">Up next</span>
+            <span class="recs__count" id="recs-count" hidden></span>
+          </button>
+          <div class="recs__body" id="recs-body" hidden>
+            <div class="recs__head">
+              <h3 class="recs__title">Up next</h3>
+              <span class="recs__hint muted" id="recs-hint">Pick one to play it for the room</span>
+            </div>
+            <div class="recs__scroller" id="recs-scroller"></div>
+          </div>
+        </div>
       </aside>
     </div>
   </main>
@@ -259,10 +268,10 @@
     </div>
   </div>
 
-  <script src="/js/utils.js?v=4"></script>
-  <script src="/js/api.js?v=4"></script>
-  <script src="/js/player.js?v=4"></script>
-  <script src="/js/catalog.js?v=4"></script>
-  <script src="/js/app.js?v=4"></script>
+  <script src="/js/utils.js?v=5"></script>
+  <script src="/js/api.js?v=5"></script>
+  <script src="/js/player.js?v=5"></script>
+  <script src="/js/catalog.js?v=5"></script>
+  <script src="/js/app.js?v=5"></script>
 </body>
 </html>
