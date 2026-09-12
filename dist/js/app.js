@@ -21,6 +21,7 @@
     scrubbing: false,
     _lastHistoryKey: null,
     _lastRecKey: null,
+    _pushedRoom: false,
   };
 
   // Incremented whenever the playing video changes so a stale recommendations
@@ -167,9 +168,9 @@
   }
 
   async function startRoomWithVideo(video) {
-    const name = await promptName();
-    if (!name) return;
-    state.name = name;
+    // A saved identity is reused silently — no re-login every time.
+    if (!state.name) state.name = await promptName();
+    if (!state.name) return;
     try {
       const room = await WP.apiCreateRoom();
       if (video) global.__wpCurrentVideo = video;
@@ -208,9 +209,15 @@
     $('home').hidden = true;
     $('room').hidden = false;
 
-    // Replace history with the canonical room URL.
+    // Push the room URL onto history (instead of replacing it) so the browser
+    // back button returns to the home page rather than leaving the app.
     const path = `/room/${roomId}`;
-    if (location.pathname !== path) history.replaceState(null, '', path);
+    if (location.pathname !== path) {
+      history.pushState(null, '', path);
+      state._pushedRoom = true;
+    } else {
+      state._pushedRoom = false;
+    }
 
     initRoomUI();
 
@@ -248,6 +255,15 @@
     $('toggle-play').onclick = onTogglePlay;
     $('change-video').onclick = onOpenBrowse;
     $('recs-toggle').onclick = onToggleRecs;
+
+    // The logo acts as a "back to home" button inside the room.
+    const brand = $('brand-home');
+    if (brand) {
+      brand.onclick = (e) => {
+        e.preventDefault();
+        onLeaveRoom();
+      };
+    }
 
     // Mobile chat sheet toggle (header button + tapping the chat header).
     const chatToggle = $('chat-toggle');
@@ -909,6 +925,16 @@
     state._lastRecKey = null;
     resetRecs();
     $('browse-modal').hidden = true;
+
+    if (state._pushedRoom) {
+      // We navigated here from the home page — step back to it in history.
+      state._pushedRoom = false;
+      history.back();
+      return;
+    }
+
+    // Deep-linked straight into the room: no home page behind us, so render
+    // home in place.
     $('room').hidden = true;
     $('home-nav').hidden = false;
     $('home').hidden = false;
@@ -1019,6 +1045,8 @@
 
   function boot() {
     setupChrome();
+    // Restore the saved identity so we never ask for a name twice.
+    state.name = savedName();
     const m = location.pathname.match(/^\/room\/([A-Za-z0-9_-]+)\/?$/);
     if (m) {
       handleDeepLink(m[1]);
