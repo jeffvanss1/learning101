@@ -241,6 +241,12 @@
     $('toggle-play').onclick = onTogglePlay;
     $('change-video').onclick = onOpenBrowse;
 
+    // Mobile chat sheet toggle (header button + tapping the chat header).
+    const chatToggle = $('chat-toggle');
+    if (chatToggle) chatToggle.onclick = onToggleChat;
+    const sideHead = document.querySelector('.sidebar__head');
+    if (sideHead) sideHead.onclick = onToggleChat;
+
     const seek = $('seek-bar');
     seek.oninput = () => {
       state.scrubbing = true;
@@ -455,6 +461,17 @@
     if (!canControl() || !state.sync || !state.video || !state.video.src) return;
     if (state.sync.localPlaying) state.sync.localPause(state.sync.localTime);
     else state.sync.localPlay(state.sync.localTime);
+  }
+
+  // Collapse/expand the chat bottom sheet on small screens. No visual effect
+  // on desktop (the CSS scopes the sheet to mobile), so it is safe to leave
+  // the toggle always wired.
+  function onToggleChat() {
+    const roomEl = $('room');
+    const open = roomEl.classList.toggle('chat-open');
+    const btn = $('chat-toggle');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) scrollChat();
   }
 
   // Browse-to-change-video (host / granted controllers only)
