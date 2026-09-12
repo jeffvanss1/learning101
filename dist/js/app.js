@@ -20,7 +20,12 @@
     roomBrowseHandle: null,
     scrubbing: false,
     _lastHistoryKey: null,
+    _lastRecKey: null,
   };
+
+  // Incremented whenever the playing video changes so a stale recommendations
+  // fetch can never overwrite the current video's suggestions.
+  let recSeq = 0;
 
   // May I drive playback? (host or a guest the host has granted controls to)
   function canControl() {
@@ -185,6 +190,11 @@
     state.isOwner = false;
     state.amAllowed = false;
     state.chatLoaded = false;
+    state._lastRecKey = null;
+    const recs = $('recs');
+    if (recs) recs.hidden = true;
+    const scroller = $('recs-scroller');
+    if (scroller) scroller.innerHTML = '';
 
     // Tear down any previous session so listeners/commands never stack.
     if (state.sync) {
@@ -293,6 +303,9 @@
         state.chatLoaded = true;
         renderChatHistory(msg.chat);
       }
+      if (Array.isArray(msg.requests)) {
+        msg.requests.forEach((r) => appendRequest(r));
+      }
     });
 
     client.on('peers', (msg) => {
@@ -308,6 +321,14 @@
 
     client.on('system', (msg) => appendSystemMessage(msg.text));
     client.on('chat', (msg) => appendChatMessage(msg.message));
+
+    client.on('request', (msg) => {
+      if (msg.request) appendRequest(msg.request);
+    });
+
+    client.on('requestResolved', (msg) => {
+      WP.markRequestResolved(msg.requestId, msg.accepted);
+    });
 
     client.on('videoChange', (msg) => {
       state.video = msg.video;
@@ -405,6 +426,11 @@
     const titleWrap = document.querySelector('.video-bar__title');
     let img = titleWrap.querySelector('.video-bar__poster');
 
+    // Everyone can browse; controllers change what plays, guests request.
+    const cv = $('change-video');
+    cv.disabled = false;
+    cv.querySelector('span').textContent = canControl() ? 'Change video' : 'Request video';
+
     if (v && v.src) {
       $('video-title').textContent = v.title || 'Now playing';
       // Remember what was watched so the home page can show a history row.
@@ -426,13 +452,20 @@
       }
       hideFallback();
       $('toggle-play').disabled = !canControl();
-      $('change-video').disabled = !canControl();
+
+      // Refresh "similar titles" only when the identity actually changes.
+      const recKey = v.type + ':' + v.id;
+      if (recKey !== state._lastRecKey) {
+        state._lastRecKey = recKey;
+        renderRecommendations();
+      }
     } else {
       $('video-title').textContent = 'Nothing playing yet';
       if (img) img.remove();
       showFallback();
       $('toggle-play').disabled = true;
-      $('change-video').disabled = !canControl();
+      state._lastRecKey = null;
+      renderRecommendations();
     }
     $('video-hint').textContent = state.isOwner
       ? 'You are the host \u2014 playback controls sync to everyone.'
@@ -443,7 +476,9 @@
 
   function updateHostUI() {
     $('host-chip').hidden = !state.isOwner;
-    $('video-actions').hidden = !canControl();
+    // Play/pause is controller-only; browse/request stays visible for everyone.
+    $('video-actions').hidden = false;
+    $('toggle-play').style.display = canControl() ? '' : 'none';
     // Keep the sync manager aware of whether this client drives playback.
     if (state.sync) state.sync.isController = canControl();
     updateVideoUI();
@@ -474,14 +509,17 @@
     if (open) scrollChat();
   }
 
-  // Browse-to-change-video (host / granted controllers only)
+  // Browse: controllers pick what plays immediately; guests propose a title
+  // and the host approves it from chat.
   function onOpenBrowse() {
-    if (!canControl()) return;
     $('browse-modal').hidden = false;
+    const title = $('browse-modal-title');
+    if (title) title.textContent = canControl() ? 'Choose a video' : 'Request a video';
     const body = $('browse-modal-body');
     state.roomBrowseHandle = WP.Catalog.mountBrowse(body, {
       onSelect: (video) => {
-        setRoomVideo(video);
+        if (canControl()) setRoomVideo(video);
+        else requestVideo(video);
         closeBrowse();
       },
     });
@@ -501,6 +539,99 @@
     updateVideoUI();
     if (state.sync) state.sync.loadVideo(video);
     if (state.client) state.client.send({ type: 'videoChange', video });
+  }
+
+  function requestVideo(video) {
+    if (!state.client || !video || !video.src) return;
+    if (state.client.send({ type: 'request', video })) {
+      toast('Request sent to the host');
+    }
+  }
+
+  // "Similar content" under the player, refreshed on every video change and
+  // excluding the title currently playing.
+  async function renderRecommendations() {
+    const recs = $('recs');
+    const scroller = $('recs-scroller');
+    if (!recs || !scroller) return;
+    const v = state.video;
+    const mySeq = ++recSeq;
+    if (!v || !v.id || !v.type) {
+      recs.hidden = true;
+      scroller.innerHTML = '';
+      return;
+    }
+    recs.hidden = false;
+    const hint = $('recs-hint');
+    if (hint) hint.textContent = canControl()
+      ? 'Pick one to play it for the room'
+      : 'Pick one to request it from the host';
+    scroller.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+      scroller.appendChild(document.createElement('div')).className = 'rec-card rec-card--skeleton';
+    }
+    let items = [];
+    try {
+      items = await WP.Catalog.fetchRecommendations(v);
+    } catch (_) {
+      items = [];
+    }
+    if (mySeq !== recSeq) return; // the video changed while we were fetching
+    const filtered = items.filter((it) => it && it.id && it.id !== String(v.id));
+    scroller.innerHTML = '';
+    if (!filtered.length) {
+      recs.hidden = true;
+      return;
+    }
+    filtered.slice(0, 12).forEach((it) => scroller.appendChild(recCard(it)));
+  }
+
+  function recCard(item) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rec-card';
+    b.title = item.title;
+
+    const poster = document.createElement('div');
+    poster.className = 'rec-card__poster';
+    if (item.poster) {
+      const im = document.createElement('img');
+      im.src = item.poster;
+      im.alt = '';
+      im.loading = 'lazy';
+      im.onerror = () => {
+        im.remove();
+        poster.appendChild(
+          document.createTextNode((item.title || '?').slice(0, 1).toUpperCase())
+        );
+      };
+      poster.appendChild(im);
+    } else {
+      poster.appendChild(
+        document.createTextNode((item.title || '?').slice(0, 1).toUpperCase())
+      );
+    }
+
+    const title = document.createElement('div');
+    title.className = 'rec-card__title';
+    title.textContent = item.title;
+
+    const meta = document.createElement('div');
+    meta.className = 'rec-card__meta';
+    const parts = [item.type === 'movie' ? 'Movie' : 'Series'];
+    if (item.year) parts.push(String(item.year));
+    meta.textContent = parts.join(' · ');
+
+    b.appendChild(poster);
+    b.appendChild(title);
+    b.appendChild(meta);
+
+    b.addEventListener('click', () => {
+      const video = WP.Catalog.buildVideo(item);
+      if (canControl()) setRoomVideo(video);
+      else requestVideo(video);
+    });
+    return b;
   }
 
   // --------------------------------------------------------------------------
@@ -535,6 +666,24 @@
     const empty = chat.querySelector('.chat-empty');
     if (empty) empty.remove();
     chat.appendChild(WP.chatMessageNode({ type: 'system', text }));
+    scrollChat();
+  }
+
+  function appendRequest(request) {
+    if (!request) return;
+    const chat = $('chat');
+    const empty = chat.querySelector('.chat-empty');
+    if (empty) empty.remove();
+    chat.appendChild(
+      WP.chatMessageNode(
+        { type: 'request', ...request, author: request.name },
+        {
+          canAccept: !!(state.isOwner && !request.resolved),
+          onAccept: (id) => state.client && state.client.send({ type: 'accept', requestId: id }),
+          onReject: (id) => state.client && state.client.send({ type: 'reject', requestId: id }),
+        }
+      )
+    );
     scrollChat();
   }
 
@@ -692,6 +841,11 @@
     state.video = null;
     state.isOwner = false;
     state.myPeerId = null;
+    state._lastRecKey = null;
+    const recs = $('recs');
+    if (recs) recs.hidden = true;
+    const recScroller = $('recs-scroller');
+    if (recScroller) recScroller.innerHTML = '';
     $('browse-modal').hidden = true;
     $('room').hidden = true;
     $('home-nav').hidden = false;

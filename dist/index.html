@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=3" />
-  <link rel="stylesheet" href="/css/catalog.css?v=3" />
+  <link rel="stylesheet" href="/css/style.css?v=4" />
+  <link rel="stylesheet" href="/css/catalog.css?v=4" />
 </head>
 <body>
   <!-- Toast / notification surface -->
@@ -142,6 +142,14 @@
             <span id="time-duration" class="progress-row__time">0:00</span>
           </div>
 
+          <div class="recs" id="recs" hidden>
+            <div class="recs__head">
+              <h3 class="recs__title">Similar titles</h3>
+              <span class="recs__hint muted" id="recs-hint">Pick one to play it for the room</span>
+            </div>
+            <div class="recs__scroller" id="recs-scroller"></div>
+          </div>
+
           <div class="video-bar__description">
             <span id="video-hint" class="muted">The host controls playback for everyone.</span>
           </div>
@@ -235,17 +243,17 @@
   <div class="modal" id="browse-modal" hidden>
     <div class="modal__card modal__card--wide">
       <div class="modal__head">
-        <h2 class="modal__title">Choose a video</h2>
+        <h2 class="modal__title" id="browse-modal-title">Choose a video</h2>
         <button class="modal__close" type="button" data-close="browse-modal" aria-label="Close">&times;</button>
       </div>
       <div id="browse-modal-body" class="browse"></div>
     </div>
   </div>
 
-  <script src="/js/utils.js?v=3"></script>
-  <script src="/js/api.js?v=3"></script>
-  <script src="/js/player.js?v=3"></script>
-  <script src="/js/catalog.js?v=3"></script>
-  <script src="/js/app.js?v=3"></script>
+  <script src="/js/utils.js?v=4"></script>
+  <script src="/js/api.js?v=4"></script>
+  <script src="/js/player.js?v=4"></script>
+  <script src="/js/catalog.js?v=4"></script>
+  <script src="/js/app.js?v=4"></script>
 </body>
 </html>

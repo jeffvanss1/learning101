@@ -32,12 +32,17 @@ export const MSG = {
   TRANSFER: 'transfer',
   GRANT: 'grant',
   REVOKE: 'revoke',
+  REQUEST: 'request',
+  ACCEPT: 'accept',
+  REJECT: 'reject',
+  REQUEST_RESOLVED: 'requestResolved',
   PING: 'ping',
   PONG: 'pong',
   ERROR: 'error',
 };
 
 const MAX_CHAT = 200; // messages kept per room
+const MAX_REQUESTS = 50; // video requests kept per room
 const MAX_PLAYBACK_STATE_AGE_MS = 2 * 60 * 60 * 1000; // 2h before state is stale
 const EMOTE_DIGITS = 6;
 
@@ -129,16 +134,18 @@ export class WatchRoom {
     this.chat = undefined;
     this.playback = undefined;
     this.sessions = undefined;
+    this.requests = undefined;
   }
 
   // ---- Lifecycle / state ---------------------------------------------------
   async ensureLoaded() {
     if (this.meta !== undefined) return;
-    const [meta, chat, playback, sessions] = await Promise.all([
+    const [meta, chat, playback, sessions, requests] = await Promise.all([
       this.storage.get('meta'),
       this.storage.get('chat'),
       this.storage.get('playback'),
       this.storage.get('sessions'),
+      this.storage.get('requests'),
     ]);
     this.meta = {
       id: this.ctx.id.toString(),
@@ -156,6 +163,7 @@ export class WatchRoom {
       ...(playback && typeof playback === 'object' ? playback : {}),
     };
     this.sessions = Array.isArray(sessions) ? sessions : [];
+    this.requests = Array.isArray(requests) ? requests : [];
   }
 
   async persist() {
@@ -164,6 +172,7 @@ export class WatchRoom {
       chat: this.chat.slice(-MAX_CHAT),
       playback: this.playback,
       sessions: this.sessions,
+      requests: this.requests.slice(-MAX_REQUESTS),
     });
   }
 
@@ -480,6 +489,75 @@ export class WatchRoom {
         break;
       }
 
+      case MSG.REQUEST: {
+        // Anyone can propose a title; the host decides whether to play it.
+        const video = sanitizeMeta(msg.video);
+        if (!video.id || !video.src) break;
+        const request = {
+          id: makeId(),
+          peerId: peer.id,
+          name: peer.name || 'Anonymous',
+          emote: peer.emote,
+          video,
+          resolved: false,
+          ts: now(),
+        };
+        this.requests.push(request);
+        if (this.requests.length > MAX_REQUESTS) {
+          this.requests = this.requests.slice(-MAX_REQUESTS);
+        }
+        this.broadcast({ type: MSG.REQUEST, request });
+        dirty = true;
+        break;
+      }
+
+      case MSG.ACCEPT: {
+        if (!this.isOwner(peer)) break;
+        const requestId = sanitizeText(msg.requestId);
+        const request = this.requests.find((r) => r.id === requestId && !r.resolved);
+        if (!request) break;
+        request.resolved = true;
+        request.accepted = true;
+        // Accepting plays the requested title for the whole room immediately.
+        this.meta.video = request.video;
+        this.playback = { isPlaying: true, time: 0, timestamp: now() };
+        this.broadcast({
+          type: MSG.VIDEO_CHANGE,
+          video: request.video,
+          playback: this.playback,
+          ts: now(),
+        });
+        this.broadcast({
+          type: MSG.REQUEST_RESOLVED,
+          requestId,
+          accepted: true,
+          title: request.video.title,
+          by: request.name,
+        });
+        this.broadcastSystem(`${request.name}'s request is now playing`);
+        dirty = true;
+        break;
+      }
+
+      case MSG.REJECT: {
+        if (!this.isOwner(peer)) break;
+        const requestId = sanitizeText(msg.requestId);
+        const request = this.requests.find((r) => r.id === requestId && !r.resolved);
+        if (!request) break;
+        request.resolved = true;
+        request.accepted = false;
+        this.broadcast({
+          type: MSG.REQUEST_RESOLVED,
+          requestId,
+          accepted: false,
+          title: request.video.title,
+          by: request.name,
+        });
+        this.broadcastSystem(`${peer.name || 'The host'} declined ${request.name}'s request`);
+        dirty = true;
+        break;
+      }
+
       case MSG.PING:
         this.send(ws, { type: MSG.PONG, ts: msg.ts ?? now() });
         break;
@@ -557,6 +635,7 @@ export class WatchRoom {
       ownerId: this.meta.ownerId,
       video: this.meta.video,
       topic: this.meta.topic,
+      requests: this.requests.slice(-20),
       playback: stale
         ? { isPlaying: false, time: 0, timestamp: now() }
         : {

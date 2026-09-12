@@ -109,6 +109,155 @@
     return document.getElementById(id);
   }
 
+  function makeAvatar(name, emote) {
+    const avatar = document.createElement('div');
+    avatar.className = 'chat-msg__avatar';
+    avatar.textContent = initialFor(name); // fallback while the image loads / if offline
+    const [bg, fg] = colorFor(name);
+    avatar.style.background = bg;
+    avatar.style.color = fg;
+    const aimg = document.createElement('img');
+    aimg.alt = '';
+    aimg.loading = 'lazy';
+    // `emote` from the server is an opaque id (ev_...), not an image URL, so
+    // only use it when it actually looks like a URL; otherwise use DiceBear.
+    aimg.src = /^https?:\/\//i.test(emote || '') ? emote : avatarUrl(name);
+    aimg.onerror = () => aimg.remove();
+    avatar.appendChild(aimg);
+    return avatar;
+  }
+
+  function typeLabelFor(video) {
+    if (!video) return '';
+    return video.type === 'movie' ? 'Movie' : 'Series';
+  }
+
+  /** A video-request card shown in chat; the host can Accept/Reject it. */
+  function requestNode(msg, opts) {
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-msg chat-msg--request';
+    wrap.dataset.requestId = msg.id || '';
+    if (msg.resolved) wrap.classList.add('is-resolved');
+
+    wrap.appendChild(makeAvatar(msg.name || msg.author || 'Anonymous', msg.emote));
+
+    const body = document.createElement('div');
+    body.className = 'chat-msg__body';
+
+    const head = document.createElement('div');
+    head.className = 'chat-msg__head';
+    const author = document.createElement('span');
+    author.className = 'chat-msg__author';
+    author.textContent = msg.name || msg.author || 'Anonymous';
+    head.appendChild(author);
+    const time = document.createElement('span');
+    time.className = 'chat-msg__time';
+    time.textContent = formatTime(msg.ts);
+    head.appendChild(time);
+    body.appendChild(head);
+
+    const hint = document.createElement('div');
+    hint.className = 'chat-msg__text';
+    hint.textContent = msg.resolved
+      ? 'Requested a title'
+      : 'wants to watch this';
+    body.appendChild(hint);
+
+    const card = document.createElement('div');
+    card.className = 'chat-request';
+
+    const v = msg.video || {};
+    const thumb = document.createElement('div');
+    thumb.className = 'chat-request__poster';
+    if (v.poster || v.thumb) {
+      const im = document.createElement('img');
+      im.src = v.poster || v.thumb;
+      im.alt = '';
+      im.loading = 'lazy';
+      im.onerror = () => {
+        im.remove();
+        thumb.appendChild(
+          document.createTextNode((v.title || '?').slice(0, 1).toUpperCase())
+        );
+      };
+      thumb.appendChild(im);
+    } else {
+      thumb.appendChild(
+        document.createTextNode((v.title || '?').slice(0, 1).toUpperCase())
+      );
+    }
+    card.appendChild(thumb);
+
+    const info = document.createElement('div');
+    info.className = 'chat-request__info';
+    const title = document.createElement('div');
+    title.className = 'chat-request__title';
+    title.textContent = v.title || 'Untitled';
+    info.appendChild(title);
+    const metaParts = [typeLabelFor(v)];
+    if (v.year) metaParts.push(String(v.year));
+    if (v.type === 'tv' && v.season) {
+      metaParts.push('S' + v.season + (v.episode ? 'E' + v.episode : ''));
+    }
+    const meta = document.createElement('div');
+    meta.className = 'chat-request__meta';
+    meta.textContent = metaParts.filter(Boolean).join(' · ');
+    info.appendChild(meta);
+    card.appendChild(info);
+
+    if (msg.resolved) {
+      const badge = document.createElement('span');
+      badge.className = 'chat-request__badge';
+      badge.textContent = msg.accepted ? 'Playing now' : 'Declined';
+      card.appendChild(badge);
+    } else if (opts.canAccept) {
+      const actions = document.createElement('div');
+      actions.className = 'chat-request__actions';
+      const accept = document.createElement('button');
+      accept.type = 'button';
+      accept.className = 'btn btn--primary btn--sm';
+      accept.textContent = 'Accept';
+      accept.addEventListener('click', () => opts.onAccept(msg.id));
+      const reject = document.createElement('button');
+      reject.type = 'button';
+      reject.className = 'btn btn--ghost btn--sm';
+      reject.textContent = 'Reject';
+      reject.addEventListener('click', () => opts.onReject(msg.id));
+      actions.appendChild(accept);
+      actions.appendChild(reject);
+      card.appendChild(actions);
+    }
+
+    body.appendChild(card);
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  /** Mark a pending request card as accepted/declined (host decision). */
+  function markRequestResolved(requestId, accepted) {
+    if (!requestId) return;
+    // Server request ids are alphanumeric (base36/base62); strip anything else
+    // so the value stays safe inside an attribute selector.
+    const safeId = String(requestId).replace(/[^A-Za-z0-9_-]/g, '');
+    if (!safeId) return;
+    const card = document.querySelector(
+      '.chat-msg--request[data-request-id="' + safeId + '"]'
+    );
+    if (!card) return;
+    card.classList.add('is-resolved');
+    const hint = card.querySelector('.chat-msg__text');
+    if (hint) hint.textContent = 'Requested a title';
+    const actions = card.querySelector('.chat-request__actions');
+    if (actions) actions.remove();
+    const holder = card.querySelector('.chat-request');
+    if (holder && !holder.querySelector('.chat-request__badge')) {
+      const badge = document.createElement('span');
+      badge.className = 'chat-request__badge';
+      badge.textContent = accepted ? 'Playing now' : 'Declined';
+      holder.appendChild(badge);
+    }
+  }
+
   /** Build a safe DOM node for a chat message (avoids innerHTML injection). */
   function chatMessageNode(msg, opts) {
     opts = opts || {};
@@ -126,23 +275,14 @@
       return wrap;
     }
 
+    if (msg.type === 'request') {
+      return requestNode(msg, opts);
+    }
+
     wrap.className = 'chat-msg';
     if (opts.isMe) wrap.classList.add('chat-msg--me');
 
-    const avatar = document.createElement('div');
-    avatar.className = 'chat-msg__avatar';
-    avatar.textContent = initialFor(msg.author); // fallback while the image loads / if offline
-    const [bg, fg] = colorFor(msg.author);
-    avatar.style.background = bg;
-    avatar.style.color = fg;
-    const aimg = document.createElement('img');
-    aimg.alt = '';
-    aimg.loading = 'lazy';
-    // `emote` from the server is an opaque id (ev_...), not an image URL, so
-    // only use it when it actually looks like a URL; otherwise use DiceBear.
-    aimg.src = /^https?:\/\//i.test(msg.emote || '') ? msg.emote : avatarUrl(msg.author);
-    aimg.onerror = () => aimg.remove();
-    avatar.appendChild(aimg);
+    wrap.appendChild(makeAvatar(msg.author, msg.emote));
 
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
@@ -167,7 +307,6 @@
 
     body.appendChild(head);
     body.appendChild(text);
-    wrap.appendChild(avatar);
     wrap.appendChild(body);
     return wrap;
   }
@@ -298,6 +437,7 @@
     hashStr,
     avatarUrl,
     chatMessageNode,
+    markRequestResolved,
     initialFor,
     formatTime,
     formatDuration,

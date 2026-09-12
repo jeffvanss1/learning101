@@ -136,6 +136,26 @@
     return parts.join(' · ');
   }
 
+  // ---- recommendations --------------------------------------------------------
+  // "Similar content" for the room player: TMDB's own recommendations endpoint.
+  async function fetchRecommendations(video) {
+    if (!video || !video.id || !video.type) return [];
+    const id = encodeURIComponent(video.id);
+    const path = video.type === 'movie'
+      ? `/movie/${id}/recommendations`
+      : `/tv/${id}/recommendations`;
+    try {
+      const data = await api(path);
+      const results = (data && data.results) || [];
+      const items = video.type === 'movie'
+        ? results.map(normMovie)
+        : results.map((t) => normTv(t, false));
+      return items.filter((it) => it && it.title);
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ---- hover preview (autoplaying trailer + plot) -------------------------------
   const CAN_HOVER =
     typeof window.matchMedia === 'function' &&
@@ -305,16 +325,6 @@
     });
     attachHoverPreview(card, item);
     return card;
-  }
-
-  function renderRow(container, title, items, onSelect) {
-    if (!items || !items.length) return;
-    const sec = h('section', 'row');
-    sec.appendChild(h('h2', 'row__title', title));
-    const scroller = h('div', 'row__scroller');
-    items.forEach((it) => scroller.appendChild(cardNode(it, onSelect)));
-    sec.appendChild(scroller);
-    container.appendChild(sec);
   }
 
   function renderHero(container, item, onSelect) {
@@ -598,6 +608,100 @@
     let destroyed = false;
     let seq = 0;
 
+    // ---- infinite scroll state ----
+    let mode = 'browse'; // 'browse' | 'search'
+    let searchQuery = '';
+    let gridEl = null;
+    const rowScrollers = {}; // source key -> scroller element
+    const pages = { movie: 1, tv: 1, anime: 1, trending: 1, search: 1 };
+    const done = { movie: false, tv: false, anime: false, trending: false, search: false };
+    let loadingMore = false;
+    let io = null;
+    const sentinel = h('div', 'browse__sentinel');
+
+    function resetRows() {
+      rowsWrap.innerHTML = '';
+      rowsWrap.appendChild(sentinel);
+      gridEl = null;
+      rowScrollers.movie = rowScrollers.tv = rowScrollers.anime = rowScrollers.trending = null;
+    }
+
+    function addRow(key, title, items) {
+      if (!items || !items.length) return;
+      const sec = h('section', 'row');
+      sec.appendChild(h('h2', 'row__title', title));
+      const scroller = h('div', 'row__scroller');
+      items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
+      sec.appendChild(scroller);
+      rowsWrap.insertBefore(sec, sentinel);
+      rowScrollers[key] = scroller;
+    }
+
+    function appendToRow(key, items) {
+      const scroller = rowScrollers[key];
+      if (!scroller || !items || !items.length) return;
+      items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
+    }
+
+    async function loadMoreBrowse() {
+      const tasks = [];
+      const fetchPage = (key, path, map) => {
+        pages[key]++;
+        const sep = path.indexOf('?') === -1 ? '?' : '&';
+        return api(path + sep + 'page=' + pages[key])
+          .then((d) => {
+            const items = (d.results || []).map(map).filter(Boolean);
+            if (destroyed || mode !== 'browse') return;
+            appendToRow(key, items);
+            if (!items.length || d.page >= (d.total_pages || 1)) done[key] = true;
+          })
+          .catch(() => { done[key] = true; });
+      };
+      if (!done.movie) tasks.push(fetchPage('movie', '/movie/popular', normMovie));
+      if (!done.tv) tasks.push(fetchPage('tv', '/tv/popular', (t) => normTv(t, false)));
+      if (!done.anime) tasks.push(fetchPage('anime', '/discover/tv?with_keywords=' + ANIME_KEYWORD + '&sort_by=popularity.desc', (t) => normTv(t, true)));
+      if (!done.trending) tasks.push(fetchPage('trending', '/trending/all/week', normAny));
+      await Promise.all(tasks);
+    }
+
+    async function loadMoreSearch() {
+      if (done.search || !searchQuery) return;
+      pages.search++;
+      try {
+        const data = await api('/search/multi?query=' + encodeURIComponent(searchQuery) + '&include_adult=false&page=' + pages.search);
+        if (destroyed || mode !== 'search') return;
+        const items = (data.results || []).map(normAny).filter(Boolean);
+        if (!items.length || data.page >= (data.total_pages || 1)) done.search = true;
+        results = results.concat(items);
+        if (gridEl) {
+          const empty = gridEl.querySelector('.browse__empty');
+          if (empty) empty.remove();
+          items.filter(matchesFilter).forEach((it) => gridEl.appendChild(cardNode(it, choose)));
+        }
+      } catch (_) {
+        done.search = true;
+      }
+    }
+
+    async function loadMore() {
+      if (loadingMore || destroyed) return;
+      loadingMore = true;
+      try {
+        if (mode === 'search' && searchQuery) await loadMoreSearch();
+        else if (mode === 'browse') await loadMoreBrowse();
+      } finally {
+        loadingMore = false;
+      }
+    }
+
+    function setupInfiniteScroll() {
+      if (typeof IntersectionObserver === 'undefined') return; // graceful fallback
+      io = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMore();
+      }, { rootMargin: '800px 0px' });
+      io.observe(sentinel);
+    }
+
     function choose(item) {
       if (item.type === 'movie') {
         onSelect(buildVideo(item));
@@ -616,15 +720,15 @@
     function renderResults() {
       filters.hidden = false;
       heroWrap.style.display = 'none';
-      rowsWrap.innerHTML = '';
+      resetRows();
       const list = results.filter(matchesFilter);
-      const grid = h('div', 'grid');
+      gridEl = h('div', 'grid');
       if (!list.length) {
-        grid.appendChild(h('div', 'browse__empty', 'No results \u2014 try another title.'));
+        gridEl.appendChild(h('div', 'browse__empty', 'No results \u2014 try another title.'));
       } else {
-        list.slice(0, 60).forEach((it) => grid.appendChild(cardNode(it, choose)));
+        list.forEach((it) => gridEl.appendChild(cardNode(it, choose)));
       }
-      rowsWrap.appendChild(grid);
+      rowsWrap.insertBefore(gridEl, sentinel);
     }
 
     function showError(detail) {
@@ -646,30 +750,39 @@
       if (!q) {
         seq++;
         results = [];
+        mode = 'browse';
+        searchQuery = '';
+        Object.keys(pages).forEach((k) => { pages[k] = 1; done[k] = false; });
         filters.hidden = true;
         heroWrap.style.display = '';
-        rowsWrap.innerHTML = '';
         loadBrowse();
         return;
       }
       searchTimer = setTimeout(async () => {
         const mySeq = ++seq;
-        rowsWrap.innerHTML = '';
+        mode = 'search';
+        searchQuery = q;
+        pages.search = 1;
+        done.search = false;
+        results = [];
+        resetRows();
         const grid = h('div', 'grid');
         grid.appendChild(h('div', 'browse__empty', 'Searching\u2026'));
-        rowsWrap.appendChild(grid);
+        rowsWrap.insertBefore(grid, sentinel);
         filters.hidden = true;
         try {
           const data = await api('/search/multi?query=' + encodeURIComponent(q) + '&include_adult=false');
           if (destroyed || mySeq !== seq) return;
           results = (data.results || []).map(normAny).filter(Boolean);
+          if (!results.length || data.page >= (data.total_pages || 1)) done.search = true;
           renderResults();
         } catch (e) {
           if (destroyed || mySeq !== seq) return;
           filters.hidden = true;
-          rowsWrap.innerHTML = '';
-          rowsWrap.appendChild(
-            h('div', 'browse__empty', 'Search failed: ' + (e && e.message ? e.message : ''))
+          resetRows();
+          rowsWrap.insertBefore(
+            h('div', 'browse__empty', 'Search failed: ' + (e && e.message ? e.message : '')),
+            sentinel
           );
         }
       }, 350);
@@ -678,12 +791,17 @@
 
     function renderLoading() {
       heroWrap.innerHTML = '<div class="hero__skeleton"></div>';
-      rowsWrap.innerHTML =
-        '<div class="row__skeleton"><div class="skel-card"></div><div class="skel-card"></div><div class="skel-card"></div><div class="skel-card"></div><div class="skel-card"></div></div>';
+      resetRows();
+      const skel = h('div', 'row__skeleton');
+      for (let i = 0; i < 5; i++) skel.appendChild(h('div', 'skel-card'));
+      rowsWrap.insertBefore(skel, sentinel);
     }
 
     async function loadBrowse() {
       const mySeq = ++seq;
+      mode = 'browse';
+      searchQuery = '';
+      Object.keys(pages).forEach((k) => { pages[k] = 1; done[k] = false; });
       renderLoading();
       try {
         const [trendingAll, movies, tv, anime] = await Promise.allSettled([
@@ -700,18 +818,18 @@
             : [];
         renderHero(heroWrap, all.find((x) => x.backdrop) || all[0] || null, choose);
 
-        rowsWrap.innerHTML = '';
+        resetRows();
         if (movies.status === 'fulfilled') {
-          renderRow(rowsWrap, 'Popular Movies', (movies.value.results || []).map(normMovie).slice(0, 18), choose);
+          addRow('movie', 'Popular Movies', (movies.value.results || []).map(normMovie).slice(0, 18));
         }
         if (tv.status === 'fulfilled') {
-          renderRow(rowsWrap, 'Popular TV Shows', (tv.value.results || []).map((t) => normTv(t, false)).slice(0, 18), choose);
+          addRow('tv', 'Popular TV Shows', (tv.value.results || []).map((t) => normTv(t, false)).slice(0, 18));
         }
         if (anime.status === 'fulfilled') {
-          renderRow(rowsWrap, 'Popular Anime', (anime.value.results || []).map((t) => normTv(t, true)).slice(0, 18), choose);
+          addRow('anime', 'Popular Anime', (anime.value.results || []).map((t) => normTv(t, true)).slice(0, 18));
         }
         if (all.length) {
-          renderRow(rowsWrap, 'Trending Now', all.slice(0, 18), choose);
+          addRow('trending', 'Trending Now', all.slice(0, 18));
         }
 
         const anyFailed = [trendingAll, movies, tv, anime].some((r) => r.status === 'rejected');
@@ -725,6 +843,7 @@
     }
 
     loadBrowse();
+    setupInfiniteScroll();
 
     return {
       destroy() {
@@ -748,5 +867,6 @@
     typeLabel,
     mountBrowse,
     openDetail,
+    fetchRecommendations,
   };
 })(window);
