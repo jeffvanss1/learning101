@@ -9,11 +9,9 @@
  *     anime  -> https://bingr.one/watch/anime/{anilistId}/{episode}
  *
  *   commands (posted to iframe.contentWindow):
- *     { command: "play" }
- *     { command: "pause" }
- *     { command: "seek",  time: seconds }
- *     { command: "volume", level: 0..1 }
- *     { command: "mute",  muted: true|false }
+ *     { command: "play" }    { command: "pause" }
+ *     { command: "seek", time: seconds }
+ *     { command: "volume", level: 0..1 }  { command: "mute", muted: bool }
  *     { command: "getStatus" }
  *
  *   status events (from the iframe):
@@ -21,15 +19,34 @@
  *     message.data.data.event === "playerstatus"
  *       with data.data.currentTime / duration / playing
  *
- * Every client projects the room's (isPlaying, time, timestamp) tuple forward
- * in wall-clock time and nudges the local player whenever it drifts beyond a
- * tolerance, so everyone stays within ~a second of each other.
+ * ---------------------------------------------------------------------------
+ * Model (single source of truth):
+ *
+ *   The SERVER owns the room's (isPlaying, time, timestamp). The controller
+ *   (host, or a guest granted controls) changes it only via explicit actions
+ *   (play / pause / seek / videoChange). Every client — controller included —
+ *   converges its local player onto that server clock:
+ *
+ *     1. while the iframe is loading, nothing is sent (the player isn't
+ *        ready to accept commands yet);
+ *     2. once the iframe has loaded (the `load` event ALWAYS fires — and the
+ *        Bingr player does not autoplay on its own), we seek into position
+ *        and then play, so a joiner autoplays in sync;
+ *     3. on every player status report we re-converge: seek if we are more
+ *        than a tolerance away, and match play/pause state. Play is
+ *        idempotent (re-asserted only while we're not playing), and pause is
+ *        throttled, so neither can loop.
+ *
+ *   The player's own internal play/pause is never mirrored back to the server
+ *   (that was the source of "the host pauses itself"): only explicit room
+ *   controls change the room state.
+ * ---------------------------------------------------------------------------
  */
 (function (global) {
   'use strict';
 
   const DRIFT_TOLERANCE = 0.75; // seconds before nudging the local player
-  const SEEK_THRESHOLD = 3.5; // seconds before forcing a hard seek
+  const SEEK_THRESHOLD = 3.5; // seconds before forcing a hard seek (paused rooms)
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
   const PAUSE_ASSERT_MS = 2500; // min gap between pause re-asserts (anti-loop)
@@ -45,8 +62,8 @@
       this.duration = null;
       this.isBuffering = false;
       this.ready = false;
-      this._suppressed = 0;
-      this._lastMsg = null;
+      this._lastMsg = null; // latest authoritative playback tuple (with timestamp)
+      this._lastAppliedTs = 0; // staleness guard: ignore older server snapshots
       this._iframeLoaded = false;
       this._lastPauseAssert = 0;
       this._statusTimer = null;
@@ -92,6 +109,7 @@
       this.localPlaying = false;
       this.duration = null;
       this._lastMsg = null;
+      this._lastAppliedTs = 0;
       this._clearSyncTimer();
       this._stopPolling();
       this.emit('video', { video: this.video });
@@ -104,7 +122,7 @@
       // Changing the iframe src is how the Bingr player loads a title.
       const sameSrc = this.iframe && this.iframe.getAttribute('src') === video.src;
       if (sameSrc) {
-        // Already loaded; nothing to reload. Re-apply any pending target.
+        // Already loaded — nothing to reload, just re-apply the pending target.
         this._iframeLoaded = true;
         this._startPolling();
         this._syncToTarget();
@@ -136,8 +154,7 @@
 
     pause() {
       // Pause in place — do NOT seek. A seek around a pause makes some
-      // players resume playback, which turned one host pause into an endless
-      // "pausing every second" loop on remote clients.
+      // players resume playback, which caused the "pausing every second" loop.
       this.post({ command: 'pause' });
       this.localPlaying = false;
       this.localUpdatedAt = Date.now();
@@ -150,8 +167,6 @@
     }
 
     // Seek only when the target is meaningfully different from where we are.
-    // A "seek" to the current position can make some players resume playback,
-    // which broke pause sync on remote clients.
     _seekTo(time) {
       const t = Number(time);
       if (Number.isFinite(t) && Math.abs(t - this.localTime) > 0.5) {
@@ -159,7 +174,7 @@
       }
     }
 
-    // ---- host actions (optimistic local apply + broadcast intent) ----------
+    // ---- controller actions (optimistic local apply + broadcast intent) ----
     localPlay(time) {
       this.play(time !== undefined ? time : this.localTime);
       this.emit('control', { action: 'play', time: this.localTime });
@@ -191,8 +206,8 @@
         case 'seek':
           // Every playback broadcast carries the authoritative `playback`
           // tuple from the server. Use it so an incoming seek can never
-          // overwrite the room's play/pause state with our (possibly stale)
-          // local state — that made joins look like a pause for everyone.
+          // overwrite the room's play/pause state with our local state —
+          // that made joins look like a pause for everyone.
           this.applyRemote(msg.playback || {
             isPlaying: msg.type === 'play',
             time: msg.time,
@@ -204,6 +219,8 @@
       }
     }
 
+    // Project the room's (isPlaying, time, timestamp) tuple onto the current
+    // wall clock. If playing, time advances; if paused, time is fixed.
     estimate(msg) {
       const now = Date.now();
       let time = Number(msg.time) || 0;
@@ -213,12 +230,17 @@
     }
 
     applyRemote(msg) {
+      // Staleness guard: never let an older server snapshot overwrite a newer
+      // one (a late `state`/`videoChange` was pausing the host after it had
+      // already started playing).
+      const ts = Number(msg && msg.timestamp);
+      if (Number.isFinite(ts) && ts < this._lastAppliedTs) return;
+      if (Number.isFinite(ts)) this._lastAppliedTs = ts;
+
       // Keep the RAW message (with its timestamp) so the target is re-projected
       // against the current wall clock whenever we actually apply it — a
-      // joiner's player can take seconds to load, and freezing the position at
-      // join time left it behind the rest of the room.
+      // joiner's player can take seconds to load.
       this._lastMsg = msg;
-      if (Date.now() - this._suppressed < 500) return;
       this._syncToTarget();
     }
 
@@ -234,8 +256,7 @@
 
       if (target.isPlaying) {
         // Autoplay a joiner: seek into position first, then resume. A
-        // redundant play is harmless, so always assert it when we're not
-        // already playing.
+        // redundant play is harmless, so assert it whenever we're not playing.
         if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) {
           this.seek(target.time);
           this._scheduleSync(600); // re-check once the seek settles
@@ -246,7 +267,7 @@
           this.seek(target.time);
           this._scheduleSync(600);
         }
-        // Pause a joiner landing in a paused room — throttled against loops.
+        // Pause a client landing in a paused room — throttled against loops.
         if (this.localPlaying && Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS) {
           this.pause();
           this._lastPauseAssert = Date.now();

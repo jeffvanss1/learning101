@@ -19,7 +19,6 @@
     browseHandle: null,
     roomBrowseHandle: null,
     scrubbing: false,
-    _hostMirror: null,
     _lastHistoryKey: null,
   };
 
@@ -185,7 +184,6 @@
     state.myPeerId = null;
     state.isOwner = false;
     state.amAllowed = false;
-    state._hostMirror = null;
     state.chatLoaded = false;
 
     // Swap views.
@@ -323,9 +321,12 @@
   function wireSync(sync) {
     sync.on('video', () => updateVideoUI());
 
+    // A controller action (play / pause / seek) is applied locally by the
+    // sync manager and broadcast here. The room's playback state only changes
+    // through these explicit controls — never by mirroring the player's own
+    // internal state, which was the source of the "host pauses itself" bug.
     sync.on('control', ({ action, time }) => {
       if (!state.client || !canControl()) return;
-      sync._suppressed = Date.now();
       if (action === 'play') state.client.send({ type: 'play', time });
       else if (action === 'pause') state.client.send({ type: 'pause', time });
       else if (action === 'seek') state.client.send({ type: 'seek', time });
@@ -333,10 +334,6 @@
 
     sync.on('progress', ({ time, playing, duration }) => {
       updateProgress(time, playing, duration);
-      // Mirror controller actions taken inside the embedded player itself.
-      if (canControl() && state.client) {
-        mirrorHostState(time, playing);
-      }
     });
 
     sync.on('buffering', () => setConnStatus('Buffering\u2026', true));
@@ -348,24 +345,6 @@
     sync.on('unavailable', () => {
       toast('The player does not expose remote control (Server 2 fallback). Sync may be limited.', true);
     });
-  }
-
-  function mirrorHostState(time, playing) {
-    const now = Date.now();
-    const wasOurAction = now - state.sync._suppressed < 700;
-    const prev = state._hostMirror;
-    if (!wasOurAction && prev) {
-      const projected = prev.playing ? prev.time + (now - prev.at) / 1000 : prev.time;
-      const drift = time - projected;
-      if (Math.abs(drift) > 1.2) {
-        state.client.send({ type: 'seek', time });
-        state.sync._suppressed = now;
-      } else if (playing !== prev.playing) {
-        state.client.send({ type: playing ? 'play' : 'pause', time });
-        state.sync._suppressed = now;
-      }
-    }
-    state._hostMirror = { playing, time, at: now };
   }
 
   function updateProgress(time, playing, duration) {
