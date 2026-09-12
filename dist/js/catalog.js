@@ -886,6 +886,7 @@
     function addRow(key, title, items) {
       if (!items || !items.length) return;
       const sec = h('section', 'row');
+      sec.dataset.row = key; // lets the side nav scroll to this section
       sec.appendChild(h('h2', 'row__title', title));
       const scroller = h('div', 'row__scroller');
       items.forEach((it) => scroller.appendChild(cardNode(it, choose)));

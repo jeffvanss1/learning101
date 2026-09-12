@@ -22,14 +22,19 @@
   --blue-hover: #65b8ff;
   --green: #2ba640;
 
-  --font: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica,
-    Arial, sans-serif;
+  /* The system type stack Apple ships on its site: SF Pro on Apple devices
+     (Display/Text/Icons), with graceful fallbacks everywhere else. */
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 
   --header-h: 60px;
   --sidebar-w: 380px;
+  --topnav-h: 60px;
+  --sidenav-w: 224px;
+  --sidenav-w-collapsed: 72px;
 }
 
 * {

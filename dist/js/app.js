@@ -117,6 +117,9 @@
     // the `history.back()` we call when leaving a room).
     window.addEventListener('popstate', onPopState);
 
+    // Home guide rail (left sidebar).
+    setupSidenav();
+
     document.querySelectorAll('.modal__close').forEach((btn) => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));
     });
@@ -1055,6 +1058,88 @@
       card.addEventListener('click', () => startRoomWithVideo(v));
       scroller.appendChild(card);
     });
+  }
+
+  // --------------------------------------------------------------------------
+  // Home guide rail (left sidebar)
+  // --------------------------------------------------------------------------
+  function scrollToBrowseRow(key) {
+    const sel = '.browse [data-row="' + key + '"]';
+    let tries = 0;
+    const attempt = () => {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      if (++tries < 12) setTimeout(attempt, 160);
+      else toast('That section is still loading\u2026', true);
+    };
+    attempt();
+  }
+
+  function setupSidenav() {
+    const nav = $('sidenav');
+    if (!nav) return;
+    const items = Array.from(nav.querySelectorAll('.sidenav__item[data-nav]'));
+    const setActive = (key) => {
+      items.forEach((it) => it.classList.toggle('is-active', it.dataset.nav === key));
+    };
+
+    items.forEach((it) => {
+      it.addEventListener('click', () => {
+        const key = it.dataset.nav;
+        if (key === 'home') {
+          // Reset any search and reload the default hero + rows.
+          const input = $('topnav-search-input');
+          if (input && input.value) input.value = '';
+          if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
+          setActive('home');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (key === 'movies' || key === 'series' || key === 'anime') {
+          const ROW_KEYS = { movies: 'movie', series: 'tv', anime: 'anime' };
+          const rowKey = ROW_KEYS[key] || key;
+          // If the row isn't rendered (e.g. we're in a search grid), reset to
+          // browse first so the row exists, then scroll to it.
+          if (!document.querySelector('.browse [data-row="' + rowKey + '"]')) {
+            const input = $('topnav-search-input');
+            if (input && input.value) input.value = '';
+            if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
+          }
+          setActive(key);
+          scrollToBrowseRow(rowKey);
+        } else if (key === 'history') {
+          const sec = $('history');
+          if (sec && !sec.hidden) {
+            setActive('history');
+            sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            toast('Nothing in your watch history yet.');
+          }
+        } else if (key === 'start-room') {
+          startRoomWithVideo(null);
+        }
+      });
+    });
+
+    // Collapse/expand toggle (desktop): remembered across visits.
+    const toggle = $('nav-toggle-sidenav');
+    if (toggle) {
+      const apply = (collapsed) => {
+        document.body.classList.toggle('sidenav-collapsed', collapsed);
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+      };
+      try {
+        apply(localStorage.getItem('wp:sidenav') === 'collapsed');
+      } catch (_) {}
+      toggle.addEventListener('click', () => {
+        const collapsed = document.body.classList.toggle('sidenav-collapsed');
+        try {
+          localStorage.setItem('wp:sidenav', collapsed ? 'collapsed' : 'open');
+        } catch (_) {}
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+      });
+    }
   }
 
   // --------------------------------------------------------------------------

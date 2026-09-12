@@ -7,11 +7,10 @@
   <meta name="theme-color" content="#0f0f0f" />
   <title>WatchParty — Watch together, live</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/css/style.css?v=7" />
-  <link rel="stylesheet" href="/css/catalog.css?v=4" />
+  <!-- Type is the system stack Apple uses (SF Pro on Apple devices, Segoe UI /
+       Roboto elsewhere) — no web font download, so it matches apple.com. -->
+  <link rel="stylesheet" href="/css/style.css?v=8" />
+  <link rel="stylesheet" href="/css/catalog.css?v=5" />
 </head>
 <body>
   <!-- Toast / notification surface -->
@@ -19,6 +18,11 @@
 
   <!-- Home / browse -->
   <nav class="topnav" id="home-nav">
+    <button id="nav-toggle-sidenav" class="topnav__hamburger" type="button" aria-label="Toggle navigation" aria-expanded="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
     <a class="brand" href="/" aria-label="WatchParty home">
       <span class="brand__mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -40,14 +44,50 @@
   </nav>
 
   <main id="home" class="home">
-    <section id="history" class="history" hidden>
-      <div class="history__head">
-        <h2 class="row__title">Watch history</h2>
-        <button id="history-clear" class="btn btn--ghost btn--sm" type="button">Clear</button>
+    <div class="home__layout">
+      <aside class="sidenav" id="sidenav" aria-label="Explore">
+        <nav class="sidenav__group">
+          <button class="sidenav__item is-active" data-nav="home" type="button" title="Home">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            <span class="sidenav__label">Home</span>
+          </button>
+          <button class="sidenav__item" data-nav="movies" type="button" title="Movies">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+            <span class="sidenav__label">Movies</span>
+          </button>
+          <button class="sidenav__item" data-nav="series" type="button" title="Series">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+            <span class="sidenav__label">Series</span>
+          </button>
+          <button class="sidenav__item" data-nav="anime" type="button" title="Anime">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"></path><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"></path></svg>
+            <span class="sidenav__label">Anime</span>
+          </button>
+          <button class="sidenav__item" data-nav="history" type="button" title="Watch history">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+            <span class="sidenav__label">Watch history</span>
+          </button>
+        </nav>
+
+        <nav class="sidenav__group sidenav__group--bottom">
+          <button class="sidenav__item sidenav__item--accent" data-nav="start-room" type="button" title="Start a room">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+            <span class="sidenav__label">Start a room</span>
+          </button>
+        </nav>
+      </aside>
+
+      <div class="home__content">
+        <section id="history" class="history" hidden>
+          <div class="history__head">
+            <h2 class="row__title">Watch history</h2>
+            <button id="history-clear" class="btn btn--ghost btn--sm" type="button">Clear</button>
+          </div>
+          <div id="history-scroller" class="history__scroller"></div>
+        </section>
+        <div id="browse" class="browse"></div>
       </div>
-      <div id="history-scroller" class="history__scroller"></div>
-    </section>
-    <div id="browse" class="browse"></div>
+    </div>
   </main>
 
   <!-- Watch room -->

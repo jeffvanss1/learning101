@@ -63,14 +63,128 @@
   color: var(--text-muted);
 }
 
+/* Collapse toggle for the home guide rail. */
+.topnav__hamburger {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.topnav__hamburger:hover {
+  background: var(--bg-hover);
+}
+
 /* ---- Home ---------------------------------------------------------------------- */
 .home {
   min-height: 100vh;
   background: var(--bg);
 }
 
+/* Two-column shell: sticky guide rail on the left, content on the right. */
+.home__layout {
+  display: flex;
+  align-items: stretch;
+}
+
+.home__content {
+  flex: 1;
+  min-width: 0;
+}
+
 .browse {
   min-height: 100vh;
+}
+
+/* ---- Side navigation (left guide rail) ------------------------------------------ */
+.sidenav {
+  position: sticky;
+  top: var(--topnav-h);
+  align-self: flex-start;
+  flex: 0 0 var(--sidenav-w);
+  width: var(--sidenav-w);
+  height: calc(100vh - var(--topnav-h));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 8px;
+  background: var(--bg);
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: width 0.2s ease, flex-basis 0.2s ease;
+}
+
+.sidenav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidenav__group--bottom {
+  margin-top: auto;
+}
+
+.sidenav__item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease;
+}
+
+.sidenav__item svg {
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+.sidenav__item:hover {
+  background: var(--bg-hover);
+}
+
+.sidenav__item.is-active {
+  background: var(--bg-raised);
+  font-weight: 600;
+}
+
+.sidenav__item--accent {
+  color: var(--red);
+}
+.sidenav__item--accent:hover {
+  background: rgba(255, 0, 51, 0.14);
+}
+
+/* Collapsed: icon-only rail (labels slide away), driven by body.sidenav-collapsed. */
+body.sidenav-collapsed .sidenav {
+  flex-basis: var(--sidenav-w-collapsed);
+  width: var(--sidenav-w-collapsed);
+}
+
+body.sidenav-collapsed .sidenav__item {
+  justify-content: center;
+  gap: 0;
+}
+
+body.sidenav-collapsed .sidenav__label {
+  display: none;
 }
 
 /* ---- Search -------------------------------------------------------------------- */
@@ -141,6 +255,7 @@
   max-width: 1400px;
   margin: 18px auto 0;
   padding: 0 16px;
+  scroll-margin-top: calc(var(--topnav-h) + 12px);
 }
 
 .history__head {
@@ -390,6 +505,7 @@
 
 .row {
   margin-top: 14px;
+  scroll-margin-top: calc(var(--topnav-h) + 12px);
 }
 
 .row__title {
@@ -983,6 +1099,55 @@
   .topnav__search-input {
     padding: 9px 14px 9px 38px;
     font-size: 13.5px;
+  }
+
+  /* The guide rail becomes a horizontal, scrollable chip bar under the nav —
+     no drawer to open, everything stays one tap away. */
+  .home__layout {
+    flex-direction: column;
+  }
+  .sidenav {
+    position: sticky;
+    top: var(--topnav-h);
+    flex: none;
+    width: 100%;
+    height: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    align-items: center;
+  }
+  .sidenav__group {
+    display: contents; /* flatten groups into a single row of chips */
+  }
+  .sidenav__group--bottom {
+    margin-top: 0;
+  }
+  .sidenav__item {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 7px 14px;
+    gap: 8px;
+    border-radius: 999px;
+    background: var(--bg-elev);
+  }
+  body.sidenav-collapsed .sidenav {
+    width: 100%;
+  }
+  body.sidenav-collapsed .sidenav__item {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  body.sidenav-collapsed .sidenav__label {
+    display: inline;
+  }
+  .topnav__hamburger {
+    display: none; /* the horizontal rail is already always visible */
   }
 }
 
