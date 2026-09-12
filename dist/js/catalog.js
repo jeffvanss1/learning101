@@ -1188,6 +1188,7 @@
         if (!sections[i].done && !sections[i].el) await createSection(i);
       }
       for (let attempt = 0; attempt < 40; attempt++) {
+        if (destroyed) return;
         const el = sections[idx] && sections[idx].el;
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1205,6 +1206,7 @@
       destroy() {
         destroyed = true;
         closePreview();
+        if (io) { io.disconnect(); io = null; }
         inputs.forEach((inp) => {
           if (inp) inp.removeEventListener('input', onInput);
         });
