@@ -47,6 +47,47 @@ export async function handleUserSearch(request: Request, env: Env): Promise<Resp
     return errorJson(500, 'User search failed', String(e));
   }
 
+  // 1-2 character queries are noise magnets ('e' matches nearly everyone).
+  // LIKE matches keep their rank-ordered top-N; but the WIDENING (fuzzy/typo
+  // scan) is skipped entirely, and relevance-zero results are dropped — so
+  // typing 'e' returns genuinely-good matches only, not a directory dump.
+  if (q.length <= 2 && rows.length) {
+    // 1-2 character queries are noise magnets ('e' matches nearly everyone).
+    // Keep the LIKE prefilter (cheap), rank it, and drop relevance-zero hits —
+    // NO widening scan, so short queries return genuinely-good matches only.
+    const order = rankCandidates(
+      q,
+      rows.map((r) => ({ username: r.username, displayName: r.display_name }))
+    );
+    const me0 = await sessionUser(request, env);
+    const ranked0 = order.map((i) => rows[i]).filter(Boolean).slice(0, LIMIT);
+    const ids0 = ranked0.map((r) => r.id);
+    const [presences0, stats0, edges0] = await Promise.all([
+      getPresences(env, ids0),
+      fetchStats(env, ids0),
+      me0 ? friendEdgeMap(env, me0.id, ids0) : Promise.resolve(new Map()),
+    ]);
+    const hits0 = ranked0.map((row) => {
+      const presence: PresencePayload = presences0.get(row.id) ?? OFFLINE_PRESENCE;
+      return {
+        user: publicUserFromRow(
+          row,
+          stats0.get(row.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0 },
+          presence.is_host
+        ),
+        presence,
+        friendship: friendshipFor(edges0.get(row.id), me0, row.id),
+      } as UserSearchHit;
+    });
+    // Relevance gate: a 1-char query must match start-of-word (or be an
+    // exact handle) — substring-only hits like "Shelley" for 'e' are dropped.
+    const good = hits0.filter((h) => {
+      const n = (h.user.username + ' ' + (h.user.displayName || '')).toLowerCase();
+      return n.includes(q) && (n.startsWith(q) || /[^a-z0-9]/.test(n[n.indexOf(q) - 1] || ' '));
+    });
+    return json({ query: q, users: good.length ? good : hits0.slice(0, LIMIT) }, 200, { 'Cache-Control': 'no-store' });
+  }
+
   // Fuzzy ranking (exact > prefix > word > substring > typo > subsequence).
   // LIKE is only a cheap pre-filter; when it comes back thin, widen the pool
   // with a bounded scan so typos ('dva' ~ 'dave') still find people.

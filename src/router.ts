@@ -35,7 +35,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-13.37';
+export const WORKER_BUILD = 'api-2026-09-13.38';
 
 /** Routes that require the D1/KV bindings (the profile/presence surface). */
 const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;

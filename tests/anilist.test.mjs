@@ -106,3 +106,14 @@ test('presence PUT never throws raw - KV failures become named 500 json', async 
   assert.equal(selfBody.ok, false);
   assert.ok(/FAILED/.test(selfBody.steps.kvPut), 'self-check names the step: ' + JSON.stringify(selfBody.steps));
 });
+
+test('people search: short-query gate + avatar size classes exist', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const search = readFileSync(join(ROOT, 'src/routes/search.ts'), 'utf8');
+  assert.equal(/q\.length <= 2/.test(search), true, '1-2 char queries take the relevance-gated path');
+  assert.equal(/NO widening scan/.test(search), true, 'short queries skip the 500-user widening');
+  const soc = readFileSync(join(ROOT, 'dist/css/social.css'), 'utf8');
+  assert.equal(/\.avatar--lg\s*{/.test(soc), true, 'avatar--lg is actually defined (was silently 40px)');
+  assert.equal(/\.avatar--xl\s*{/.test(soc), true, 'avatar--xl is actually defined (profile hero was small too)');
+});
