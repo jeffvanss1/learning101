@@ -159,6 +159,7 @@
           const win = editorWindowFor(t);
           if (win.s !== edWinStart || win.e !== edWinEnd) buildEditorTicks();
         }
+        paintEditorThread(); // window slid -> the px scale changed
       }
       while (cueIdx < cues.length && cues[cueIdx].end <= t) cueIdx++;
       const cue = cues[cueIdx];
@@ -340,6 +341,7 @@
       tick.title = fmtTS(cue.start) + ' \u00b7 ' + String(cue.text).split('\n')[0].slice(0, 60);
       ((/** @type {number} */ idx, /** @type {any} */ c, /** @type {HTMLElement} */ el) => {
         el.addEventListener('click', () => {
+          if (Date.now() < threadDragGuardUntil) return; // drag, not a pick
           edSelected = idx;
           const ticks = edTicks ? edTicks.children || [] : [];
           for (let j = 0; j < ticks.length; j++) {
@@ -354,6 +356,7 @@
     }
     if (edInfo) edInfo.textContent = tr('subs.editorHint', 'Tap a line, then align it to where you are.');
     if (edPlay) edPlay.style.display = 'block';
+    paintEditorThread();
   }
 
 
@@ -474,7 +477,7 @@
     cueIdx = 0;
     if (cues.length && !enabled) setEnabled(true);
     buildEditorTicks();
-    if (cues.length) showSyncBar(true); // floating sync bar rides every load
+    paintEditorThread();
   }
 
   function setEnabled(on) {
@@ -490,7 +493,6 @@
       }, 8000);
     } else {
       stopLoop();
-      showSyncBar(false);
     }
   }
 
@@ -500,7 +502,7 @@
     offset = Math.round(abs * 100) / 100;
     saveOffset(offset);
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
-    paintSyncBar();
+    paintEditorThread();
     cueIdx = 0;
     // Local edits fire the room-sync hook; remote-applied ones don't (no echo).
     if ((!opts || !opts.remote) && onOffsetCb) {
@@ -555,136 +557,71 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Floating mini sync bar: drag the bar anywhere (grip), drag the knob to
-  // shift timing live (0.25s per px, +-15s), double-tap the value to reset.
-  // Far less confusing than burying sync inside the CC panel.
+  // Mini-map thread sync: the cue strip IS the timeline. Grab the thread and
+  // slide it left/right like a clip in Premiere Pro - the playhead stays put,
+  // the whole subtitle track slides with your pointer, offset updates live
+  // (locally per frame, replicated to the room ONCE on release).
   // ---------------------------------------------------------------------------
-  const SYNCBAR_POS_KEY = 'wp:subsbar:pos';
-  const SYNC_PX_TO_S = 0.25; // knob drag resolution
-  const SYNC_MAX_S = 15; // knob range (panel buttons go beyond)
-  let syncBar = null;
-  let syncKnob = null;
-  let syncReadout = null;
+  const THREAD_MAX_S = 60; // sane drag ceiling (panel buttons go further)
+  /** @type {{ startX: number, startOffset: number, widthPx: number, moved: boolean } | null} */
+  let threadDrag = null;
+  let threadDragGuardUntil = 0; // a drag must not also select the tick under the pointer
 
-  /** @returns {{ el: HTMLElement, knob: HTMLElement, readout: HTMLElement }} */
-  function ensureSyncBar() {
-    if (syncBar) return { el: syncBar, knob: syncKnob, readout: syncReadout };
-    syncBar = h('div', 'subs-syncbar');
-    syncBar.hidden = true;
-
-    const grip = h('span', 'subs-syncbar__grip', '\\u283f');
-    grip.title = tr('subs.barMove', 'Drag to move this bar');
-    grip.setAttribute('aria-label', 'Move sync bar');
-    syncBar.appendChild(grip);
-    // Grip drag: reposition (fixed coordinates, clamped to the viewport,
-    // remembered across sessions so it never "wanders back" mid-episode).
-    let moveActive = false;
-    let moveStartX = 0;
-    let moveStartY = 0;
-    let barX = 0;
-    let barY = 0;
-    grip.addEventListener('pointerdown', (/** @type {any} */ e) => {
-      moveActive = true;
-      if (grip.setPointerCapture) {
-        try { grip.setPointerCapture(e.pointerId); } catch (_) {}
-      }
-      const rect = syncBar.getBoundingClientRect ? syncBar.getBoundingClientRect() : { left: 0, top: 0 };
-      barX = rect.left;
-      barY = rect.top;
-      moveStartX = e.clientX;
-      moveStartY = e.clientY;
-      if (e.preventDefault) e.preventDefault();
-    });
-    grip.addEventListener('pointermove', (/** @type {any} */ e) => {
-      if (!moveActive) return;
-      const w = (global.innerWidth || 1200);
-      const hh = (global.innerHeight || 800);
-      const nx = Math.min(Math.max(4, barX + (e.clientX - moveStartX)), w - 200);
-      const ny = Math.min(Math.max(4, barY + (e.clientY - moveStartY)), hh - 48);
-      syncBar.style.left = nx + 'px';
-      syncBar.style.top = ny + 'px';
-      syncBar.style.right = 'auto';
-      syncBar.style.bottom = 'auto';
-    });
-    const endMove = () => {
-      if (!moveActive) return;
-      moveActive = false;
-      try {
-        localStorage.setItem(SYNCBAR_POS_KEY, JSON.stringify({ x: syncBar.style.left, y: syncBar.style.top }));
-      } catch (_) {}
-    };
-    grip.addEventListener('pointerup', endMove);
-    grip.addEventListener('pointercancel', endMove);
-
-    syncBar.appendChild(h('span', 'subs-syncbar__label', tr('subs.barSync', 'Sync')));
-
-    // Knob drag: shift timing live. The knob maps offset to track position,
-    // so dragging IS the sync — no buttons, no arithmetic.
-    const track = h('div', 'subs-syncbar__track');
-    track.title = tr('subs.barDrag', 'Drag left/right to shift subtitles');
-    syncKnob = h('div', 'subs-syncbar__knob');
-    track.appendChild(syncKnob);
-    syncBar.appendChild(track);
-    let knobActive = false;
-    let knobStartX = 0;
-    let knobStartOffset = 0;
-    track.addEventListener('pointerdown', (/** @type {any} */ e) => {
-      knobActive = true;
-      if (track.setPointerCapture) {
-        try { track.setPointerCapture(e.pointerId); } catch (_) {}
-      }
-      knobStartX = e.clientX;
-      knobStartOffset = offset;
-      if (e.preventDefault) e.preventDefault();
-    });
-    track.addEventListener('pointermove', (/** @type {any} */ e) => {
-      if (!knobActive) return;
-      const next = Math.min(SYNC_MAX_S, Math.max(-SYNC_MAX_S, knobStartOffset + (e.clientX - knobStartX) * SYNC_PX_TO_S));
-      applyOffsetValue(Math.round(next * 100) / 100);
-    });
-    const endKnob = () => {
-      knobActive = false;
-    };
-    track.addEventListener('pointerup', endKnob);
-    track.addEventListener('pointercancel', endKnob);
-
-    syncReadout = h('span', 'subs-syncbar__value', '+0.00s');
-    syncReadout.title = tr('subs.barReset', 'Double-tap to reset');
-    syncReadout.addEventListener('dblclick', () => {
-      applyOffsetValue(0);
-    });
-    syncBar.appendChild(syncReadout);
-
-    document.body.appendChild(syncBar);
-    // Restore a saved position (values are full CSS strings).
+  /** Bar width via DOM; the test harness stubs provide none (fallback 600). */
+  function edBarWidth() {
     try {
-      const saved = JSON.parse(localStorage.getItem(SYNCBAR_POS_KEY) || 'null');
-      if (saved && saved.x && saved.y) {
-        syncBar.style.left = saved.x;
-        syncBar.style.top = saved.y;
-        syncBar.style.right = 'auto';
-        syncBar.style.bottom = 'auto';
+      const el = /** @type {any} */ (edTicks && edTicks.parentElement);
+      if (el && el.getBoundingClientRect) {
+        const r = el.getBoundingClientRect();
+        if (r && r.width > 0) return r.width;
       }
     } catch (_) {}
-    return { el: syncBar, knob: syncKnob, readout: syncReadout };
+    return 600;
   }
 
-  /** Reflect the current offset into the knob position + readout. */
-  function paintSyncBar() {
-    if (!syncReadout) return;
-    syncReadout.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
-    if (syncKnob) {
-      const half = 44; // half track width in px (matches CSS)
-      const px = Math.max(-half, Math.min(half, (offset / SYNC_MAX_S) * half));
-      syncKnob.style.left = 50 + (px / 1.32) + '%'; // knob centers on the track
+  /** Slide the whole thread visually by the current offset (cheap transform). */
+  function paintEditorThread() {
+    if (!edTicks) return;
+    const span = edWinEnd - edWinStart;
+    if (!(span > 0)) return;
+    const px = (offset / span) * edBarWidth();
+    edTicks.style.transform = 'translateX(' + px.toFixed(1) + 'px)';
+  }
+
+  /** @param {any} e */
+  function onThreadPointerDown(e) {
+    if (!edTicks) return;
+    threadDrag = { startX: e.clientX, startOffset: offset, widthPx: edBarWidth(), moved: false };
+    if (e.currentTarget && e.currentTarget.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
     }
+    if (e.preventDefault) e.preventDefault();
   }
 
-  /** @param {boolean} on */
-  function showSyncBar(on) {
-    const bar = ensureSyncBar();
-    bar.el.hidden = !on;
-    if (on) paintSyncBar();
+  /** @param {any} e */
+  function onThreadPointerMove(e) {
+    if (!threadDrag) return;
+    const dx = e.clientX - threadDrag.startX;
+    if (Math.abs(dx) > 4) threadDrag.moved = true;
+    const span = edWinEnd - edWinStart;
+    if (!(span > 0) || !(threadDrag.widthPx > 0)) return;
+    const next = threadDrag.startOffset + (dx / threadDrag.widthPx) * span;
+    // {remote:true} = local-only while dragging (no per-frame room spam);
+    // the final offset replicates once on pointerup.
+    applyOffsetValue(Math.max(-THREAD_MAX_S, Math.min(THREAD_MAX_S, Math.round(next * 100) / 100)), { remote: true });
+    paintEditorThread();
+  }
+
+  function onThreadPointerUp() {
+    if (!threadDrag) return;
+    const moved = threadDrag.moved;
+    threadDrag = null;
+    buildEditorTicks(); // snap the ticks to exact percent positions
+    paintEditorThread();
+    if (moved && onOffsetCb) {
+      try { onOffsetCb(offset); } catch (_) {} // ONE room replication per drag
+    }
+    if (moved) threadDragGuardUntil = Date.now() + 350;
   }
 
   function buildPanel() {
@@ -796,6 +733,11 @@
     // Align = that line starts NOW (manual match, no mic, no arithmetic).
     const rowEd = h('div', 'subs-panel__row subs-editor');
     const edBar = h('div', 'subs-editor__bar');
+    // THREAD SYNC: drag the strip itself (Premiere-style clip slide).
+    edBar.addEventListener('pointerdown', onThreadPointerDown);
+    edBar.addEventListener('pointermove', onThreadPointerMove);
+    edBar.addEventListener('pointerup', onThreadPointerUp);
+    edBar.addEventListener('pointercancel', onThreadPointerUp);
     edTicks = h('div', 'subs-editor__ticks');
     edPlay = h('div', 'subs-editor__play');
     edPlay.style.display = 'none';
@@ -824,6 +766,13 @@
       buildEditorTicks();
     });
     rowEd.appendChild(edAlign);
+    const resetBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm subs-editor__reset', tr('subs.reset', 'Reset sync')));
+    resetBtn.type = 'button';
+    resetBtn.title = tr('subs.resetHint', 'Back to zero offset.');
+    resetBtn.addEventListener('click', () => {
+      applyOffsetValue(0);
+    });
+    rowEd.appendChild(resetBtn);
     panel.appendChild(rowEd);
 
     const row3b = h('div', 'subs-panel__row');
@@ -943,7 +892,6 @@
     }
     lastVideoKey = nextKey;
     video = next;
-    if (syncBar) syncBar.hidden = true; // new video: bar returns with the new cues
     cues = [];
     cueIdx = 0;
     gotClock = false;

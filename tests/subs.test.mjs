@@ -1193,9 +1193,9 @@ test('subs.js overlay follows the player clock and the offset (runtime)', async 
   assert.equal(text.textContent, 'Auto-synced cue', 'cue must reappear once playback passes (start + offset)');
 });
 
-test('subs floating sync bar: drag knob shifts offset live, grip moves the bar, dbl-tap resets', async () => {
+test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-internal)', async () => {
   // --- listener-recording DOM stubs (fresh module instance) -----------------
-  class El2 {
+  class El3 {
     constructor(tag) {
       this.tagName = tag;
       this.children = [];
@@ -1209,18 +1209,16 @@ test('subs floating sync bar: drag knob shifts offset live, grip moves the bar, 
       this.setAttribute = () => {};
       this.appendChild = (c) => (this.children.push(c), c);
       this.classList = { add() {}, remove() {}, contains: () => false, toggle() {} };
-      this.getOffsetWidth = 0;
     }
   }
-  const store2 = {};
-  const raf2 = [];
-  const doc2 = {
-    createElement: (t) => new El2(t),
+  const store3 = {};
+  const doc3 = {
+    createElement: (t) => new El3(t),
     getElementById: () => null,
     querySelectorAll: () => [],
     querySelector: () => null,
-    documentElement: new El2('html'),
-    body: new El2('body'),
+    documentElement: new El3('html'),
+    body: new El3('body'),
     addEventListener() {},
     readyState: 'complete',
     hidden: false,
@@ -1232,69 +1230,70 @@ test('subs floating sync bar: drag knob shifts offset live, grip moves the bar, 
     addEventListener() {},
     removeEventListener() {},
     dispatchEvent() {},
-    requestAnimationFrame: (cb) => (raf2.push(cb), raf2.length),
+    requestAnimationFrame: (cb) => cb && 1,
     cancelAnimationFrame() {},
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
     localStorage: {
-      getItem: (k) => (k in store2 ? store2[k] : null),
-      setItem: (k, v) => (store2[k] = String(v)),
-      removeItem: (k) => delete store2[k],
+      getItem: (k) => (k in store3 ? store3[k] : null),
+      setItem: (k, v) => (store3[k] = String(v)),
+      removeItem: (k) => delete store3[k],
     },
   };
-  globalThis.document = doc2;
+  globalThis.document = doc3;
   globalThis.location = { search: '' };
   globalThis.localStorage = globalThis.window.localStorage;
-  Object.assign(globalThis.window, { document: doc2, location: globalThis.location, localStorage: globalThis.localStorage });
+  Object.assign(globalThis.window, { document: doc3, location: globalThis.location, localStorage: globalThis.localStorage });
   globalThis.fetch = () => Promise.resolve({ ok: true, json: async () => ({ results: [], best: null }) });
 
-  const mod = await import(join(ROOT, 'dist/js/subs.js') + '?syncbar=' + Date.now());
+  const mod = await import(join(ROOT, 'dist/js/subs.js') + '?thread=' + Date.now());
   const Subs = globalThis.window.WP.Subs;
   assert.ok(Subs, 'fresh subs module registered');
 
-  const wrap2 = new El2('div');
-  Subs.mount(wrap2);
+  const wrap3 = new El3('div');
+  Subs.mount(wrap3);
   Subs.loadCues(FRESH_SRT);
 
-  const bar = doc2.body.children.find((c) => c.className === 'subs-syncbar');
-  assert.ok(bar, 'sync bar appended to body when cues load');
-  assert.equal(bar.hidden, false, 'bar visible while subs are on');
-  const grip = bar.children.find((c) => c.className === 'subs-syncbar__grip');
-  const track = bar.children.find((c) => c.className === 'subs-syncbar__track');
-  const value = bar.children.find((c) => c.className === 'subs-syncbar__value');
-  assert.ok(grip && track && value, 'bar has grip, track and readout');
-  assert.ok(track.children.some((c) => c.className === 'subs-syncbar__knob'), 'track has a knob');
-  for (const ev of ['pointerdown', 'pointermove', 'pointerup']) {
-    assert.ok((grip._listeners[ev] || []).length === 1, 'grip handles ' + ev);
-    assert.ok((track._listeners[ev] || []).length === 1, 'track handles ' + ev);
-  }
-  assert.equal(value.textContent, '0.00s', 'readout starts at zero');
-  assert.equal(value.textContent, '0.00s', 'zero carries no sign');
+  // The sync surface lives INSIDE the subs panel (mini-map editor row).
+  const panel = wrap3.children.find((c) => c.className === 'subs-panel');
+  assert.ok(panel, 'panel exists');
+  const rowEd = panel.children.find((c) => String(c.className).indexOf('subs-editor') !== -1);
+  assert.ok(rowEd, 'mini-map editor row exists in the panel');
+  const bar = rowEd.children.find((c) => c.className === 'subs-editor__bar');
+  assert.ok(bar, 'thread bar exists');
+  const ticks = bar.children.find((c) => c.className === 'subs-editor__ticks');
+  assert.ok(ticks, 'ticks strip exists');
+  const resetBtn = rowEd.children.find((c) => String(c.className).indexOf('subs-editor__reset') !== -1);
+  assert.ok(resetBtn, 'reset control exists in the row');
+  // NO floating pill anywhere.
+  assert.ok(!doc3.body.children.some((c) => String(c.className).indexOf('subs-syncbar') !== -1), 'no floating pill');
 
   const fire = (el, type, ev) => (el._listeners[type] || []).forEach((fn) => fn(ev));
-  const pd = (x) => ({ pointerId: 1, clientX: x, clientY: 10, preventDefault() {} });
+  const pd = (x) => ({ pointerId: 1, clientX: x, clientY: 5, currentTarget: bar, preventDefault() {} });
 
-  // Drag the knob +40px right => +40*0.25s = +10s, live in the readout.
-  fire(track, 'pointerdown', pd(100));
-  fire(track, 'pointermove', pd(140));
-  assert.equal(value.textContent, '+10.00s', 'knob drag shifts the offset live (0.25s/px)');
-  // Beyond the range: clamps at +15s.
-  fire(track, 'pointermove', pd(1000));
-  assert.equal(value.textContent, '+15.00s', 'knob drag clamps at the range edge');
-  fire(track, 'pointerup', pd(1000));
+  let roomOffsets = [];
+  Subs.onOffset((v) => roomOffsets.push(v));
 
-  // Double-tap the readout: reset to zero.
-  fire(value, 'dblclick', {});
-  assert.equal(value.textContent, '0.00s', 'double-tap resets the offset');
+  // Drag the thread +60px. Stub width 600px covers a 300s window => 0.5s/px
+  // => +30s. The strip translates visually while dragging.
+  fire(bar, 'pointerdown', pd(100));
+  fire(bar, 'pointermove', pd(130));
+  fire(bar, 'pointermove', pd(160));
+  // FRESH_SRT spans 12s -> the editor window is 12s over the 600px stub
+  // strip => 0.02s/px => +60px = +1.2s; px translate = (1.2/12)*600 = 60px.
+  assert.equal(ticks.style.transform, 'translateX(60.0px)', 'thread slides visually with the drag');
+  assert.equal(roomOffsets.length, 0, 'dragging does NOT spam the room per frame');
 
-  // Drag the grip: the bar moves and the position persists.
-  fire(grip, 'pointerdown', pd(10));
-  fire(grip, 'pointermove', { pointerId: 1, clientX: 110, clientY: 60, preventDefault() {} });
-  assert.equal(bar.style.left, '100px', 'grip drag moves the bar');
-  assert.equal(bar.style.top, '50px', 'grip drag moves vertically too');
-  fire(grip, 'pointerup', pd(110));
-  assert.ok(store2['wp:subsbar:pos'], 'position persisted for the next session');
+  const rows = panel.children.filter((c) => String(c.className).indexOf('subs-panel__row') === 0);
+  const offEl = rows.map((r) => r.children.find((c) => c.className === 'subs-panel__offset')).find(Boolean);
+  assert.ok(offEl, 'offset readout exists');
+  assert.equal(offEl.textContent, '+1.20s', 'offset follows the thread drag (window-scaled)');
 
-  // Turning subs off hides the bar.
-  Subs.setEnabled(false);
-  assert.equal(bar.hidden, true, 'bar hides when subtitles are disabled');
+  fire(bar, 'pointerup', pd(160));
+  assert.equal(roomOffsets.length, 1, 'release replicates the offset to the room EXACTLY once');
+  assert.equal(roomOffsets[0], 1.2);
+
+  // Reset control returns to zero.
+  fire(resetBtn, 'click', {});
+  assert.equal(offEl.textContent, '0.00s', 'reset returns to zero');
+  assert.equal(ticks.style.transform, 'translateX(0.0px)', 'thread snaps back visually');
 });

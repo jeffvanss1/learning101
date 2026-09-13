@@ -696,8 +696,11 @@ ALTER) is seeded idempotently by `ensureSchema` for username `jeff`.
   button, `force`) still win.
 - Per-step console logging: `[WatchParty] subs <lang>: N candidates…`.
 
-**Floating mini sync bar (style v11):** a draggable pill appears when
-subtitles load — drag the ⠿ grip to park it anywhere (position persists
-across sessions), drag the knob to shift timing live (0.25 s/px, ±15 s,
-host drags replicate room-wide), double-tap the value to reset. Hides
-with subtitles off / on video change.
+**Mini-map thread sync (style v12, subs v16):** the cue strip inside the
+subtitles panel IS the timeline — grab the whole subtitle thread and
+slide it left/right like a clip in Premiere Pro. The playhead stays
+fixed, the track slides with the pointer, the offset updates live
+(window-scaled: s per px = window span / strip width, ±60 s cap), and
+the host's drag replicates to the room ONCE on release (no per-frame
+spam). "Reset sync" returns to zero; a drag never mis-selects a tick.
+(An earlier floating-pill slider was rejected and removed.)

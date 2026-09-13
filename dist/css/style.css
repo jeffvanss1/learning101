@@ -1664,74 +1664,17 @@ button {
 .subs-editor__tick--sel { background: #ffd166; width: 3px; min-width: 3px; }
 .subs-editor__play { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff5d73; pointer-events: none; }
 
-/* ---- Floating mini sync bar (drag to move; drag knob to shift timing) ----------- */
-.subs-syncbar {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: rgba(18, 18, 18, 0.92);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  touch-action: none;
-  user-select: none;
-}
-.subs-syncbar__grip {
+/* ---- Mini-map thread sync (drag the cue strip like a Premiere clip) -------------- */
+.subs-editor__bar {
   cursor: grab;
-  color: var(--text-dim);
-  font-size: 15px;
-  padding: 0 2px;
+  touch-action: none;
 }
-.subs-syncbar__grip:active {
+.subs-editor__bar:active {
   cursor: grabbing;
 }
-.subs-syncbar__label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-dim);
-  letter-spacing: 0.04em;
+.subs-editor__ticks {
+  will-change: transform;
 }
-.subs-syncbar__track {
-  position: relative;
-  width: 104px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-soft);
-  cursor: ew-resize;
-  touch-action: none;
-}
-.subs-syncbar__track::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 3px;
-  bottom: 3px;
-  width: 1px;
-  background: var(--border);
-}
-.subs-syncbar__knob {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  border-radius: 50%;
-  background: var(--red);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
-.subs-syncbar__value {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  min-width: 52px;
-  text-align: center;
-  cursor: pointer;
+.subs-editor__bar--drag .subs-editor__tick--sel {
+  opacity: 0.85;
 }
