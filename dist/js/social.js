@@ -513,22 +513,24 @@
       }
       return;
     }
-    let beatWarned = false;
+    /** @type {string} last beat outcome logged (avoid spam, show changes) */
+    let lastBeatLog = '';
+    const beatLog = (/** @type {string} */ kind, /** @type {string} */ msg) => {
+      if (lastBeatLog === kind) return; // only log CHANGES
+      lastBeatLog = kind;
+      try {
+        (kind === 'fail' ? console.warn : console.info)('[WatchParty] presence beat ' + msg);
+      } catch (_) {}
+    };
     const beat = () => {
       // Skip while a room socket owns presence.
-      if (document.body.classList.contains('in-room')) return;
-      api('/api/presence', { method: 'PUT', body: JSON.stringify({ status: 'IDLE' }) }).catch(
-        (/** @type {Error} */ e) => {
-          // Diagnosability: a silently-failing heartbeat looks EXACTLY like
-          // "the presence system is broken" from the outside. Say it once.
-          if (!beatWarned) {
-            beatWarned = true;
-            try {
-              console.warn('[WatchParty] presence heartbeat failing:', e && e.message);
-            } catch (_) {}
-          }
-        }
-      );
+      if (document.body.classList.contains('in-room')) {
+        beatLog('skip', 'skipped (in-room — the room socket owns presence)');
+        return;
+      }
+      api('/api/presence', { method: 'PUT', body: JSON.stringify({ status: 'IDLE' }) })
+        .then(() => beatLog('ok', 'OK (IDLE written, ttl 1h)'))
+        .catch((/** @type {Error} */ e) => beatLog('fail', 'FAILED: ' + (e && e.message)));
     };
     beat();
     idleTimer = setInterval(beat, IDLE_HEARTBEAT_MS);
@@ -2103,7 +2105,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.25';
+  global.WP.build = 'ui-2026-09-13.26';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
