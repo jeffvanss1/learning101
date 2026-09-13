@@ -266,6 +266,35 @@ view) and the old desktop "sticky column" mode (`.home--with-rail`) was
 removed; the drawer behavior is now the only behavior. It polls
 `/api/friends` every 30s while open.
 
+## Geo language detection (country → language)
+
+The site renders in the visitor's country language with **zero IP databases
+and zero external APIs** — Cloudflare provides `request.cf.country` on every
+request at the edge. Two layers localize:
+
+1. **TMDB content** (worker, `src/geo.js`): the `/api/tmdb` proxy appends
+   `language=<lang>-<COUNTRY>` per request, so movie titles and overviews
+   come back localized for every mapped country — e.g. a German IP gets
+   German titles even though the UI chrome has no German dictionary yet.
+   The locale is part of the proxy cache key.
+2. **UI chrome** (`dist/js/i18n.js`): the worker injects `window.WP_GEO`
+   into every HTML response and the page applies dictionaries to
+   `[data-i18n]` / `[data-i18n-placeholder]` elements. Shipped UI languages:
+   **en, id, es, fr, pt, ar** (Arabic gets basic RTL via `<html dir>`).
+   JS-created strings use `WP.I18N.t(key, fallback)`.
+
+Resolution priority: `?lang=<code>` / saved override → IP country → browser
+languages → `en`. The override persists to `localStorage['wp:lang']`;
+`/api/geo` returns the resolved locale for debugging. `wrangler.toml` sets
+`run_worker_first = true` — required so HTML responses (including `/`)
+flow through the worker for injection; non-HTML assets pass through
+untouched. A stale worker (no `WP_GEO`) degrades gracefully: browser
+language, then English.
+
+Add a language: append it in `SUPPORTED_UI_LANGS` (src/geo.js), add its
+dictionary in `dist/js/i18n.js` (key sets must match English — enforced by
+`tests/geo.test.mjs`), and map countries in `COUNTRY_LANG`.
+
 ## Avatars & watch history
 
 - **Avatars** come from the free [DiceBear](https://www.dicebear.com/introduction/)
@@ -395,14 +424,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.6",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.7",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.11` and
-   `[WatchParty] API build: api-2026-09-13.6`.
+   `[WatchParty] API build: api-2026-09-13.7`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.

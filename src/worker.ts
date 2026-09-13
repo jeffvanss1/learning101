@@ -12,6 +12,7 @@
 import { WatchRoom } from './WatchRoom.js';
 import { classifyIsAnime, matchAnilist } from './anilist.js';
 import { routeApi } from './router.js';
+import { injectGeoScript, resolveGeo } from './geo.js';
 import type { Env } from './types.js';
 
 export { WatchRoom };
@@ -69,8 +70,18 @@ function looksLikeToken(key: string): boolean {
   return typeof key === 'string' && key.length > 60 && key.split('.').length === 3;
 }
 
-async function proxyTmdb(path: string, search: string, apiKey: string): Promise<Response> {
-  const target = TMDB_ORIGIN + path + search;
+async function proxyTmdb(
+  path: string,
+  search: string,
+  apiKey: string,
+  language?: string
+): Promise<Response> {
+  // Localized content: the locale is part of the URL (and therefore of the
+  // cache key) — TMDB returns localized titles/overviews per language.
+  const langPart = language
+    ? (search.includes('?') ? '&' : '?') + 'language=' + encodeURIComponent(language)
+    : '';
+  const target = TMDB_ORIGIN + path + search + langPart;
 
   const hit = catalogCache.get(target);
   if (hit && hit.expires > Date.now()) {
@@ -219,10 +230,27 @@ export default {
       }
       const rest = path.slice('/api/tmdb'.length) || '/';
       try {
-        return await proxyTmdb(rest, url.search, apiKey);
+        const geo = resolveGeo(
+          (request as Request & { cf?: { country?: string } }).cf?.country,
+          request.headers.get('accept-language'),
+          url.searchParams.get('lang')
+        );
+        return await proxyTmdb(rest, url.search, apiKey, geo.tmdbLang);
       } catch (e) {
         return json({ error: 'TMDB unavailable', detail: String(e) }, 502);
       }
+    }
+
+    // --- Geo-language resolution (diagnostics) ---------------------------------
+    if (path === '/api/geo' && request.method === 'GET') {
+      return json(
+        resolveGeo(
+          (request as Request & { cf?: { country?: string } }).cf?.country,
+          request.headers.get('accept-language'),
+          url.searchParams.get('lang')
+        ),
+        200
+      );
     }
 
     // --- REST API (rooms, AniList) --------------------------------------------
@@ -299,7 +327,29 @@ export default {
 
     // --- Static assets (Workers Static Assets) -------------------------------
     if (request.method === 'GET' || request.method === 'HEAD') {
-      return env.ASSETS.fetch(request);
+      const res = await env.ASSETS.fetch(request);
+      // Tell the UI its locale with zero extra round-trips: inject
+      // window.WP_GEO into every HTML response (GET only — HEAD has no body;
+      // any injection failure must never break serving).
+      if (request.method === 'GET') {
+        try {
+          const type = res.headers.get('content-type') || '';
+          if (type.includes('text/html')) {
+            const geo = resolveGeo(
+              (request as Request & { cf?: { country?: string } }).cf?.country,
+              request.headers.get('accept-language'),
+              url.searchParams.get('lang')
+            );
+            const html = injectGeoScript(await res.text(), geo);
+            const headers = new Headers(res.headers);
+            headers.delete('content-length'); // body length changed
+            return new Response(html, { status: res.status, headers });
+          }
+        } catch (_) {
+          return res; // fall back to the untouched asset
+        }
+      }
+      return res;
     }
 
     return new Response('Not found', { status: 404 });

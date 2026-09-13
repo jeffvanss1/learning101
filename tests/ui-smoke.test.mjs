@@ -80,18 +80,33 @@ function installDomStubs({ fetchImpl }) {
     removeEventListener() {},
     dispatchEvent() {},
   };
-  globalThis.document = {
+  const doc = {
     createElement: (tag) => new FakeEl(tag),
     getElementById: () => null,
+    querySelectorAll: () => [],
+    documentElement: new FakeEl('html'),
     addEventListener() {},
     removeEventListener() {},
     readyState: 'complete',
     hidden: false,
   };
+  globalThis.document = doc;
+  globalThis.location = { search: '' };
+  Object.assign(globalThis.window, {
+    document: doc,
+    location: globalThis.location,
+    localStorage: globalThis.localStorage,
+  });
+  // Functional localStorage: overrides persist like in a real browser.
+  const store = {};
   globalThis.localStorage = {
-    getItem: () => null,
-    setItem() {},
-    removeItem() {},
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+    removeItem: (k) => {
+      delete store[k];
+    },
   };
   globalThis.IntersectionObserver = class {
     observe() {}
@@ -189,4 +204,27 @@ test('friends drawer mounts at boot level and toggles open/closed', async () => 
   // Destroy handles (clears their 30s polls) so the test process can exit.
   window.WP.Social.mountFriendsRail(new FakeEl('aside')).destroy();
   await tick(10);
+});
+
+test('i18n resolves the injected geo locale and translates', async () => {
+  const window = installDomStubs({
+    fetchImpl: () => Promise.resolve({ ok: true, json: async () => ({ build: 'test' }) }),
+  });
+
+  await import(join(ROOT, 'dist/js/i18n.js'));
+  assert.ok(window.WP.I18N, 'i18n.js must register WP.I18N');
+  assert.equal(window.WP.I18N.language, 'en', 'defaults to English without WP_GEO');
+
+  // What the worker injects for an Indonesian IP:
+  window.WP_GEO = { country: 'ID', uiLang: 'id', tmdbLang: 'id-ID' };
+  window.WP.I18N.apply();
+  assert.equal(window.WP.I18N.language, 'id', 'WP_GEO (IP country) must drive the UI language');
+  assert.equal(window.WP.I18N.t('nav.home', 'Home'), 'Beranda');
+  assert.equal(window.document.documentElement.lang, 'id');
+
+  // Arabic flips the document direction (basic RTL support).
+  window.WP.I18N.setLanguage('ar');
+  assert.equal(window.WP.I18N.language, 'ar');
+  assert.equal(window.document.documentElement.dir, 'rtl');
+  window.WP.I18N.setLanguage('en');
 });

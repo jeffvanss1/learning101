@@ -6,6 +6,10 @@ compatibility_date = "2026-01-01"
 directory = "./dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+# Every request flows through the worker first: it localizes the TMDB proxy
+# and injects window.WP_GEO (IP-country language) into HTML responses
+# (src/geo.js). Non-HTML responses pass through untouched.
+run_worker_first = true
 
 [vars]
 # The Movie Database API key (v3 key or v4 read-access token).

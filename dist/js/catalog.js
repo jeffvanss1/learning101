@@ -15,6 +15,10 @@
 (function (global) {
   'use strict';
 
+  // UI strings via the i18n dictionaries (worker resolves the locale; when
+  // i18n.js is absent — e.g. a stale cached page — fall back to English).
+  const tr = (key, fallback) => (global.WP && global.WP.I18N ? global.WP.I18N.t(key, fallback) : fallback);
+
   const PROXY = '/api/tmdb';
   const BINGR_WATCH = 'https://bingr.one/watch';
   const IMG = 'https://image.tmdb.org/t/p';
@@ -497,10 +501,10 @@
     if (item.overview) content.appendChild(h('p', 'hero__overview', item.overview));
 
     const actions = h('div', 'hero__actions');
-    const watch = h('button', 'btn btn--primary', 'Watch together');
+    const watch = h('button', 'btn btn--primary', tr('card.watchTogether', 'Watch together'));
     watch.addEventListener('click', () => onSelect(item));
     actions.appendChild(watch);
-    const details = h('button', 'btn btn--ghost', 'Details');
+    const details = h('button', 'btn btn--ghost', tr('card.details', 'Details'));
     details.addEventListener('click', () => openDetail(item, (v) => onSelect(v)));
     actions.appendChild(details);
 
@@ -525,7 +529,7 @@
     const body = h('div', 'detail__body');
     body.style.padding = '20px';
     body.style.overflowY = 'auto';
-    body.appendChild(h('div', 'browse__empty', 'Loading\u2026'));
+    body.appendChild(h('div', 'browse__empty', tr('feed.loading', 'Loading\u2026')));
     card.appendChild(body);
 
     overlay.appendChild(card);
@@ -616,7 +620,7 @@
     // Movies play directly; series need an episode choice.
     if (item.type === 'movie') {
       const actions = h('div', 'detail__actions');
-      const play = h('button', 'btn btn--primary', 'Watch together');
+      const play = h('button', 'btn btn--primary', tr('card.watchTogether', 'Watch together'));
       play.addEventListener('click', () => {
         onPick(buildVideo(item));
         close();
@@ -1061,7 +1065,7 @@
       const list = results.filter(matchesFilter);
       gridEl = h('div', 'grid');
       if (!list.length) {
-        gridEl.appendChild(h('div', 'browse__empty', 'No results \u2014 try another title.'));
+        gridEl.appendChild(h('div', 'browse__empty', tr('feed.noResults', 'No results \u2014 try another title.')));
       } else {
         list.forEach((it) => gridEl.appendChild(cardNode(it, choose)));
       }
@@ -1293,7 +1297,7 @@
 
     const head = h('div', 'discovery__head');
     head.appendChild(h('h1', 'discovery__title', def.title));
-    head.appendChild(h('p', 'discovery__sub', 'Keep scrolling \u2014 more titles load automatically.'));
+    head.appendChild(h('p', 'discovery__sub', tr('discovery.sub', 'Keep scrolling \u2014 more titles load automatically.')));
     container.appendChild(head);
 
     const grid = h('div', 'grid');
@@ -1321,7 +1325,7 @@
       if (destroyed || loading || done) return;
       loading = true;
       const mySeq = ++seq;
-      status.textContent = 'Loading\u2026';
+      status.textContent = tr('feed.loading', 'Loading\u2026');
       try {
         const data = await api(def.path(page + 1));
         if (destroyed || mySeq !== seq) return;
