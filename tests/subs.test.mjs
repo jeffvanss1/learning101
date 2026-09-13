@@ -439,18 +439,18 @@ const fireClock = (listeners, rafQueue, t, playing = true) => {
   rafQueue.splice(0).forEach((cb) => cb());
 };
 
-test('tap-sync computes the offset from the player clock, exactly', async () => {
+test('one-press sync (Shazam-style) snaps a cue to the tap instant, exactly', async () => {
   const { Subs, listeners, rafQueue, store } = await freshSubs();
   const wrap = new El2();
   Subs.mount(wrap);
   Subs.loadCues('1\n00:00:10,000 --> 00:00:12,000\nWhere are you?\n');
 
-  // Player reports 11.3s. The user taps the moment they hear "Where are you?"
-  // (cue starts at 10s) -> offset must be exactly +1.3s.
+  // Player reports 11.3s. ONE press while a line is being spoken — no arming,
+  // no reading a quoted line. Cue starts at 10s -> offset must be +1.3s.
   fireClock(listeners, rafQueue, 11.3);
-  Subs.armTapSync();
-  Subs.tapSync();
+  Subs.syncSnap();
   assert.equal(Subs.__test.state().offset, 1.3, 'offset = playerTime(atTap) - cueStart');
+  assert.ok(Subs.__test.state().status.includes('Synced'), 'status confirms: ' + Subs.__test.state().status);
 
   // The nudge must be persisted for the title.
   // (loadCues without setVideo -> videoKey 'none' -> persisted under that key)
@@ -462,6 +462,33 @@ test('tap-sync computes the offset from the player clock, exactly', async () => 
   rafQueue.splice(0).forEach((cb) => cb());
   const overlay = findClass(wrap, 'subs-overlay');
   assert.equal(overlay.children[0].textContent, 'Where are you?');
+});
+
+test('one-press sync targets the NEXT upcoming line and re-snaps on repeat presses', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  Subs.mount(new El2());
+  Subs.loadCues(
+    '1\n00:00:10,000 --> 00:00:11,000\nFirst line\n\n' +
+      '2\n00:00:20,000 --> 00:00:21,000\nSecond line\n'
+  );
+
+  // Speech starting at true 11.3s = the NEXT line in the file (starts 20s).
+  // One press -> that line snaps to now: offset = 11.3 - 20 = -8.7s.
+  fireClock(listeners, rafQueue, 11.3);
+  Subs.syncSnap();
+  assert.equal(Subs.__test.state().offset, -8.7, 'next upcoming cue snapped to the tap instant');
+
+  // Press again during later speech: re-snap updates the offset (self-correcting).
+  fireClock(listeners, rafQueue, 12.0); // adjusted = 12.0 + 8.7 = 20.7 -> no cue >= 20.7 -> last (20)
+  Subs.syncSnap();
+  assert.equal(Subs.__test.state().offset, -8.0, 'second press re-snapped');
+
+  // No cues loaded: a press must not crash or change anything.
+  const { Subs: Subs2 } = await freshSubs();
+  Subs2.mount(new El2());
+  Subs2.syncSnap();
+  assert.equal(Subs2.__test.state().offset, 0, 'no cues -> no offset change');
+  assert.ok(Subs2.__test.state().status.length > 0, 'tells the user why');
 });
 
 test('auto-load iterates candidates when the top one fails to download', async () => {

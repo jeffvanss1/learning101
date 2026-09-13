@@ -299,7 +299,6 @@
   function loadCues(raw) {
     cues = parseSubtitles(raw);
     cueIdx = 0;
-    cancelTapSync();
     if (cues.length && !enabled) setEnabled(true);
   }
 
@@ -332,43 +331,30 @@
     applyOffsetValue(offset + delta);
   }
 
-  // ---- tap-sync ---------------------------------------------------------------
-  // One-press exact sync: we show the line that should be spoken, the user
-  // taps (or hits SPACE) the moment they HEAR it, and the offset is computed
-  // precisely from the player clock: playerTime(at tap) - cue.start.
-  let tapTarget = /** @type {number | null} */ (null);
+  // ---- one-press sync ("Shazam-style") ----------------------------------------
+  // No reading, no line-matching: the user presses ONE button the moment a
+  // new line starts being SPOKEN, and the next upcoming cue snaps to that
+  // instant (offset = playerTime(atTap) - cue.start, computed exactly from
+  // the player clock). Each press re-snaps, so 1-2 presses converge. True
+  // audio fingerprinting is not feasible here (cross-origin streams block
+  // audio capture; no public movie-fingerprint DB), this is the same
+  // zero-thought UX without the mic.
   /** @type {HTMLButtonElement | null} */
-  let tapBtn = null;
+  let syncBtn = null;
 
-  function armTapSync() {
+  function syncSnap() {
     if (!cues.length) {
       setStatus(tr('subs.none', 'No subtitles loaded.'), true);
       return;
     }
-    const t = now();
-    const target = cues.find((c) => c.start >= t + 0.5) || cues[cues.length - 1];
-    tapTarget = target.start;
-    const line = String(target.text).split('\n')[0].slice(0, 60);
-    setStatus(tr('subs.tapListen', 'Listen for') + ': \u201C' + line + '\u201D \u2014 ' + tr('subs.tapWhen', 'tap when you hear it'));
-    if (tapBtn) tapBtn.textContent = tr('subs.tapNow', 'TAP NOW');
-  }
-
-  function tapSync() {
-    if (tapTarget == null) return;
-    const playerTime = now() + offset; // now() already subtracts the offset
-    const newOffset = playerTime - tapTarget;
-    tapTarget = null;
-    applyOffsetValue(newOffset);
-    if (tapBtn) tapBtn.textContent = tr('subs.tapSync', 'Tap-sync');
+    const t = now(); // adjusted clock (offset already applied)
+    const target = cues.find((c) => c.start >= t) || cues[cues.length - 1];
+    const playerTime = t + offset; // true player time at the tap
+    applyOffsetValue(playerTime - target.start);
     setStatus(
-      tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
-        ' (' + tr('subs.offset', 'Offset') + ' ' + tr('subs.persisted', 'saved for this title') + ')'
+      '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+        ' \u00b7 ' + tr('subs.snapAgain', 'Still off? Press again while someone speaks.')
     );
-  }
-
-  function cancelTapSync() {
-    tapTarget = null;
-    if (tapBtn) tapBtn.textContent = tr('subs.tapSync', 'Tap-sync');
   }
 
   function buildPanel() {
@@ -446,14 +432,13 @@
     panel.appendChild(row3);
 
     const row3a = h('div', 'subs-panel__row');
-    tapBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.tapSync', 'Tap-sync')));
-    tapBtn.type = 'button';
-    tapBtn.title = tr('subs.tapWhen', 'tap when you hear it');
-    tapBtn.addEventListener('click', () => {
-      if (tapTarget == null) armTapSync();
-      else tapSync();
-    });
-    row3a.appendChild(tapBtn);
+    syncBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.tapSync', '\u26a1 Sync')));
+    syncBtn.type = 'button';
+    syncBtn.title = tr('subs.snapHint', 'Press exactly when someone starts speaking \u2014 the next line snaps to now.');
+    syncBtn.addEventListener('click', syncSnap); // ONE press = synced. No arming.
+    row3a.appendChild(syncBtn);
+    const snapHint = h('div', 'subs-panel__hint', tr('subs.snapHint', 'Press exactly when someone starts speaking \u2014 the next line snaps to now.'));
+    row3a.appendChild(snapHint);
     panel.appendChild(row3a);
 
     const row3b = h('div', 'subs-panel__row');
@@ -535,9 +520,8 @@
       if (!panel || panel.hidden) return;
       if (ev.key === '[') applyOffset(-0.25);
       else if (ev.key === ']') applyOffset(0.25);
-      else if (ev.key === ' ' && tapTarget != null) {
-        ev.preventDefault(); // don't scroll the page mid-sync
-        tapSync();
+      else if (ev.key === 's' || ev.key === 'S') {
+        syncSnap(); // keyboard alias for the one-press sync
       }
     });
   }
@@ -550,7 +534,6 @@
     video = v && v.id ? v : null;
     cues = [];
     cueIdx = 0;
-    cancelTapSync();
     gotClock = false;
     offset = loadOffset();
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
@@ -573,15 +556,14 @@
     loadCues: loadCues,
     setEnabled: setEnabled,
     parseSubtitles: parseSubtitles,
-    armTapSync: armTapSync,
-    tapSync: tapSync,
+    syncSnap: syncSnap,
     // Internal hook for the runtime test-suite (not part of the UI contract).
     __test: {
       setLang(/** @type {string} */ l) {
         if (langSel) langSel.value = l;
       },
       state() {
-        return { cues: cues.length, offset: offset, tapTarget: tapTarget, status: statusEl ? statusEl.textContent : '' };
+        return { cues: cues.length, offset: offset, status: statusEl ? statusEl.textContent : '' };
       },
     },
   };
