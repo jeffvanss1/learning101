@@ -44,10 +44,19 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
   // /api/anilist/* must keep working even without these bindings.
   if (!env.DB || !env.PRESENCE_KV) {
     if (STORAGE_ROUTES_RE.test(path)) {
+      // Name WHICH binding is missing — the classic failure is a valid KV id
+      // pasted under the wrong binding line in wrangler.toml
+      // (binding = "PRESENCE_KV_PLACEHOLDER" instead of "PRESENCE_KV").
+      const missing = [
+        !env.DB ? 'DB (D1)' : null,
+        !env.PRESENCE_KV ? 'PRESENCE_KV (KV)' : null,
+      ]
+        .filter(Boolean)
+        .join(' and ');
       return errorJson(
         503,
-        'Profile/presence storage is not configured for this deployment.',
-        'Run `npm run setup:remote` (creates the D1 database + KV namespace and updates wrangler.toml), then `npm run db:migrate:remote` and redeploy. See README → Setup.'
+        `Profile/presence storage is not configured: missing binding ${missing}.`,
+        'In wrangler.toml the KV block must read binding = "PRESENCE_KV" with your namespace id on the NEXT line (and D1: binding = "DB"). Then `npm run deploy`. To create the resources, run `npm run setup:remote`. See README → Setup.'
       );
     }
     return null;
