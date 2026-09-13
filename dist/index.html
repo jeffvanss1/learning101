@@ -279,11 +279,15 @@
       </aside>
     </div>
   </main>
+
+    <!-- Profile page surface (/user/:username, rendered by social.js).
+         MUST stay inside .app-shell__main: it is a flex child of the
+         fixed-height column and its own scroll surface. Moving it outside
+         .app-shell parks it a full viewport down the document (the
+         "big gap above the profile" bug). -->
+    <main id="profile" class="profile" hidden></main>
     </div>
   </div>
-
-  <!-- Profile page surface (/user/:username, rendered by social.js) -->
-  <main id="profile" class="profile" hidden></main>
 
   <!-- Name modal -->
   <div class="modal" id="name-modal" hidden>
@@ -382,7 +386,7 @@
   <script src="/js/api.js?v=5"></script>
   <script src="/js/player.js?v=6"></script>
   <script src="/js/catalog.js?v=10"></script>
-  <script src="/js/social.js?v=13"></script>
+  <script src="/js/social.js?v=14"></script>
   <script src="/js/app.js?v=20"></script>
 </body>
 </html>
