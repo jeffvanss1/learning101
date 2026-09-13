@@ -72,6 +72,7 @@ test('presence wiring: no pagehide DELETE beacon (mobile backgrounding erased us
 test('presence PUT never throws raw - KV failures become named 500 json', async () => {
   const { register } = await import('node:module');
   const { pathToFileURL } = await import('node:url');
+  register(new URL('./tsresolve.mjs', import.meta.url));
   const mod = await import(pathToFileURL(ROOT + '/src/routes/presence.ts').href + '?v=' + Math.random());
   const auth = await import(pathToFileURL(ROOT + '/src/auth.ts').href + '?v=' + Math.random());
   const env = {
