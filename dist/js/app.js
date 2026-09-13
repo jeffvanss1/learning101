@@ -52,9 +52,19 @@
     } catch (_) {}
   }
 
-  function promptName() {
+  /**
+   * Show the name / access-code dialog.
+   * @param {{force?: boolean, message?: string}} [opts]
+   *   force:  open even when a name is already saved — REQUIRED for
+   *           recovery, otherwise a stuck identity could never be changed
+   *           or reclaimed via its access code.
+   *   message: pre-filled error shown in the dialog.
+   */
+  function promptName(opts) {
+    const force = !!(opts && opts.force);
+    const presetMessage = (opts && opts.message) || '';
     return new Promise((resolve) => {
-      if (state.name) {
+      if (state.name && !force) {
         resolve(state.name);
         return;
       }
@@ -70,6 +80,7 @@
       input.focus();
       input.select();
       refreshNameAvatar(input.value);
+      if (presetMessage) err.textContent = presetMessage;
 
       const done = (name) => {
         modal.hidden = true;
@@ -212,7 +223,15 @@
               s = res.session;
               WP.Social.startIdlePresence();
             } else if (res && res.reason === 'taken') {
-              toast('That name is protected — use "Have an access code?" to sign in.', true);
+              // Forced dialog so recovery (new name / access code) is
+              // actually reachable — a toast alone is a dead end.
+              await promptName({
+                force: true,
+                message:
+                  '“' + n + '” is protected by an access code. Pick a new name, or use "Have an access code?" to sign in.',
+              });
+              s = (WP.Social && WP.Social.getSession()) || null;
+              if (s) WP.Social.startIdlePresence();
             } else {
               toast('Could not start a session — you are still anonymous.', true);
             }
@@ -231,8 +250,9 @@
     // social.js asks us to run the sign-in flow (e.g. "Add friend" while
     // anonymous).
     window.addEventListener('wp:need-signin', async () => {
-      toast('Pick a name — or sign in with your access code.');
-      const n = await promptName();
+      // Forced: this fires when the session is missing — a saved name alone
+      // must not swallow the recovery dialog.
+      const n = await promptName({ force: true });
       if (n && WP.Social) {
         WP.Social.startIdlePresence();
         refreshProfileButton();
@@ -1509,7 +1529,14 @@
           WP.Social.startIdlePresence();
           refreshProfileButton();
         } else if (res && res.reason === 'taken') {
-          toast('“' + state.name + '” is protected by an access code — use "Have an access code?" in the name dialog to sign in.', true);
+          // Stuck identity: the saved name is protected by an access code.
+          // Open the dialog FORCED (it would otherwise short-circuit on the
+          // saved name and the user could never recover).
+          promptName({
+            force: true,
+            message:
+              '“' + state.name + '” is protected by an access code. Pick a new name, or use "Have an access code?" to sign in.',
+          });
         }
       });
     }
