@@ -82,10 +82,18 @@
       refreshNameAvatar(input.value);
       if (presetMessage) err.textContent = presetMessage;
 
+      // Backdrop click closes the dialog. The listener is removed on EVERY
+      // close path — a leftover {once} listener from a previous invocation
+      // used to instantly close the next (e.g. forced recovery) dialog.
+      const onBackdrop = (e) => {
+        if (e.target === modal) done(null);
+      };
       const done = (name) => {
+        modal.removeEventListener('click', onBackdrop);
         modal.hidden = true;
         resolve(name);
       };
+      modal.addEventListener('click', onBackdrop);
 
       // Access-code sign-in view (profile travels between devices). All
       // elements are optional — a stale cached page just loses the view.
@@ -177,9 +185,6 @@
           finish();
         }
       };
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) done(null);
-      }, { once: true });
     });
   }
 
@@ -1446,7 +1451,9 @@
     const fallback = btn.querySelector('.topnav__profile-fallback');
     if (s && img) {
       img.hidden = false;
-      img.src = WP.avatarUrl(s.user.displayName || s.user.username);
+      // Prefer the stored account avatar; DiceBear(name) is only the
+      // fallback for legacy sessions without one.
+      img.src = s.user.avatarUrl || WP.avatarUrl(s.user.displayName || s.user.username);
       if (fallback) fallback.style.display = 'none';
       btn.title = 'Your profile — @' + s.user.username;
     } else {

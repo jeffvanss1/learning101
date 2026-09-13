@@ -31,6 +31,13 @@ export async function handlePresencePut(request: Request, env: Env): Promise<Res
   const me = await authAny(request, env, body);
   if (!me) return errorJson(401, 'Sign in to update presence.');
 
+  // Validate BEFORE any KV write — otherwise a rejected WATCHING_* status
+  // would already have been persisted (presence poisoning).
+  const requested = body && typeof body.status === 'string' ? body.status : 'IDLE';
+  if (requested === 'WATCHING_PARTY' || requested === 'WATCHING_SOLO') {
+    return errorJson(422, 'Room statuses are managed by the room socket.');
+  }
+
   const payload = await setPresence(env, me.id, {
     status: 'IDLE',
     is_host: false,
@@ -40,11 +47,6 @@ export async function handlePresencePut(request: Request, env: Env): Promise<Res
     current_timestamp: '',
     ...(body ?? {}),
   });
-  // Force IDLE-capable statuses through REST: room states belong to the DO
-  // socket path, which is authoritative about joins/disconnects.
-  if (payload.status === 'WATCHING_PARTY' || payload.status === 'WATCHING_SOLO') {
-    return errorJson(422, 'Room statuses are managed by the room socket.');
-  }
   return json({ presence: publicPresence(payload) }, 200);
 }
 

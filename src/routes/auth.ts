@@ -21,6 +21,14 @@ import { generateAccessCode, normalizeCode, isValidNormalizedCode } from '../lib
 
 export const USERNAME_RE = /^[a-z0-9](?:[a-z0-9_-]{1,30})[a-z0-9]$/;
 
+/** Handles that would collide with app routes (/api/user/profile, /user/me,
+ * /api/auth/...) — not registrable. */
+export const RESERVED_USERNAMES = new Set([
+  'profile', 'me', 'self', 'api', 'auth', 'search', 'friends', 'presence',
+  'user', 'users', 'room', 'rooms', 'admin', 'root', 'login', 'logout',
+  'signup', 'register', 'settings', 'static', 'assets', 'favicon',
+]);
+
 const USER_COLS =
   'id, username, display_name, avatar_url, avatar_frame_id, bio, created_at, last_seen_at';
 
@@ -74,6 +82,9 @@ export async function handleSessionCreate(request: Request, env: Env): Promise<R
       422,
       'Username must be 3-32 chars: lowercase letters, numbers, "-" or "_".'
     );
+  }
+  if (RESERVED_USERNAMES.has(rawUsername)) {
+    return errorJson(422, 'That username is reserved.');
   }
   const displayName = String(body.displayName ?? rawUsername).trim().slice(0, 60) || rawUsername;
   const avatarUrl = String(body.avatarUrl ?? '').slice(0, 500);

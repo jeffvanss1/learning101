@@ -139,7 +139,15 @@ export async function friendEdgeMap(
       // ?1..?n+1 are reused across both arms — bind exactly n+1 values.
       .bind(meId, ...otherIds)
       .all<FriendshipRow>();
-    for (const f of results) out.set(f.user_id === meId ? f.friend_id : f.user_id, f);
+    // Both directed edges can exist per pair; pick deterministically —
+    // a block always wins for display (never advertise a blocked pair as
+    // friends), then accepted, then pending.
+    const RANK: Record<string, number> = { blocked: 0, accepted: 1, pending: 2 };
+    for (const f of results) {
+      const key = f.user_id === meId ? f.friend_id : f.user_id;
+      const prev = out.get(key);
+      if (!prev || RANK[f.status] < RANK[prev.status]) out.set(key, f);
+    }
   } catch {
     // Best-effort enrichment.
   }
@@ -224,7 +232,7 @@ export async function handleGetProfile(
       `SELECT u.id, u.username, u.display_name, u.avatar_url, u.avatar_frame_id
        FROM friendships f JOIN users u ON u.id = f.friend_id
        WHERE f.user_id = ?1 AND f.status = 'accepted'
-       ORDER BY u.display_name LIMIT 24`
+       ORDER BY u.display_name COLLATE NOCASE LIMIT 24`
     )
       .bind(user.id)
       .all<Pick<UserRow, 'id' | 'username' | 'display_name' | 'avatar_url' | 'avatar_frame_id'>>(),
@@ -431,7 +439,7 @@ export async function handleListFriends(request: Request, env: Env, me: AuthedUs
     env.DB.prepare(
       `SELECT u.id, u.username, u.display_name, u.avatar_url, u.avatar_frame_id FROM friendships f
        JOIN users u ON u.id = f.friend_id
-       WHERE f.user_id = ?1 AND f.status = 'accepted' ORDER BY u.display_name`
+       WHERE f.user_id = ?1 AND f.status = 'accepted' ORDER BY u.display_name COLLATE NOCASE`
     )
       .bind(me.id)
       .all<Pick<UserRow, 'id' | 'username' | 'display_name' | 'avatar_url' | 'avatar_frame_id'>>(),
@@ -474,19 +482,26 @@ export async function handleFriendRequest(request: Request, env: Env, me: Authed
   if (!target) return errorJson(404, 'User not found');
   if (target.id === me.id) return errorJson(422, 'You cannot befriend yourself.');
 
-  const existing = await env.DB.prepare(
+  // Read BOTH directed edges — the pair's state is the worst/common state
+  // of the two, never "whichever row happens to come back first".
+  const { results: pairRows } = await env.DB.prepare(
     `SELECT user_id, friend_id, status FROM friendships
      WHERE (user_id = ?1 AND friend_id = ?2) OR (user_id = ?2 AND friend_id = ?1)`
   )
     .bind(me.id, target.id)
-    .first<FriendshipRow>();
-  if (existing?.status === 'blocked' && existing.user_id === target.id) {
-    return errorJson(403, 'Request not possible.');
+    .all<FriendshipRow>();
+  // A block, in EITHER direction, stops new requests — the blocker must
+  // remove/decline first. (Previously the blocker's own request overwrote
+  // their block with a pending edge.)
+  if (pairRows.some((e) => e.status === 'blocked')) {
+    return errorJson(403, 'Unblock this person first.');
   }
-  if (existing?.status === 'accepted') return json({ status: 'accepted' }, 200);
+  if (pairRows.some((e) => e.status === 'accepted')) {
+    return json({ status: 'accepted' }, 200);
+  }
 
   // They already invited us → accept both edges.
-  if (existing && existing.user_id === target.id && existing.status === 'pending') {
+  if (pairRows.some((e) => e.user_id === target.id && e.status === 'pending')) {
     await env.DB.batch([
       env.DB.prepare(`UPDATE friendships SET status = 'accepted' WHERE user_id = ?1 AND friend_id = ?2`).bind(target.id, me.id),
       env.DB.prepare(

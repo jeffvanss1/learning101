@@ -830,6 +830,16 @@
 }
 
 /* ---- Access codes (signup reveal + sign-in input) -------------------------------- */
+/* Stacks above every other modal: the one-time code reveal can be triggered
+   from inside the profile editor, and same-z-index stacking is DOM-order —
+   the editor (later in the HTML) would otherwise bury the reveal. */
+#code-modal {
+  z-index: 220;
+}
+
+#code-modal .modal__card {
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.7);
+}
 .name-modal__alt {
   margin-top: 12px;
   text-align: center;
