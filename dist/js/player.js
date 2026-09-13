@@ -50,6 +50,7 @@
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
   const PAUSE_ASSERT_MS = 2500; // min gap between pause re-asserts (anti-loop)
+  const NATIVE_SEEK_THRESHOLD = 1.2; // seconds of unexplained time jump = user dragged the native bar
   const CONTROL_DEBOUNCE_MS = 400; // in-player state must persist this long to mirror
   const CONTROL_SUPPRESS_MS = 1200; // ignore mirror right after our own command
 
@@ -74,6 +75,7 @@
       this._doNotForceUntil = 0; // while set, don't force play/pause on a controller
       this._mirroredPlaying = null; // play/pause state the room already knows
       this._mirrorCandidate = { playing: null, since: 0 };
+      this._lastStatus = { time: -1, at: 0 }; // native-seek detection baseline
       this._mirrorTimer = null;
       this._statusTimer = null;
       this._readyTimer = null;
@@ -376,6 +378,27 @@
       }
     }
 
+    // Detect a seek performed on the player's OWN seek bar: the reported
+    // time jumped beyond what playback could have covered since the last
+    // status. Controllers get it mirrored to the room ('control'/'seek');
+    // everyone else keeps the sync contract (their drift is re-converged).
+    _detectNativeSeek() {
+      const t = this.localTime;
+      const at = this.localUpdatedAt || Date.now();
+      const prev = /** @type {{ time: number, at: number }} */ (this._lastStatus);
+      this._lastStatus = { time: t, at: at };
+      if (!this.isController || prev.time < 0 || this.isBuffering) return;
+      if (Date.now() - this._suppressed < CONTROL_SUPPRESS_MS) return; // our own command
+      const elapsed = Math.max(0, (at - prev.at) / 1000);
+      const expected = prev.time + (this.localPlaying ? elapsed : 0);
+      if (Math.abs(t - expected) > NATIVE_SEEK_THRESHOLD) {
+        // Adopt the user's position: don't fight them while the room round-trips.
+        this._suppressed = Date.now();
+        this._mirroredPlaying = this.localPlaying;
+        this.emit('control', { action: 'seek', time: t });
+      }
+    }
+
     _scheduleMirrorCheck(delay) {
       if (this._mirrorTimer) clearTimeout(this._mirrorTimer);
       this._mirrorTimer = setTimeout(() => {
@@ -427,6 +450,9 @@
           // Controller: mirror a genuine in-player play/pause to the room
           // BEFORE converging, so convergence never fights the user's action.
           this._maybeMirrorControl();
+          // Controller: mirror a genuine drag on the player's OWN seek bar
+          // (otherwise convergence reads it as drift and snaps it back).
+          this._detectNativeSeek();
           // Every status report is a chance to converge: recovers a play/seek
           // command that raced a seek, and heals a joiner that got stuck.
           this._syncToTarget();

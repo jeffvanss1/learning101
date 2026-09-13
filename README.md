@@ -374,6 +374,14 @@ explicit controls — the player's own internal play/pause state is never
 mirrored back to the room (that caused the host to pause itself), so guests
 can never desync the room by clicking inside their own player.
 
+**Controllers can use either seek bar.** The player's own play/pause is
+mirrored for the controller (debounced), and since ui-2026-09-13.15 a seek
+performed on the player's OWN seek bar is detected (an unexplained jump
+beyond 1.2s of playback progress) and mirrored to the room as a normal
+seek — no more snap-back, no need to scroll down to the in-app progress
+row. Guests' native seeks are still re-converged (sync wins; only
+controllers steer the room).
+
 ## Project layout
 
 ```
