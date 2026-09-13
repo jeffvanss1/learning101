@@ -739,6 +739,34 @@ export class WatchRoom {
   async alarm() {
     await this.ensureLoaded();
     if (!this.env || !this.env.PRESENCE_KV) return;
+
+    // LIVENESS PASS: the runtime's live-socket list is the truth. A session
+    // whose socket is gone (laptop slept, app killed, close frame lost) is a
+    // GHOST — the refresh loop below would otherwise renew its WATCHING
+    // presence every minute FOREVER ("user watching is stuck even they
+    // already left"). webSocketClose covers the polite path; this covers the
+    // impolite ones within one alarm tick.
+    const livePeerIds = new Set();
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const a = ws.deserializeAttachment();
+        if (a && a.peerId) livePeerIds.add(a.peerId);
+      } catch (_) {}
+    }
+    let pruned = false;
+    for (let i = this.sessions.length - 1; i >= 0; i--) {
+      const s = this.sessions[i];
+      if (!s.userId) continue; // anonymous sessions own no presence
+      if (!livePeerIds.has(s.id)) {
+        this.sessions.splice(i, 1);
+        pruned = true;
+        try {
+          await clearPresenceIfRoom(this.env, s.userId, this.meta.id);
+        } catch (_) {}
+      }
+    }
+    if (pruned) await this.persist();
+
     const alive = this.sessions.filter((s) => s.userId && s.presence);
     for (const s of alive) {
       try {

@@ -58,16 +58,27 @@ async function freshRoom() {
   Object.assign(store, storeInit);
   const wsHost = makeWs('p1');
   const wsGuest = makeWs('p2');
+  const sockets = [wsHost, wsGuest];
+  ctx.getWebSockets = () => sockets; // mutable in place: tests simulate socket deaths
   const kvPuts = [];
+  const kvDels = [];
+  const lastPut = {}; // stateful enough for clearPresenceIfRoom's read-first
   const env = {
     PRESENCE_KV: {
-      get: async () => null,
-      put: async (k, v, opts) => kvPuts.push({ k, v: JSON.parse(v), opts }),
+      get: async (k, type) => (lastPut[k] !== undefined && type === 'json' ? JSON.parse(lastPut[k]) : lastPut[k]) || null,
+      put: async (k, v, opts) => {
+        lastPut[k] = v;
+        kvPuts.push({ k, v: JSON.parse(v), opts });
+      },
+      delete: async (k) => {
+        delete lastPut[k];
+        kvDels.push(k);
+      },
     },
   };
   const room = new WatchRoom(ctx, env);
   await room.ensureLoaded();
-  return { room, store, wsHost, wsGuest, kvPuts };
+  return { room, store, wsHost, wsGuest, kvPuts, kvDels, sockets };
 }
 
 test('host pause/resume lands in the chat history as system lines', async () => {
@@ -238,3 +249,36 @@ test('a beat re-arms the alarm on an alarm-less DO (self-healing chain)', async 
   void wsHost;
 });
 
+
+test('ghost sessions (socket died without a close) are pruned and their WATCHING presence cleared', async () => {
+  const { room, store, wsHost, wsGuest, kvPuts, kvDels, sockets } = await freshRoom();
+  store.sessions[0].userId = 'user-1';
+  store.sessions[0].presence = { status: 'WATCHING_PARTY', room_id: 'ROOM1', media_title: 'M', media_id: '1', current_timestamp_seconds: 5 };
+  store.sessions[1].userId = 'user-2';
+  store.sessions[1].presence = { status: 'IDLE', room_id: '', media_title: '', media_id: '', current_timestamp_seconds: 0 };
+
+  kvPuts.length = 0;
+  await room.alarm();
+  assert.equal(kvPuts.length, 2, 'both refreshed while both sockets live');
+
+  // The guest's socket DIES without a close frame (app killed / laptop slept):
+  // only the host's socket remains in the runtime's live list.
+  sockets.splice(sockets.indexOf(wsGuest), 1);
+  kvPuts.length = 0;
+  kvDels.length = 0;
+  store.alarmAt = null;
+
+  await room.alarm();
+
+  assert.equal(store.sessions.length, 1, 'ghost session removed');
+  assert.equal(store.sessions[0].id, 'p1', 'the live host survives');
+  assert.equal(kvDels.length, 1, 'ghost presence cleared');
+  assert.ok(store.alarmAt > Date.now(), 'chain continues for the survivor');
+
+  // Everyone's sockets die -> everything cleared, beat stops.
+  sockets.splice(0);
+  store.alarmAt = null;
+  await room.alarm();
+  assert.equal(store.sessions.length, 0, 'all ghosts pruned');
+  assert.equal(store.alarmAt, null, 'nobody left -> beat stops');
+});

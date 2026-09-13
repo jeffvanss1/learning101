@@ -335,26 +335,32 @@ Sources:
   room — fixed with a remote-echo guard (1.5s adopt-quietly), fresh-window
   re-asserts (a pause swallowed mid-buffer re-posts within ~1s instead of
   the 2.5s throttle), room-state-trusted adoption, and no-force respected
-  for paused-room position seeks. STILL-OFFLINE FIX (api-2026-09-13.33):
+  for paused-room position seeks. STILL-OFFLINE FIX (api-2026-09-13.34):
   the TTL raise alone couldn't help because presence was refreshed ONLY by
   client timers (hidden tabs throttle to 1/5min) — the room Durable Object
   now refreshes presence ITSELF via storage alarms (60s cadence, payloads
   persisted on the session so hibernation is survived). Client throttling
   can no longer expire a watching user, and home-surface IDLE beats are
   always rejected by the ROOM_FRESH guard because the DO keeps
-  last_updated warm. STICKY-OFFLINE FIXES (api-2026-09-13.33): the alarm
+  last_updated warm. STICKY-OFFLINE FIXES (api-2026-09-13.34): the alarm
   chain could die silently (sessions persisted before the payload field
   existed made `alarm()` find nobody and NOT reschedule — offline stuck
   until redeploy); the chain now re-arms on every beat and stays alive
   while any identified session remains. The pagehide beacon no longer
   clears presence for in-room users (mobile backgrounding / bfcache fired
   it and un-marked WATCHING users); the home heartbeat logs its first
-  failure instead of swallowing it. IDLE SURFACE (api-2026-09-13.33):
+  failure instead of swallowing it. IDLE SURFACE (api-2026-09-13.34):
   the home surface has no server-side refresher, so its TTL is 1h (watching
   stays 15min + DO alarms) and the pagehide DELETE beacon is GONE — mobile
   backgrounding/bfcache fired it constantly and erased idle users ("works
   in a room, offline when idle"). True exits expire via TTL; bfcache
-  restores re-beat instantly via pageshow. The subtitle language
+  restores re-beat instantly via pageshow. GHOST-WATCHER FIX
+  (api-2026-09-13.34): sockets that die WITHOUT a close frame (laptop
+  sleep, app kill, network loss) left their session in the room DO — and
+  the presence-refresh alarm then renewed that ghost's WATCHING status
+  forever (the TTL could never expire it). Every alarm tick now checks
+  the runtime's LIVE socket list: sessions without a live socket are
+  pruned and their presence cleared within one minute of death. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching
