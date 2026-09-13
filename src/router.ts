@@ -7,6 +7,7 @@
 import type { Env, AuthedUser } from './types.js';
 import { errorJson } from './http.js';
 import { sessionUser } from './auth.js';
+import { ensureSchema } from './schema.js';
 import { handleSessionCreate, handleMe, handleClaim, handleRotateCode } from './routes/auth.js';
 import { handleUserSearch } from './routes/search.js';
 import {
@@ -51,6 +52,11 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
     }
     return null;
   }
+
+  // Self-provisioning: create any missing tables once per isolate so a
+  // fresh/unmigrated D1 can never wedge users into permanent anonymity.
+  await ensureSchema(env);
+
   const method = request.method;
 
   // ---- Auth -----------------------------------------------------------------

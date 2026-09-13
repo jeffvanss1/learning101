@@ -219,8 +219,12 @@ Prefer manual? `npx wrangler d1 create watchparty-db` and
 `npx wrangler kv namespace create PRESENCE_KV`, then paste both ids into
 `wrangler.toml` yourself.
 
-Locally, `wrangler dev` provisions D1/KV automatically — just run
-`npm run db:migrate:local` once (and copy `.dev.vars.example` to `.dev.vars`).
+Locally, `wrangler dev` provisions D1/KV automatically — copy
+`.dev.vars.example` to `.dev.vars` and you're done: the worker
+**self-provisions the profile tables** on first use (`src/schema.ts`), so a
+fresh or unmigrated database can never wedge users into a broken anonymous
+state. `npm run db:migrate:local|remote` remain the canonical way to apply
+migrations.
 
 ## Avatars & watch history
 

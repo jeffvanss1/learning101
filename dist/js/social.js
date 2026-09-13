@@ -94,7 +94,25 @@
    */
   async function ensureSession(displayName) {
     const existing = loadSession();
-    if (existing) return { ok: true, session: existing };
+    if (existing) {
+      // Validate the cached token: it can point at an account that no longer
+      // exists (DB reset/cleanup). The server is the source of truth — a
+      // stale token would otherwise wedge the user into a broken "signed in"
+      // state where profile/history writes fail.
+      try {
+        const meRes = await fetch('/api/auth/me', { headers: authHeaders() });
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (meData && meData.user) return { ok: true, session: existing };
+          // Token is for a deleted account — drop it and (re)create below.
+          saveSession(null);
+        }
+        // Non-OK response: server trouble — trust the cached session rather
+        // than destroying a possibly-valid one.
+      } catch (_) {
+        return { ok: true, session: existing };
+      }
+    }
     if (!displayName) return { ok: false, reason: 'error', message: 'No name given.' };
     try {
       const res = await fetch('/api/auth/session', {

@@ -151,9 +151,15 @@
                 'That name is protected by an access code. Pick another, or choose "Have an access code?".';
             } else {
               // Offline / server trouble: keep the app usable anonymously,
-              // but SAY so — silent anonymity is what confused people.
+              // but SAY so (with the server's detail) — silent anonymity is
+              // what confused people.
               finish();
-              toast('Could not create your profile — you are browsing anonymously. Reload to retry.', true);
+              toast(
+                'Could not create your profile — you are browsing anonymously.' +
+                  (res && res.message ? ' (' + res.message + ')' : '') +
+                  ' Reload to retry.',
+                true
+              );
             }
           });
         } else {
