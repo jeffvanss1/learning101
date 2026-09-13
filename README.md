@@ -377,7 +377,10 @@ Sources:
   bump the matching ?v= in dist/index.html in the same commit - CSS/JS
   are cached by the browser, and an unbumped version serves the stale
   file (this shipped vertical unstyled people cards once already).
-  Asset cache is now 1h (was 24h) to shrink the blast radius. The subtitle language
+  Asset cache is now 1h (was 24h) to shrink the blast radius. BRAND (ui-2026-09-13.30): logo mark is now the infinity symbol (inline
+  SVG stroke path, white on the gradient tile) in topnav, room header and
+  favicon - the play triangle remains ONLY on player controls (fallback
+  icon, Play button, play/pause toggle). The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching

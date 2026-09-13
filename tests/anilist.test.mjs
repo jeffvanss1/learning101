@@ -130,3 +130,18 @@ test('people results section fills the browse row (horizontal grid on desktop)',
   const list = css.slice(css.indexOf('.people-results__list {'), css.indexOf('.people-results__hint'));
   assert.equal(/repeat\(auto-fill,\s*minmax\(340px,\s*1fr\)\)/.test(list), true, 'grid columns must be auto-fill');
 });
+
+test('brand mark is the infinity logo; player play controls untouched', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  const favicon = readFileSync(join(ROOT, 'dist/favicon.svg'), 'utf8');
+  const brandCount = (html.match(/M12 12C10 7\.5 4 7\.5 4 12S10 16\.5 12 12/g) || []).length;
+  assert.equal(brandCount, 2, 'topnav + room brand marks carry the infinity path');
+  assert.equal(/M12 12C10 7\.5/.test(favicon), true, 'favicon carries the infinity path');
+  assert.equal(/5 3 19 12 5 21/.test(favicon), false, 'favicon no longer has the play triangle');
+  // The PLAY CONTROLS must keep their triangle (2 in html + 1 in app.js).
+  assert.equal((html.match(/5 3 19 12 5 21/g) || []).length, 2, 'player play icons untouched in html');
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.equal(/5 3 19 12 5 21/.test(app), true, 'play/pause toggle untouched in app.js');
+});
