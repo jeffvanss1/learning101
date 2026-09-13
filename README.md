@@ -368,7 +368,16 @@ Sources:
   most every 4 min; the DO alarm refreshes every 5 min; home beats every
   10 min; presence TTLs are 1h; and the room DO writes as the
   authoritative writer (bypasses the second-tab downgrade guard). Budget:
-  ~12-20 writes/day/user instead of ~4,000. The subtitle language
+  ~12-20 writes/day/user instead of ~4,000. PEOPLE SEARCH (api-2026-09-13.38): 1-2 char queries take a strict
+  relevance path (no 500-user widening; only start-of-word / exact-handle
+  matches survive), so typing "e" no longer returns half the directory.
+  The missing .avatar--lg/.avatar--xl size classes (used in JS, never
+  defined - everything rendered at 40px) now exist; user cards are
+  roomier. ASSET CACHE RULE: ANY change to dist/js/* or dist/css/* MUST
+  bump the matching ?v= in dist/index.html in the same commit - CSS/JS
+  are cached by the browser, and an unbumped version serves the stale
+  file (this shipped vertical unstyled people cards once already).
+  Asset cache is now 1h (was 24h) to shrink the blast radius. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching

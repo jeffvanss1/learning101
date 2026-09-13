@@ -7,9 +7,11 @@
 /sw.js
   Cache-Control: no-store
 
-# Versioned assets (?v=N in the HTML) are safe to cache hard.
+# Versioned assets (?v=N in the HTML). Kept at 1h, NOT hard-cached:
+# a forgotten ?v bump used to freeze users on a stale stylesheet for a
+# full day (people-search rendered as an unstyled vertical stack).
 /css/*
-  Cache-Control: public, max-age=86400
+  Cache-Control: public, max-age=3600
 
 /js/*
-  Cache-Control: public, max-age=86400
+  Cache-Control: public, max-age=3600
