@@ -13,8 +13,15 @@
 //   - the connected-peer roster is persisted to Durable Object storage (in
 //     memory state is reset on hibernation) and broadcast via
 //     `state.getWebSockets()`.
+//   - NEW: forwards per-user `presenceSync` messages into the KV presence
+//     engine (src/presence.ts) and clears presence when a peer disconnects,
+//     so "currently watching" state survives room churn without any client
+//     polling.
 //
 // No `socket.io`, no Node-only dependencies.
+
+import { verifyToken } from './auth.js';
+import { setPresence, clearPresenceIfRoom } from './presence.js';
 
 // ---------------------------------------------------------------------------
 // Protocol constants
@@ -38,6 +45,7 @@ export const MSG = {
   REQUEST_RESOLVED: 'requestResolved',
   PING: 'ping',
   PONG: 'pong',
+  PRESENCE_SYNC: 'presenceSync',
   ERROR: 'error',
 };
 
@@ -281,6 +289,13 @@ export class WatchRoom {
     const peerId = attach && attach.peerId;
     const idx = this.sessions.findIndex((p) => p.id === peerId);
     if (idx === -1) {
+      // Unknown session, but the attachment may still carry a presence
+      // identity — clear it best-effort so nothing goes stale.
+      if (attach && attach.userId) {
+        try {
+          await clearPresenceIfRoom(this.env, attach.userId, this.meta.id);
+        } catch (_) {}
+      }
       try {
         ws.close(1000, 'bye');
       } catch (_) {}
@@ -304,6 +319,16 @@ export class WatchRoom {
       await this.transferOwnership();
     }
     await this.persist();
+
+    // Presence teardown on disconnect. Only clear when the stored state still
+    // points at THIS room — the same user may have joined another room from a
+    // second tab, and we must not erase that.
+    const presenceUserId = peer.userId || (attach && attach.userId);
+    if (presenceUserId) {
+      try {
+        await clearPresenceIfRoom(this.env, presenceUserId, this.meta.id);
+      } catch (_) {}
+    }
   }
 
   // ---- Message handling -------------------------------------------------------
@@ -565,11 +590,60 @@ export class WatchRoom {
         this.send(ws, { type: MSG.PONG, ts: msg.ts ?? now() });
         break;
 
+      case MSG.PRESENCE_SYNC:
+        await this.handlePresenceSync(ws, peer, msg);
+        break;
+
       default:
         break;
     }
 
     if (dirty) await this.persist();
+  }
+
+  // ---- Presence forwarding ---------------------------------------------------
+  // The room socket is the authoritative presence writer: clients push
+  // `presenceSync` (identity + playback progress) every ~20s and on playback
+  // changes; we verify the session token (no spoofing other users), stamp the
+  // server-side room id + host flag, and persist to KV with a short TTL.
+  async handlePresenceSync(ws, peer, msg) {
+    if (!this.env || !this.env.PRESENCE_KV) return; // engine not bound (shouldn't happen)
+    let userId = null;
+    try {
+      const claims = await verifyToken(this.env, String(msg.token || ''));
+      if (claims && claims.sub && String(msg.userId || '') === claims.sub) {
+        userId = claims.sub;
+      }
+    } catch (_) {}
+    if (!userId) {
+      // Anonymous viewers carry no presence — a bad token is silently ignored.
+      return;
+    }
+
+    // Remember the identity on both the session (storage) and the socket
+    // attachment (hibernation) so disconnects can clear presence.
+    if (peer.userId !== userId) {
+      peer.userId = userId;
+      await this.persist();
+    }
+    try {
+      const attach = ws.deserializeAttachment();
+      if (!attach || attach.userId !== userId) {
+        ws.serializeAttachment({ ...(attach || {}), peerId: peer.id, userId });
+      }
+    } catch (_) {}
+
+    const watching = msg.status === 'WATCHING_PARTY' || msg.status === 'WATCHING_SOLO';
+    await setPresence(this.env, userId, {
+      // Connected but idle (e.g. tab hidden) keeps the socket, minus context.
+      status: watching ? msg.status : 'IDLE',
+      room_id: watching ? this.meta.id : '',
+      media_title: watching ? msg.media_title : '',
+      media_id: watching ? msg.media_id : '',
+      current_timestamp_seconds: msg.current_timestamp_seconds,
+      // The DO decides who hosts — never trust the client's flag.
+      is_host: this.isOwner(peer),
+    });
   }
 
   // ---- Ownership / permissions ---------------------------------------------

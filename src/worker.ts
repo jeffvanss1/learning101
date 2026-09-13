@@ -1,17 +1,18 @@
-// worker.js — Cloudflare Worker entry point
+// worker.ts — Cloudflare Worker entry point
 //
 // Responsibilities:
 //   1. Serve the static frontend build from `dist/` via Workers Static Assets.
-//   2. Expose a tiny JSON API for room creation/lookup.
-//   3. Proxy The Movie Database (TMDB) API at `/api/tmdb/*`, injecting the
-//      server-side `TMDB_API_KEY` so it never reaches the browser.
-//   4. Upgrade WebSocket connections to the `WatchRoom` Durable Object
-//      (Hibernation API).
+//   2. Expose the room JSON API, proxy TMDB + AniList, upgrade WebSockets to
+//      the `WatchRoom` Durable Object. (Unchanged from the original worker.js.)
+//   3. NEW: profiles / global search / presence — delegated to src/router.ts,
+//      backed by D1 (`DB`) and KV (`PRESENCE_KV`).
 //
 // No `socket.io` server, no Node-only dependencies.
 
 import { WatchRoom } from './WatchRoom.js';
 import { classifyIsAnime, matchAnilist } from './anilist.js';
+import { routeApi } from './router.js';
+import type { Env } from './types.js';
 
 export { WatchRoom };
 
@@ -36,23 +37,23 @@ const ANILIST_QUERY = `query ($search: String) {
 
 // Best-effort in-memory cache for the TMDB proxy (resets with the isolate;
 // the `Cache-Control` header also lets Cloudflare cache responses).
-const catalogCache = new Map();
+const catalogCache = new Map<string, { body: string; contentType: string; expires: number }>();
 const CACHE_TTL_MS = 180_000;
 const CACHE_MAX = 300;
 
 // TMDB → AniList resolution cache (7 days; the response is also CDN-cached).
-const animeCache = new Map();
+const animeCache = new Map<string, { data: unknown; expires: number }>();
 const ANIME_CACHE_MAX = 500;
 
-function corsHeaders() {
+function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   };
 }
 
-function json(data, status = 200, extra = {}) {
+function json(data: unknown, status = 200, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -64,11 +65,11 @@ function json(data, status = 200, extra = {}) {
 }
 
 // Looks like a TMDB v4 "API Read Access Token" (JWT)? Then use Bearer auth.
-function looksLikeToken(key) {
+function looksLikeToken(key: string): boolean {
   return typeof key === 'string' && key.length > 60 && key.split('.').length === 3;
 }
 
-async function proxyTmdb(path, search, apiKey) {
+async function proxyTmdb(path: string, search: string, apiKey: string): Promise<Response> {
   const target = TMDB_ORIGIN + path + search;
 
   const hit = catalogCache.get(target);
@@ -119,7 +120,7 @@ async function proxyTmdb(path, search, apiKey) {
 }
 
 // Fetch and parse a TMDB JSON resource directly (server-side API key).
-async function tmdbJson(path, apiKey) {
+async function tmdbJson(path: string, apiKey: string): Promise<any> {
   const useBearer = looksLikeToken(apiKey);
   const sep = path.includes('?') ? '&' : '?';
   const url = useBearer
@@ -137,7 +138,7 @@ async function tmdbJson(path, apiKey) {
 }
 
 // Classify a TMDB TV title and, when it is anime, resolve its AniList ID.
-async function resolveAnime(tmdbId, apiKey) {
+async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<string, unknown>> {
   const [show, keywords] = await Promise.all([
     tmdbJson(`/tv/${tmdbId}`, apiKey),
     tmdbJson(`/tv/${tmdbId}/keywords`, apiKey),
@@ -145,9 +146,9 @@ async function resolveAnime(tmdbId, apiKey) {
   if (!show || !show.id) return { anime: false };
   if (!classifyIsAnime(show, keywords)) return { anime: false };
 
-  let anilistId = null;
-  let episodes = null;
-  let title = null;
+  let anilistId: number | null = null;
+  let episodes: number | null = null;
+  let title: string | null = null;
   try {
     const res = await fetch(ANILIST_ORIGIN, {
       method: 'POST',
@@ -158,7 +159,7 @@ async function resolveAnime(tmdbId, apiKey) {
       }),
     });
     if (res.ok) {
-      const data = await res.json();
+      const data: any = await res.json();
       const media = (data && data.data && data.data.Page && data.data.Page.media) || [];
       const best = matchAnilist(show, media);
       if (best) {
@@ -175,13 +176,19 @@ async function resolveAnime(tmdbId, apiKey) {
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders() });
+    }
+
+    // --- Profile / search / presence API (D1 + KV) ---------------------------
+    if (path.startsWith('/api/')) {
+      const routed = await routeApi(request, env, path);
+      if (routed) return routed;
     }
 
     // --- WebSocket upgrade -> WatchRoom Durable Object ----------------------
@@ -218,7 +225,7 @@ export default {
       }
     }
 
-    // --- REST API ------------------------------------------------------------
+    // --- REST API (rooms, AniList) --------------------------------------------
     if (path.startsWith('/api/')) {
       if (request.method !== 'GET') {
         return json({ error: 'Method not allowed' }, 405);
@@ -298,3 +305,4 @@ export default {
     return new Response('Not found', { status: 404 });
   },
 };
+

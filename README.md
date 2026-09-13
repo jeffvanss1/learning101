@@ -18,16 +18,21 @@ is saved to your local **watch history** so you can jump back in.
 
 ```
 Browser (static build in /dist)
-   │  REST:  /api/rooms, /api/room/:id
+   │  REST:  /api/rooms, /api/room/:id, /api/user/*, /api/search/users,
+   │        /api/auth/*, /api/presence, /api/friends/*
    │  Proxy: /api/tmdb/*  ->  https://api.themoviedb.org/3/*
    │  WS:    /ws?room=<id>
    ▼
-Worker (src/worker.js)
-   │  routes REST, proxies the TMDB catalog API, upgrades WebSockets
+Worker (src/worker.ts)
+   │  routes REST (profile/search/presence via src/router.ts), proxies the
+   │  TMDB catalog API, upgrades WebSockets
+   ├─► D1 (env.DB)            users, favorites, watch history, friendships
+   ├─► KV (env.PRESENCE_KV)   presence:user:<user_id> keys, short TTL
    ▼
 WatchRoom Durable Object (src/WatchRoom.js)
    ├─ per-room state: video, playback clock, chat history, peers
    ├─ authoritative playback clock (isPlaying + time + timestamp)
+   ├─ writes/clears KV presence for signed-in peers (see below)
    └─ broadcasts play/pause/seek/videoChange/chat to every connected client
 ```
 
@@ -110,6 +115,84 @@ Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
 `/discover/tv?with_keywords=210024` (anime), `/search/multi`, `/movie/{id}`,
 `/tv/{id}`, `/tv/{id}/season/{n}`, `/movie/{id}/videos`, `/tv/{id}/videos`.
 
+## Profiles, global search & real-time presence
+
+Every visitor who picks a name silently gets a **profile** (demo-grade auth:
+no passwords — `POST /api/auth/session` issues an HMAC-signed bearer token
+kept in `localStorage`; swap `src/auth.ts` for real auth later without
+touching the route handlers). Profiles power three features:
+
+### Global people search (`/api/search/users?q=`)
+
+The normal search box now searches **people and titles at once**. Candidate
+users are narrowed in D1 with `LIKE` and then fuzzy-ranked in
+`src/lib/fuzzy.js` (exact > prefix > word > substring > Damerau-Levenshtein
+typo tolerance > subsequence). Live presence is batch-fetched from KV in a
+single pass and merged into every hit — result cards show 🟢 “Watching:
+Dune: Part Two · 01:14:20” with **[ View profile ]** and **[ Join room ]**
+buttons.
+
+### Steam-style profile pages (`/user/:username`)
+
+Hero header (avatar + decorative frame, display name, bio, level + badges,
+stats), a **real-time activity banner** with a single-click
+`⏩ Join Watch Party`, a 4-slot **favorites showcase** (pins edited via
+`PUT /api/user/profile`), and a **recently watched** column with time-ago
+indicators. Own profile gets an **Edit profile** modal (display name, bio,
+avatar frame, pinned titles searched from TMDB).
+
+### Presence engine (`src/presence.ts`)
+
+State lives in KV under `presence:user:<user_id>` with a **90 s TTL**, so
+vanished clients expire on their own:
+
+```json
+{
+  "status": "WATCHING_PARTY" | "WATCHING_SOLO" | "IDLE" | "OFFLINE",
+  "room_id": "...", "media_title": "...", "media_id": "...",
+  "current_timestamp": "01:14:20",
+  "is_host": false,
+  "last_updated": 1789300737186
+}
+```
+
+- **Room sockets are the authoritative writer.** Clients push a
+  `presenceSync` message over the room WebSocket every 20 s and on
+  play/pause/seek/videoChange; the `WatchRoom` DO verifies the session token,
+  stamps the server-side room id + host flag, and writes KV
+  (`WATCHING_PARTY` when 2+ peers, `WATCHING_SOLO` otherwise).
+- **Disconnect cleanup.** The DO clears the user's key in
+  `webSocketClose`/`webSocketError` — but only if it still points at *this*
+  room (a second tab in another room wins).
+- **Home surface.** While browsing (not in a room) the client sends a REST
+  `PUT /api/presence {status:"IDLE"}` heartbeat every 60 s and a
+  `sendBeacon` `DELETE /api/presence` on page unload.
+- Readers synthesize `OFFLINE` for missing/expired keys, so “offline” needs
+  no tombstones.
+
+Watch history is also recorded server-side (`POST /api/user/history`, one row
+per title+episode) so profiles survive cleared browsers, and friendships
+(request / accept / remove) live in D1 with directional states
+(`pending-in`, `pending-out`, `accepted`, `blocked`).
+
+### Levels & badges
+
+Deterministic, computed from stats on read (`src/lib/level.js`): level 1
+costs 0 watches and each level costs 4 more than the last; badges include
+First Watch, Binge Watcher, Social Butterfly, Showcase Curator, Party Host.
+
+### Setup (one-time)
+
+```bash
+npx wrangler d1 create watchparty-db            # paste database_id into wrangler.toml
+npx wrangler kv namespace create PRESENCE_KV    # paste id into wrangler.toml
+npx wrangler d1 migrations apply watchparty-db --remote   # apply migrations/
+npx wrangler secret put SESSION_SECRET          # any long random string
+```
+
+Locally, `wrangler dev` provisions D1/KV automatically — just run
+`npm run db:migrate:local` once (and copy `.dev.vars.example` to `.dev.vars`).
+
 ## Avatars & watch history
 
 - **Avatars** come from the free [DiceBear](https://www.dicebear.com/introduction/)
@@ -141,21 +224,44 @@ can never desync the room by clicking inside their own player.
 ## Project layout
 
 ```
-wrangler.toml        # Workers Static Assets + Durable Object bindings/migration
+wrangler.toml        # Static Assets + DO + D1 + KV bindings, D1 migrations dir
 package.json
+tsconfig.json        # strict type check for src/ (wrangler bundles TS natively)
+tsconfig.frontend.json  # strict checkJs for the new frontend modules
+migrations/
+  0001_profiles.sql  # users, user_favorites, watch_history, friendships
 src/
-  worker.js          # routing, REST API, TMDB proxy, WS upgrade
-  WatchRoom.js       # Durable Object: state, chat, sync broadcast
+  worker.ts          # entry: routing, room API, TMDB proxy, WS upgrade
+  router.ts          # /api dispatch for profiles/search/presence/friends
+  types.ts           # shared domain + Env types
+  auth.ts            # HMAC session tokens (issue/verify)
+  presence.ts        # KV presence engine (write/read/batch/clear)
+  http.ts            # JSON response helpers
+  routes/
+    auth.ts          # POST /api/auth/session, GET /api/auth/me
+    search.ts        # GET /api/search/users (fuzzy + batch presence)
+    users.ts         # profile GET/PUT, history, friends
+    presence.ts      # REST presence (IDLE heartbeat, unload beacon)
+  lib/
+    fuzzy.js         # pure fuzzy matching (unit-tested)
+    format.js        # formatClock/timeAgo (unit-tested)
+    level.js         # level curve + badges (unit-tested)
+  WatchRoom.js       # Durable Object: state, chat, sync, presence forwarding
+  anilist.js         # TMDB ⇄ AniList anime mapping (unchanged)
 dist/                # static frontend (no build step required)
   index.html
   css/style.css      # room / chat / player chrome
   css/catalog.css    # browse, hero, rows, cards, hover preview, modals, seek bar
+  css/social.css     # profiles, people cards, presence badges, avatar frames
   js/utils.js        # DOM helpers, formatting, DiceBear avatars, watch history, random names
   js/api.js          # REST + WebSocket client w/ auto-reconnect
   js/player.js       # PlaybackSyncManager (Bingr postMessage bridge)
   js/catalog.js      # TMDB library: browse, search, trailer hover, episode picker
-  js/app.js          # home/room flow, modals, chat, wiring
+  js/types.js        # JSDoc mirrors of the API contract (checked by tsc)
+  js/social.js       # session, presence clients, search UI, profile UI, editor
+  js/app.js          # home/room/profile flow, modals, chat, wiring
   favicon.svg
+tests/               # node --test unit tests for the pure libs
 ```
 
 ## Run locally
@@ -172,33 +278,61 @@ invite link (or `/room/<id>`) in another tab to test sync + chat.
 > signaling and room persistence work offline. The Bingr catalog proxy requires
 > network egress, which Cloudflare Workers have in production.
 
+## Checks & tests
+
+```bash
+npm run check   # tsc (worker + frontend JSDoc) + node --check on every script
+npm test        # node --test unit tests for the pure libs (fuzzy, format, level)
+npm run db:migrate:local   # apply migrations/ to the local D1
+```
+
 ## Deploy
 
 ```bash
 npm run deploy
 ```
 
-`wrangler.toml` declares the `WATCH_ROOM` binding and a `v1`
-`new_sqlite_classes` migration (SQLite-backed storage is required for new
-Durable Object namespaces on Cloudflare's free plan).
+`wrangler.toml` declares the `WATCH_ROOM` Durable Object binding (`v1`
+`new_sqlite_classes` migration), the `DB` D1 database, and the
+`PRESENCE_KV` KV namespace — create both with the one-time setup commands
+above, then `npm run deploy` bundles the TypeScript entry directly (wrangler
+compiles `src/worker.ts` with its built-in esbuild; no separate build step).
 
 ## REST API
 
-| Method | Path                | Description                                  |
-| ------ | ------------------- | -------------------------------------------- |
-| GET    | `/api/rooms`        | Create a room → `{ id, url, ws }`            |
-| GET    | `/api/room/:id`     | Look up a room's current state               |
-| GET    | `/api/tmdb/*`       | Proxy to the TMDB catalog API                |
-| GET    | `/room/:id/health`  | Durable Object health (peers, playback)      |
+| Method | Path                       | Description                                        |
+| ------ | -------------------------- | -------------------------------------------------- |
+| GET    | `/api/rooms`               | Create a room → `{ id, url, ws }`                  |
+| GET    | `/api/room/:id`            | Look up a room's current state                     |
+| GET    | `/api/tmdb/*`              | Proxy to the TMDB catalog API                      |
+| GET    | `/room/:id/health`         | Durable Object health (peers, playback)            |
+| POST   | `/api/auth/session`        | Create-or-login (demo auth) → `{ token, user }`    |
+| GET    | `/api/auth/me`             | Current session user or `null`                     |
+| GET    | `/api/search/users?q=`     | Fuzzy user search + live presence                  |
+| GET    | `/api/user/:username`      | Public profile (pins, last 5 watched, presence)    |
+| PUT    | `/api/user/profile`        | Update bio / display name / frame / pins (auth)    |
+| POST   | `/api/user/history`        | Record a watched title (auth)                      |
+| GET    | `/api/friends`             | Friends + incoming requests, with presence (auth)  |
+| POST   | `/api/friends/:username`   | Send friend request / auto-accept mutual (auth)    |
+| PUT    | `/api/friends/:username`   | Accept an incoming request (auth)                  |
+| DELETE | `/api/friends/:username`   | Remove / decline / cancel (auth)                   |
+| PUT    | `/api/presence`            | IDLE heartbeat (auth; also accepts body token)     |
+| DELETE | `/api/presence`            | Clear presence now — `sendBeacon` target (auth)    |
+| GET    | `/api/presence/:userId`    | Read one user's presence                           |
 
 ## WebSocket protocol
 
 Clients connect to `/ws?room=<id>` and exchange JSON messages:
 
 - Client → server: `join`, `chat`, `videoChange`, `play`, `pause`, `seek`,
-  `transfer`, `grant`, `revoke`, `ping`
+  `transfer`, `grant`, `revoke`, `ping`, `presenceSync`
 - Server → client: `state`, `peers`, `system`, `chat`, `videoChange`,
   `play`, `pause`, `seek`, `pong`
+
+`presenceSync` carries `{ token, userId, status, media_id, media_title,
+current_timestamp_seconds, is_host }`. The DO verifies the token, overrides
+`is_host`/`room_id` with server truth, and writes the KV presence key (90 s
+TTL). On socket close the DO clears the user's presence.
 
 The first connected client becomes the **host** (playback owner). The host can:
 

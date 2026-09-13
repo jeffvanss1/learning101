@@ -15,9 +15,11 @@
     video: null,
     client: null,
     sync: null,
+    presence: null, // RoomPresence (social.js) — writes KV presence via the DO
     chatLoaded: false,
     browseHandle: null,
     roomBrowseHandle: null,
+    profileCleanup: null, // profile page teardown (social.js)
     scrubbing: false,
     _lastHistoryKey: null,
     _lastRecKey: null,
@@ -83,6 +85,14 @@
         }
         err.textContent = '';
         saveName(n);
+        // Silent profile session — makes the user searchable + presence-aware
+        // without any extra auth step. Fire-and-forget; failure is harmless.
+        if (WP.Social) {
+          WP.Social.ensureSession(n).then(() => {
+            WP.Social.startIdlePresence();
+            refreshProfileButton();
+          });
+        }
         done(n);
       };
       modal.addEventListener('click', (e) => {
@@ -112,6 +122,37 @@
   function setupChrome() {
     $('nav-join').addEventListener('click', openJoin);
     $('nav-new-room').addEventListener('click', () => startRoomWithVideo(null));
+
+    // Profile / sign-in button in the top nav.
+    const profileBtn = $('nav-profile');
+    if (profileBtn) {
+      profileBtn.addEventListener('click', async () => {
+        let s = WP.Social && WP.Social.getSession();
+        if (!s) {
+          const n = await promptName();
+          if (!n) return;
+          s = await WP.Social.ensureSession(n);
+          if (WP.Social) WP.Social.startIdlePresence();
+          refreshProfileButton();
+        }
+        if (s) {
+          history.pushState(null, '', '/user/' + encodeURIComponent(s.user.username));
+          routeCurrent();
+        }
+      });
+    }
+
+    // social.js asks us to run the sign-in flow (e.g. "Add friend" while
+    // anonymous).
+    window.addEventListener('wp:need-signin', async () => {
+      toast('Pick a name first — that becomes your profile.');
+      const n = await promptName();
+      if (n && WP.Social) {
+        await WP.Social.ensureSession(n);
+        WP.Social.startIdlePresence();
+        refreshProfileButton();
+      }
+    });
 
     // Keep the view in sync with history traversal (browser Back/Forward, or
     // the `history.back()` we call when leaving a room).
@@ -169,6 +210,13 @@
       }
       state.name = name;
       saveName(name);
+      // Silent profile session (same as the name modal).
+      if (WP.Social) {
+        WP.Social.ensureSession(name).then(() => {
+          WP.Social.startIdlePresence();
+          refreshProfileButton();
+        });
+      }
       $('join-error').textContent = '';
       enterRoom(roomId, null);
     });
@@ -214,7 +262,10 @@
     // Swap views.
     $('home-nav').hidden = true;
     $('home').hidden = true;
+    $('profile').hidden = true;
     $('room').hidden = false;
+    document.body.classList.add('in-room');
+    if (WP.Social) WP.Social.stopIdlePresence();
 
     // Push the room URL onto history (instead of replacing it) so the browser
     // back button returns to the home page rather than leaving the app.
@@ -235,6 +286,17 @@
     const client = new WP.RoomClient(roomId);
     state.client = client;
     wireClient(client);
+
+    // Real-time presence: room lifecycle + playback progress are pushed into
+    // the KV presence engine by the WatchRoom DO on our behalf.
+    if (WP.Social) {
+      state.presence = new WP.Social.RoomPresence(client, {
+        getVideo: () => state.video,
+        getPeerCount: () => state.peers.length,
+        isHost: () => state.isOwner,
+      });
+    }
+
     client.connect(state.name);
 
     if (state.video) sync.loadVideo(state.video);
@@ -361,6 +423,13 @@
     client.on('pause', (msg) => state.sync && state.sync.handleServerMessage(msg));
     client.on('seek', (msg) => state.sync && state.sync.handleServerMessage(msg));
 
+    // Presence nudges: reflect playback/roster changes immediately instead of
+    // waiting for the periodic heartbeat (host flag, solo vs party, title).
+    const presenceNudge = () => {
+      if (state.presence) state.presence.syncNow();
+    };
+    ['play', 'pause', 'seek', 'videoChange', 'peers'].forEach((t) => client.on(t, presenceNudge));
+
     client.on('reconnecting', (info) => {
       setConnStatus('Reconnecting\u2026', true);
       toast(`Connection lost \u2014 retrying in ${Math.ceil(info.delay / 1000)}s`);
@@ -395,6 +464,7 @@
 
     sync.on('progress', ({ time, playing, duration }) => {
       updateProgress(time, playing, duration);
+      if (state.presence) state.presence.syncProgress(time);
     });
 
     sync.on('buffering', () => setConnStatus('Buffering\u2026', true));
@@ -486,6 +556,8 @@
       if (hk !== state._lastHistoryKey) {
         state._lastHistoryKey = hk;
         WP.historyAdd(v);
+        // Server-side history for signed-in profiles (fire-and-forget).
+        if (WP.Social) WP.Social.recordHistoryFor(v);
       }
       if (v.poster && thumb) {
         if (!img) {
@@ -936,8 +1008,12 @@
   // Fully tear down the room session, including stopping/unloading the player
   // so its audio cannot keep playing after the user leaves.
   function teardownRoomSession() {
+    if (state.presence) {
+      state.presence.destroy(); // also stops the room-sync heartbeat
+      state.presence = null;
+    }
     if (state.client) {
-      state.client.close();
+      state.client.close(); // the DO clears our presence key on disconnect
       state.client = null;
     }
     if (state.sync) {
@@ -948,6 +1024,8 @@
       state.roomBrowseHandle.destroy();
       state.roomBrowseHandle = null;
     }
+    document.body.classList.remove('in-room');
+    if (WP.Social && WP.Social.getSession()) WP.Social.startIdlePresence();
     state.chatLoaded = false;
     state.video = null;
     state.isOwner = false;
@@ -964,9 +1042,55 @@
   function showHome() {
     const alreadyHome = $('room').hidden && !$('home').hidden;
     $('room').hidden = true;
+    $('profile').hidden = true;
     $('home-nav').hidden = false;
     $('home').hidden = false;
     if (!alreadyHome) mountHome();
+  }
+
+  // --------------------------------------------------------------------------
+  // Profile page routing (/user/:username)
+  // --------------------------------------------------------------------------
+  const PROFILE_RE = /^\/user\/([A-Za-z0-9_-]{1,64})\/?$/;
+
+  function teardownProfileView() {
+    if (state.profileCleanup) {
+      state.profileCleanup();
+      state.profileCleanup = null;
+    }
+    $('profile').hidden = true;
+    $('profile').innerHTML = '';
+  }
+
+  function showProfileView(username) {
+    if (state.client || state.sync) teardownRoomSession();
+    $('room').hidden = true;
+    $('home').hidden = true;
+    $('home-nav').hidden = false;
+    clearSearchInputs();
+    if (!WP.Social) return;
+    if (state.browseHandle) {
+      // Pause browse work while the profile owns the screen.
+      state.browseHandle.destroy();
+      state.browseHandle = null;
+    }
+    $('profile').hidden = false;
+    state.profileCleanup = WP.Social.mountProfile($('profile'), username);
+  }
+
+  // Render whichever surface the current URL asks for (boot + popstate).
+  function routeCurrent() {
+    const profileMatch = location.pathname.match(PROFILE_RE);
+    if (profileMatch) {
+      showProfileView(decodeURIComponent(profileMatch[1]));
+      return;
+    }
+    if (isRoomPath()) return; // room deep-links are handled at boot
+    teardownProfileView();
+    showHome();
+    // /search?q=... and /?q=... prefill the unified search.
+    const q = new URLSearchParams(location.search).get('q');
+    if (q) runSearch(q);
   }
 
   function onLeaveRoom() {
@@ -993,7 +1117,7 @@
   function onPopState() {
     if (isRoomPath()) return; // back into a room entry — handled elsewhere
     if (!$('room').hidden || state.client || state.sync) teardownRoomSession();
-    showHome();
+    routeCurrent();
   }
 
   // --------------------------------------------------------------------------
@@ -1131,12 +1255,23 @@
             goHome();
             return;
           }
+          if (!$('profile').hidden) {
+            // Leaving the profile page: push '/' so Back returns to it.
+            history.pushState(null, '', '/');
+            routeCurrent();
+            setActive('home');
+            return;
+          }
           clearSearchInputs();
           if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
           setActive('home');
           scrollHomeTop();
         } else if (key === 'history') {
           if (inRoom) goHome();
+          if (!$('profile').hidden) {
+            history.pushState(null, '', '/');
+            routeCurrent();
+          }
           const sec = $('history');
           if (sec && !sec.hidden) {
             setActive('history');
@@ -1150,6 +1285,10 @@
           // Library section (movies, series, anime, trending, top-rated, ...).
           const sectionKey = ROW_KEYS[key] || key;
           if (inRoom) goHome();
+          if (!$('profile').hidden) {
+            history.pushState(null, '', '/');
+            routeCurrent();
+          }
           setActive(key);
           scrollToBrowseRow(sectionKey);
         }
@@ -1177,6 +1316,42 @@
   }
 
   // --------------------------------------------------------------------------
+  // Top-nav profile button state
+  // --------------------------------------------------------------------------
+  function refreshProfileButton() {
+    const btn = $('nav-profile');
+    if (!btn) return;
+    const s = WP.Social && WP.Social.getSession();
+    const img = $('nav-profile-avatar');
+    const fallback = btn.querySelector('.topnav__profile-fallback');
+    if (s && img) {
+      img.hidden = false;
+      img.src = WP.avatarUrl(s.user.displayName || s.user.username);
+      if (fallback) fallback.style.display = 'none';
+      btn.title = 'Your profile — @' + s.user.username;
+    } else {
+      if (img) {
+        img.hidden = true;
+        img.removeAttribute('src');
+      }
+      if (fallback) fallback.style.display = '';
+      btn.title = 'Sign in to WatchParty';
+    }
+  }
+
+  // Drive the catalog's search pipeline from a raw query (deep links like
+  // /search?q=... or /?q=... — also used by profile showcase slots).
+  function runSearch(query) {
+    const q = String(query || '').trim();
+    if (!q) return;
+    [$('topnav-search-input'), $('sidenav-search-input')].forEach((inp) => {
+      if (!inp) return;
+      inp.value = q;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Home browse
   // --------------------------------------------------------------------------
   function mountHome() {
@@ -1189,6 +1364,8 @@
       // Two search bars drive the same search (kept in sync): the top-nav bar
       // that shares the logo row and the side-rail's dedicated search bar.
       searchInputs: [$('topnav-search-input'), $('sidenav-search-input')],
+      // People results (profiles + live presence) render above media results.
+      peopleProvider: WP.Social ? (q) => WP.Social.renderPeople(q) : null,
     });
     renderHistory();
   }
@@ -1218,12 +1395,29 @@
     setupChrome();
     // Restore the saved identity so we never ask for a name twice.
     state.name = savedName();
-    const m = location.pathname.match(/^\/room\/([A-Za-z0-9_-]+)\/?$/);
-    if (m) {
-      handleDeepLink(m[1]);
-    } else {
-      mountHome();
+    // Silent profile session + IDLE presence heartbeat (home surface).
+    if (state.name && WP.Social) {
+      WP.Social.ensureSession(state.name).then(() => {
+        WP.Social.startIdlePresence();
+        refreshProfileButton();
+      });
     }
+    refreshProfileButton();
+
+    const roomMatch = location.pathname.match(/^\/room\/([A-Za-z0-9_-]+)\/?$/);
+    if (roomMatch) {
+      handleDeepLink(roomMatch[1]);
+      return;
+    }
+    const profileMatch = location.pathname.match(PROFILE_RE);
+    if (profileMatch) {
+      showProfileView(decodeURIComponent(profileMatch[1]));
+      return;
+    }
+    mountHome();
+    // /search?q=... or /?q=... deep links drive the unified search.
+    const q = new URLSearchParams(location.search).get('q');
+    if (q) runSearch(q);
   }
 
   if (document.readyState === 'loading') {

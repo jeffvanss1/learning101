@@ -1,5 +1,5 @@
 name = "watchparty-app"
-main = "src/worker.js"
+main = "src/worker.ts"
 compatibility_date = "2026-01-01"
 
 [assets]
@@ -13,6 +13,11 @@ not_found_handling = "single-page-application"
 # For local dev, put it in `.dev.vars` (gitignored) instead of committing here.
 TMDB_API_KEY = ""
 
+# HMAC secret for profile session tokens. Set it in production:
+#   wrangler secret put SESSION_SECRET
+# (Local dev falls back to a stable dev secret — see src/auth.ts.)
+# SESSION_SECRET = ""
+
 [durable_objects]
 bindings = [
   { name = "WATCH_ROOM", class_name = "WatchRoom" }
@@ -21,3 +26,17 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["WatchRoom"]
+
+# Profile persistence: users, favorites, watch history, friendships.
+[[d1_databases]]
+binding = "DB"
+database_name = "watchparty-db"
+database_id = "watchparty-db" # replace with the real id from `wrangler d1 create watchparty-db`
+migrations_dir = "migrations"
+
+# Real-time presence: presence:user:<user_id> keys with short TTLs
+# (see src/presence.ts). Create with `wrangler kv namespace create PRESENCE_KV`
+# and paste the returned id below.
+[[kv_namespaces]]
+binding = "PRESENCE_KV"
+id = "PRESENCE_KV_PLACEHOLDER" # replace with the real id from `wrangler kv namespace create`

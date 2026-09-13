@@ -1,4 +1,9 @@
-# The Movie Database API key.
-# Create one for free at https://www.themoviedb.org/settings/api
-# Copy this file to `.dev.vars` and paste your key (do NOT commit `.dev.vars`).
+# Copy to `.dev.vars` for local dev (gitignored). Secrets only — regular
+# config lives in wrangler.toml.
+
+# The Movie Database API key (get one free at themoviedb.org).
 TMDB_API_KEY=""
+
+# HMAC secret for profile session tokens. Any long random string works
+# locally; production must use `wrangler secret put SESSION_SECRET`.
+SESSION_SECRET="dev-secret-change-me"

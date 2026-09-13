@@ -805,6 +805,9 @@
   function mountBrowse(container, opts) {
     opts = opts || {};
     const onSelect = opts.onSelect || function () {};
+    // Optional async `(query) => Node | null` — renders the "People" section
+    // above media results (profiles/search integration, see social.js).
+    const peopleProvider = typeof opts.peopleProvider === 'function' ? opts.peopleProvider : null;
     const externalInputs = Array.isArray(opts.searchInputs)
       ? opts.searchInputs.filter(Boolean)
       : opts.searchInput
@@ -1044,6 +1047,15 @@
         list.forEach((it) => gridEl.appendChild(cardNode(it, choose)));
       }
       rowsWrap.insertBefore(gridEl, sentinel);
+      // People results sit above the media grid (best effort — if the call
+      // fails or finds nobody, the media grid stands alone).
+      if (peopleProvider && searchQuery) {
+        const q = searchQuery;
+        Promise.resolve(peopleProvider(q)).then((node) => {
+          if (destroyed || !node || mode !== 'search' || searchQuery !== q) return;
+          rowsWrap.insertBefore(node, rowsWrap.firstChild);
+        }).catch(() => {});
+      }
     }
 
     function showError(detail) {
