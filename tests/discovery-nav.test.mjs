@@ -87,6 +87,22 @@ test('.discovery stays a self-contained scroll surface', () => {
   }
 });
 
+test('no stale ROW_DEFS references (the empty-home bug)', () => {
+  // The 2026-09-13 hoist renamed ROW_DEFS -> FEED_DEFS but a live reference
+  // survived inside mountBrowse's resetSections(); the home feed then died
+  // with a ReferenceError at runtime. FEED_DEFS is the only feed list.
+  assert.ok(!/\bROW_DEFS\b/.test(catalogJs), 'catalog.js must not reference ROW_DEFS anymore');
+  assert.ok(catalogJs.includes('const FEED_DEFS = ['), 'FEED_DEFS must exist at module scope');
+});
+
+test('the global drawer is mounted ONCE at boot (the dead-Friends-button bug)', () => {
+  // When the drawer went global, its only mount call (inside mountHome) was
+  // removed and never replaced — toggleFriendsRail() no-op'd forever.
+  const bootMount = appJs.includes("WP.Social.mountFriendsRail($('friends-rail'))");
+  assert.ok(bootMount, "app.js boot must mount the drawer: WP.Social.mountFriendsRail($('friends-rail'))");
+  assert.ok(!/mountHome[\s\S]{0,400}mountFriendsRail/.test(appJs), 'the mount must live at boot level, not inside mountHome');
+});
+
 test('discovery + drawer wiring: routing, lifecycle and entry points exist', () => {
   assert.ok(appJs.includes('showDiscoveryView'), 'app.js must define showDiscoveryView');
   assert.ok(appJs.includes('teardownDiscoveryView'), 'app.js must define teardownDiscoveryView');

@@ -921,7 +921,7 @@
     const sentinel = h('div', 'browse__sentinel');
 
     function resetSections() {
-      sections = ROW_DEFS.map((d) => ({
+      sections = FEED_DEFS.map((d) => ({
         key: d.key,
         title: d.title,
         path: d.path,

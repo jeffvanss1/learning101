@@ -272,6 +272,9 @@
     // Home guide rail (left sidebar).
     setupSidenav();
     wireSearchFallback();
+    // Global friends drawer — mounted ONCE at boot (body-level markup); the
+    // side-nav "Friends" item only toggles it. Polling starts when opened.
+    if (WP.Social) WP.Social.mountFriendsRail($('friends-rail'));
 
     document.querySelectorAll('.modal__close').forEach((btn) => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));
