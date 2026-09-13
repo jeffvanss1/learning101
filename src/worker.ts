@@ -158,8 +158,13 @@ async function tmdbJson(path: string, apiKey: string): Promise<any> {
 
 // Classify a TMDB TV title and, when it is anime, resolve its AniList ID.
 async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<string, unknown>> {
+  // language=en-US: `name` must be locale-stable for title matching (a
+  // Japanese-locale request returned Japanese for BOTH name and
+  // original_name and the AniList match collapsed). original_name keeps the
+  // native script, which the (now unicode-aware) matcher compares against
+  // AniList's title.native.
   const [show, keywords] = await Promise.all([
-    tmdbJson(`/tv/${tmdbId}`, apiKey),
+    tmdbJson(`/tv/${tmdbId}?language=en-US`, apiKey),
     tmdbJson(`/tv/${tmdbId}/keywords`, apiKey),
   ]);
   if (!show || !show.id) return { anime: false };
@@ -174,7 +179,7 @@ async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<stri
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         query: ANILIST_QUERY,
-        variables: { search: show.name || show.original_name || '' },
+        variables: { search: show.original_name || show.name || '' },
       }),
     });
     if (res.ok) {

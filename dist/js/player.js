@@ -236,6 +236,11 @@
             time: msg.time,
             timestamp: msg.timestamp,
           });
+          // FRESH authoritative broadcast: converge NOW, not on the next
+          // status poll (polls alone made pause/resume feel seconds late —
+          // guests kept playing through the 2.5s assert throttle, which
+          // read as play/pause looping).
+          this._syncToTarget(true);
           break;
         default:
           break;
@@ -274,7 +279,8 @@
     // call repeatedly (status polls, iframe load, follow-up timers): play is
     // only sent when we think we're paused (so it self-stops once playing),
     // and pause re-asserts are throttled so they can never loop.
-    _syncToTarget() {
+    /** @param {boolean} [fresh] true = authoritative broadcast just arrived; bypass the pause-assert throttle once */
+    _syncToTarget(fresh) {
       const msg = this._lastMsg;
       if (!msg || !this._iframeLoaded) return;
       const target = this.estimate(msg);
@@ -304,7 +310,7 @@
             this.seek(target.time);
             this._scheduleSync(600);
           }
-          if (this.localPlaying && !noForce && Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS) {
+          if (this.localPlaying && !noForce && (fresh || Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS)) {
             this.pause();
             this._lastPauseAssert = Date.now();
           }
@@ -326,8 +332,9 @@
           this.seek(target.time);
           this._scheduleSync(600);
         }
-        // Pause a client landing in a paused room — throttled against loops.
-        if (this.localPlaying && Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS) {
+        // Pause a client landing in a paused room — the throttle guards
+        // POLL-driven asserts; a fresh broadcast acts immediately.
+        if (this.localPlaying && (fresh || Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS)) {
           this.pause();
           this._lastPauseAssert = Date.now();
         }

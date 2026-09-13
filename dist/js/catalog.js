@@ -25,7 +25,7 @@
   const CACHE_KEY_PREFIX = 'wp:cat:';
   const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
   const ANIME_KEYWORD = 210024; // TMDB keyword id for "anime"
-  const ANILIST_CACHE_PREFIX = 'wp:anilist:';
+  const ANILIST_CACHE_PREFIX = 'wp:anilist:v2:'; // v2: busts cached anilistId:null from the CJK match bug
   const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
   // ---- tiny DOM helpers ------------------------------------------------------

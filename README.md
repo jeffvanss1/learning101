@@ -304,14 +304,24 @@ Sources:
   every cue is a tick on a strip — click one to see its timestamp, hit
   `Align to playhead` to make that line start NOW (manual match, no mic).
   The strip is ZOOMED to a 5-minute window that follows the playhead
-  (api-2026-09-13.26). Uploads now actually load the cues (they only
-  counted before). The subtitle language is decoupled from the audio language by
+  (api-2026-09-13.27). Uploads now actually load the cues (they only
+  counted before). PLAYBACK CONVERGENCE (api-2026-09-13.27): play/pause/
+  seek broadcasts converge IMMEDIATELY (message-driven) instead of on the
+  2.5s throttled poll — the pause/resume delay that read as play-pause
+  looping is gone. ANIME: the AniList matcher is unicode-aware (native
+  kana/kanji titles like ジョジョの奇妙な冒険 now resolve to an AniList id —
+  the a-z0-9 filter used to erase them: "anime has no player"), the match
+  searches AniList with the ORIGINAL title and pins en-US for the TMDB
+  name, and the client cache prefix was bumped to v2 (old nulls poisoned).
+  Anime/TV subtitle searches ALWAYS carry season+episode (S1 default;
+  Wyzie requires them together, lima 400s without). The subtitle language
+  is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching
   reloads instantly. Sync is ONE PRESS ("Shazam-style"): hit ⚡ Sync (or `S`) exactly
   when a line starts being spoken and the next upcoming cue snaps to that
   instant — no arming, no reading a quoted line; repeat presses re-snap
-  (ui-2026-09-13.20). Per-record drop diagnostics
+  (ui-2026-09-13.21). Per-record drop diagnostics
   (`empty:array |dropped:65(host:65@dl.opensubtitles.org)`) make any
   remaining mismatch a one-probe answer. The panel's `fileId`
   is an opaque base64url token of the file URL — `/api/subs/file` can never
@@ -413,7 +423,7 @@ mirrored back to the room (that caused the host to pause itself), so guests
 can never desync the room by clicking inside their own player.
 
 **Controllers can use either seek bar.** The player's own play/pause is
-mirrored for the controller (debounced), and since ui-2026-09-13.20 a seek
+mirrored for the controller (debounced), and since ui-2026-09-13.21 a seek
 performed on the player's OWN seek bar is detected (an unexplained jump
 beyond 1.2s of playback progress) and mirrored to the room as a normal
 seek — no more snap-back, no need to scroll down to the in-app progress
@@ -521,14 +531,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.26",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.27",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.20` and
-   `[WatchParty] API build: api-2026-09-13.26`.
+   `[WatchParty] UI build: ui-2026-09-13.21` and
+   `[WatchParty] API build: api-2026-09-13.27`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.

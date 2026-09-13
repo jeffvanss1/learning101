@@ -105,3 +105,32 @@ test('guests (non-controllers) do not mirror native seeks — sync wins', async 
   sync.destroy();
   await tick(5);
 });
+
+
+test('fresh pause broadcasts converge immediately (no 2.5s throttle delay)', async () => {
+  const { sync, fire } = await freshPlayer();
+  const posts = [];
+  sync.iframe = sync.iframe || {};
+  // The harness's contentWindow stub records every command the manager posts.
+  const cw = sync.iframe.contentWindow;
+  const orig = cw.postMessage;
+  cw.postMessage = (data) => posts.push(data && data.command);
+
+  sync._iframeLoaded = true;
+  sync.isController = false; // guest: room is authoritative
+  fire(100, true); // playing
+  await tick(10);
+
+  sync.handleServerMessage({ type: 'pause', playback: { isPlaying: false, time: 100, timestamp: Date.now() } });
+  assert.equal(posts[posts.length - 1], 'pause', 'pause applied IMMEDIATELY on the broadcast');
+
+  // Player resumes (status), another pause broadcast arrives right away —
+  // the OLD poll path throttled this for 2.5s (the perceived "loop and pause").
+  fire(101, true);
+  await tick(10);
+  sync.handleServerMessage({ type: 'pause', playback: { isPlaying: false, time: 101, timestamp: Date.now() } });
+  const pauseCount = posts.filter((c) => c === 'pause').length;
+  assert.ok(pauseCount >= 2, 'fresh broadcasts bypass the assert throttle: ' + pauseCount);
+  sync.destroy();
+  await tick(5);
+});

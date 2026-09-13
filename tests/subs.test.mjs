@@ -607,6 +607,29 @@ test('editor zoom: the strip is a 5-minute window that follows the playhead', as
   assert.ok(Math.abs(off + 11) < 0.5, 'align snapped the 40:00 line to the playhead: ' + off);
 });
 
+test('anime subs: tv/anime searches always carry season+episode (lima 400s without)', async () => {
+  // Anime videos arrive with episode set but season null (catalog shape).
+  // Wyzie requires season&episode TOGETHER -> default both, else anime never
+  // gets subs (and the lima source hard-400s).
+  const urls = [];
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/subs/search')) {
+      urls.push(u);
+      return Promise.resolve({ ok: true, json: async () => ({ results: [], best: null }) });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+  const { Subs } = await freshSubs();
+  Subs.mount(new El2());
+  Subs.__test.setLang('id');
+  Subs.setVideo({ type: 'anime', id: '31918', episode: 5 }); // season deliberately missing
+  await new Promise((r) => setTimeout(r, 40));
+  assert.ok(urls.length >= 1, 'search fired');
+  assert.ok(/[?&]season=1&episode=5/.test(urls[0]), 'S defaulted to 1, E preserved: ' + urls[0]);
+  assert.ok(/[?&]type=tv/.test(urls[0]), 'anime searches as tv: ' + urls[0]);
+});
+
 test('room sync: onLoaded/onOffset fire locally; applyRemoteOffset does NOT echo', async () => {
   // app.js wires these: the HOST broadcasts what they load/match; clients
   // apply via loadRemote/applyRemoteOffset — which must not re-broadcast.

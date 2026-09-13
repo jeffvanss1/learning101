@@ -9,13 +9,20 @@
 
 export const ANIME_KEYWORD_ID = 210024; // TMDB keyword id for "anime"
 
-/** Normalize a title for loose comparison (lowercase, no accents/punctuation). */
+/** Normalize a title for loose comparison (casefold, no accents/punct).
+ * Unicode-letter aware: Japanese kana/kanji MUST survive (JoJo's TMDB titles
+ * are native script; the old [^a-z0-9] filter erased them and the AniList
+ * match always failed -> "anime has no player"). */
 export function normalizeTitle(s) {
   return String(s || '')
     .toLowerCase()
+    // NFKD folds full-width forms; it also DECOMPOSES voiced kana
+    // (ジ -> シ + U+3099), so strip BOTH latin diacritics AND the kana
+    // combining marks to keep the result deterministic (identical for
+    // identical inputs on both sides of the comparison).
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[\u0300-\u036f\u3099\u309a]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

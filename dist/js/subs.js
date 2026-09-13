@@ -216,8 +216,11 @@
       type: v.type === 'movie' ? 'movie' : 'tv',
       tmdb: String(v.id),
     });
-    if (v.type !== 'movie' && v.season != null) qs.set('season', String(v.season));
-    if (v.type !== 'movie' && v.episode != null) qs.set('episode', String(v.episode));
+    // Non-movie ALWAYS searches with season+episode (Wyzie requires them
+    // together; lima 400s without). Anime videos carry episode but season
+    // null -> default both (S1/E1) so anime gets subs at all.
+    if (v.type !== 'movie') qs.set('season', String(v.season != null ? v.season : 1));
+    if (v.type !== 'movie') qs.set('episode', String(v.episode != null ? v.episode : 1));
     if (lang) qs.set('lang', lang);
     const res = await fetch('/api/subs/search?' + qs.toString());
     const data = await res.json().catch(() => null);
