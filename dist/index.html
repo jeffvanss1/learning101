@@ -11,7 +11,7 @@
        Roboto elsewhere) — no web font download, so it matches apple.com. -->
   <link rel="stylesheet" href="/css/style.css?v=9" />
   <link rel="stylesheet" href="/css/catalog.css?v=6" />
-  <link rel="stylesheet" href="/css/social.css?v=7" />
+  <link rel="stylesheet" href="/css/social.css?v=8" />
 </head>
 <body>
   <!-- Toast / notification surface -->
@@ -125,10 +125,6 @@
       <div id="history-scroller" class="history__scroller"></div>
     </section>
     <div id="browse" class="browse"></div>
-
-    <!-- Friends rail (right side of the home surface; drawer on narrow screens) -->
-    <aside id="friends-rail" class="friends-rail" hidden aria-label="Friends"></aside>
-    <div id="friends-backdrop" class="friends-rail-backdrop" hidden></div>
   </main>
 
   <!-- Watch room -->
@@ -286,8 +282,18 @@
          .app-shell parks it a full viewport down the document (the
          "big gap above the profile" bug). -->
     <main id="profile" class="profile" hidden></main>
+
+    <!-- Discovery pages (/discovery/:key — one library collection per page,
+         infinite scroll; rendered by catalog.js) -->
+    <main id="discovery" class="discovery" hidden></main>
     </div>
   </div>
+
+  <!-- Friends drawer — global slide-over (right → left), opened from the side
+       nav "Friends" item on ANY surface. Kept at body level (outside every
+       view) so it overlays home, /discovery, profile and room alike. -->
+  <aside id="friends-rail" class="friends-rail" hidden aria-label="Friends"></aside>
+  <div id="friends-backdrop" class="friends-rail-backdrop" hidden></div>
 
   <!-- Name modal -->
   <div class="modal" id="name-modal" hidden>
@@ -385,8 +391,8 @@
   <script src="/js/utils.js?v=6"></script>
   <script src="/js/api.js?v=5"></script>
   <script src="/js/player.js?v=6"></script>
-  <script src="/js/catalog.js?v=10"></script>
-  <script src="/js/social.js?v=14"></script>
-  <script src="/js/app.js?v=20"></script>
+  <script src="/js/catalog.js?v=11"></script>
+  <script src="/js/social.js?v=15"></script>
+  <script src="/js/app.js?v=21"></script>
 </body>
 </html>

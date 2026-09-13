@@ -234,6 +234,38 @@ fresh or unmigrated database can never wedge users into a broken anonymous
 state. `npm run db:migrate:local|remote` remain the canonical way to apply
 migrations.
 
+## Discovery pages & the friends drawer
+
+Every library entry in the side nav is a real page with infinite scroll —
+`/discovery/<key>` renders one collection full-screen and keeps loading the
+next TMDB page as you approach the bottom (IntersectionObserver sentinel,
+600px prefetch). No backend change was needed: the `/api/tmdb` proxy already
+forwards `?page=`.
+
+| Route | Collection | TMDB source |
+|---|---|---|
+| `/discovery/movies` (alias `movie`) | Popular Movies | `/movie/popular` |
+| `/discovery/series` | Popular TV Shows | `/tv/popular` |
+| `/discovery/anime` | Popular Anime | `/discover/tv?with_keywords=<anime>` |
+| `/discovery/trending` | Trending Now | `/trending/all/week` |
+| `/discovery/top-movies` | Top Rated Movies | `/movie/top_rated` |
+| `/discovery/top-tv` | Top Rated Series | `/tv/top_rated` |
+| `/discovery/in-theaters` | In Theaters | `/movie/now_playing` |
+| `/discovery/airing-today` | Airing Today | `/tv/airing_today` |
+
+Clicks behave like the home feed: movies start a room directly, series/anime
+open the detail preview first. The route map lives in `DISCOVERY_ROUTES`
+(`dist/js/catalog.js`); `#discovery` is a flex child of `.app-shell__main`
+with the same scroll-surface contract as `#profile` (guarded by
+`tests/discovery-nav.test.mjs`).
+
+The **friends panel is a global drawer**: the side-nav "Friends" item slides
+it in from the right (with backdrop) on *any* surface — home, `/discovery`
+pages, profiles, even rooms. Its markup sits at body level (outside every
+view) and the old desktop "sticky column" mode (`.home--with-rail`) was
+removed; the drawer behavior is now the only behavior. It polls
+`/api/friends` every 30s while open.
+
 ## Avatars & watch history
 
 - **Avatars** come from the free [DiceBear](https://www.dicebear.com/introduction/)
@@ -369,7 +401,7 @@ Every build fingerprinted itself, so a stale deploy is visible in seconds:
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.7` and
+   `[WatchParty] UI build: ui-2026-09-13.9` and
    `[WatchParty] API build: api-2026-09-13.6`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the

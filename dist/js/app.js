@@ -18,6 +18,7 @@
     presence: null, // RoomPresence (social.js) — writes KV presence via the DO
     chatLoaded: false,
     browseHandle: null,
+    discoveryHandle: null,
     roomBrowseHandle: null,
     profileCleanup: null, // profile page teardown (social.js)
     scrubbing: false,
@@ -270,6 +271,7 @@
 
     // Home guide rail (left sidebar).
     setupSidenav();
+    wireSearchFallback();
 
     document.querySelectorAll('.modal__close').forEach((btn) => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));
@@ -1160,6 +1162,7 @@
   // are not already on the home view.
   function showHome() {
     const alreadyHome = $('room').hidden && !$('home').hidden;
+    teardownDiscoveryView();
     $('room').hidden = true;
     $('profile').hidden = true;
     $('home-nav').hidden = false;
@@ -1172,6 +1175,10 @@
   // --------------------------------------------------------------------------
   const PROFILE_RE = /^\/user\/([A-Za-z0-9_-]{1,64})\/?$/;
 
+  // Discovery pages: every library entry in the side nav owns /discovery/:key
+  // ('movie' accepted as an alias of 'movies'). Rendered by WP.Catalog.mountDiscovery.
+  const DISCOVERY_RE = /^\/discovery\/(movies?|series|anime|trending|top-movies|top-tv|now-playing|airing-today)\/?$/;
+
   function teardownProfileView() {
     if (state.profileCleanup) {
       state.profileCleanup();
@@ -1181,8 +1188,18 @@
     $('profile').innerHTML = '';
   }
 
+  function teardownDiscoveryView() {
+    if (state.discoveryHandle) {
+      state.discoveryHandle.destroy();
+      state.discoveryHandle = null;
+    }
+    $('discovery').hidden = true;
+    $('discovery').innerHTML = '';
+  }
+
   function showProfileView(username) {
     if (state.client || state.sync) teardownRoomSession();
+    teardownDiscoveryView();
     $('room').hidden = true;
     $('home').hidden = true;
     $('home-nav').hidden = false;
@@ -1197,16 +1214,45 @@
     state.profileCleanup = WP.Social.mountProfile($('profile'), username);
   }
 
+  // /discovery/:key — a library collection as its own infinite-scroll page.
+  function showDiscoveryView(routeKey) {
+    if (state.client || state.sync) teardownRoomSession();
+    teardownProfileView();
+    $('room').hidden = true;
+    $('home').hidden = true;
+    $('home-nav').hidden = false;
+    clearSearchInputs();
+    if (state.browseHandle) {
+      // Pause browse work while the discovery page owns the screen.
+      state.browseHandle.destroy();
+      state.browseHandle = null;
+    }
+    setActiveNav(routeKey === 'movie' ? 'movies' : routeKey);
+    $('discovery').hidden = false;
+    state.discoveryHandle = WP.Catalog.mountDiscovery($('discovery'), {
+      routeKey: routeKey,
+      onSelect: (video) => startRoomWithVideo(video),
+    });
+  }
+
   // Render whichever surface the current URL asks for (boot + popstate).
   function routeCurrent() {
     const profileMatch = location.pathname.match(PROFILE_RE);
     if (profileMatch) {
       showProfileView(decodeURIComponent(profileMatch[1]));
+      setActiveNav('home');
+      return;
+    }
+    const discoveryMatch = location.pathname.match(DISCOVERY_RE);
+    if (discoveryMatch) {
+      showDiscoveryView(discoveryMatch[1]);
       return;
     }
     if (isRoomPath()) return; // room deep-links are handled at boot
     teardownProfileView();
+    teardownDiscoveryView();
     showHome();
+    setActiveNav('home');
     // /search?q=... and /?q=... prefill the unified search.
     const q = new URLSearchParams(location.search).get('q');
     if (q) runSearch(q);
@@ -1306,18 +1352,9 @@
   // --------------------------------------------------------------------------
   // Home guide rail (left sidebar) — persistent across home and room views
   // --------------------------------------------------------------------------
-  // Nav keys map to the feed section keys exposed by mountBrowse so the rail can
-  // jump straight to a section (and create it on demand if it is not yet there).
-  const ROW_KEYS = {
-    movies: 'movie',
-    series: 'tv',
-    anime: 'anime',
-    trending: 'trending',
-    'top-movies': 'topMovies',
-    'top-tv': 'topTv',
-    'now-playing': 'nowPlaying',
-    'airing-today': 'airingToday',
-  };
+  // Assigned by setupSidenav; lets routeCurrent keep the side nav's active
+  // item in sync with the surface the URL asks for.
+  let setActiveNav = /** @type {(key: string) => void} */ (function () {});
 
   // Leave the room (if any) and land on the home surface, preserving the
   // browser Back behavior used everywhere else in the app.
@@ -1332,15 +1369,6 @@
       history.replaceState(null, '', '/');
       showHome();
     }
-  }
-
-  function scrollToBrowseRow(key) {
-    if (state.browseHandle && state.browseHandle.scrollToSection) {
-      state.browseHandle.scrollToSection(key);
-      return;
-    }
-    const el = document.querySelector('.browse [data-row="' + key + '"]');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function scrollHomeTop() {
@@ -1363,6 +1391,7 @@
     const setActive = (key) => {
       items.forEach((it) => it.classList.toggle('is-active', it.dataset.nav === key));
     };
+    setActiveNav = setActive;
 
     items.forEach((it) => {
       it.addEventListener('click', () => {
@@ -1374,11 +1403,10 @@
             goHome();
             return;
           }
-          if (!$('profile').hidden) {
-            // Leaving the profile page: push '/' so Back returns to it.
+          if (!$('profile').hidden || !$('discovery').hidden) {
+            // Leaving the profile/discovery page: push '/' so Back returns to it.
             history.pushState(null, '', '/');
             routeCurrent();
-            setActive('home');
             return;
           }
           clearSearchInputs();
@@ -1387,7 +1415,7 @@
           scrollHomeTop();
         } else if (key === 'history') {
           if (inRoom) goHome();
-          if (!$('profile').hidden) {
+          if (!$('profile').hidden || !$('discovery').hidden) {
             history.pushState(null, '', '/');
             routeCurrent();
           }
@@ -1399,25 +1427,19 @@
             toast('Nothing in your watch history yet.');
           }
         } else if (key === 'friends') {
-          // Right-side friends rail: drawer on narrow screens, collapse/
-          // expand on desktop. Returning from a room first lands on home.
-          if (inRoom) {
-            goHome();
-            return;
-          }
+          // Friends drawer: a global slide-over (right → left) on every
+          // surface — home, /discovery pages, profiles and rooms alike.
           if (WP.Social) WP.Social.toggleFriendsRail();
         } else if (key === 'start-room') {
           startRoomWithVideo(null);
         } else {
-          // Library section (movies, series, anime, trending, top-rated, ...).
-          const sectionKey = ROW_KEYS[key] || key;
+          // Library entries own a /discovery/:key page (infinite scroll).
           if (inRoom) goHome();
-          if (!$('profile').hidden) {
-            history.pushState(null, '', '/');
-            routeCurrent();
+          const route = '/discovery/' + key;
+          if (location.pathname !== route) {
+            history.pushState(null, '', route);
+            routeCurrent(); // also syncs the active nav item
           }
-          setActive(key);
-          scrollToBrowseRow(sectionKey);
         }
       });
     });
@@ -1468,6 +1490,24 @@
     }
   }
 
+  // On surfaces without a mounted browse feed (profiles, /discovery pages)
+  // the two search bars have no live listeners — mountBrowse owns them while
+  // it exists. Pressing Enter there routes to /?q=… so the home surface
+  // mounts and runs the search (routeCurrent handles the prefill).
+  function wireSearchFallback() {
+    [$('topnav-search-input'), $('sidenav-search-input')].forEach((inp) => {
+      if (!inp) return;
+      inp.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' || state.browseHandle) return;
+        const q = inp.value.trim();
+        if (!q) return;
+        ev.preventDefault();
+        history.pushState(null, '', '/?q=' + encodeURIComponent(q));
+        routeCurrent();
+      });
+    });
+  }
+
   // Drive the catalog's search pipeline from a raw query (deep links like
   // /search?q=... or /?q=... — also used by profile showcase slots).
   function runSearch(query) {
@@ -1497,8 +1537,7 @@
       peopleProvider: WP.Social ? (q) => WP.Social.renderPeople(q) : null,
     });
     renderHistory();
-    // Right-side friends rail (lives inside #home, so it hides with the view).
-    if (WP.Social) WP.Social.mountFriendsRail($('friends-rail'));
+    // (The friends drawer is global — mounted once at boot, overlays any view.)
   }
 
   // --------------------------------------------------------------------------
@@ -1559,6 +1598,11 @@
     const profileMatch = location.pathname.match(PROFILE_RE);
     if (profileMatch) {
       showProfileView(decodeURIComponent(profileMatch[1]));
+      return;
+    }
+    const discoveryMatch = location.pathname.match(DISCOVERY_RE);
+    if (discoveryMatch) {
+      showDiscoveryView(discoveryMatch[1]);
       return;
     }
     mountHome();

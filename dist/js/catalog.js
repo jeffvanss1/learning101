@@ -801,6 +801,34 @@
     );
   }
 
+  // ---- feed definitions (shared by the home browse feed and /discovery pages) --------
+  // Pure data: instances must copy these, never mutate them (two mounts can
+  // coexist — home browse + room sidebar browse).
+  const FEED_DEFS = [
+    { key: 'movie', title: 'Popular Movies', path: (p) => `/movie/popular?page=${p}`, map: normMovie },
+    { key: 'tv', title: 'Popular TV Shows', path: (p) => `/tv/popular?page=${p}`, map: (t) => normTv(t, false) },
+    { key: 'anime', title: 'Popular Anime', path: (p) => `/discover/tv?with_keywords=${ANIME_KEYWORD}&sort_by=popularity.desc&page=${p}`, map: (t) => normTv(t, true) },
+    { key: 'trending', title: 'Trending Now', path: (p) => `/trending/all/week?page=${p}`, map: normAny },
+    { key: 'topMovies', title: 'Top Rated Movies', path: (p) => `/movie/top_rated?page=${p}`, map: normMovie },
+    { key: 'topTv', title: 'Top Rated Series', path: (p) => `/tv/top_rated?page=${p}`, map: (t) => normTv(t, false) },
+    { key: 'nowPlaying', title: 'In Theaters', path: (p) => `/movie/now_playing?page=${p}`, map: normMovie },
+    { key: 'airingToday', title: 'Airing Today', path: (p) => `/tv/airing_today?page=${p}`, map: (t) => normTv(t, false) },
+  ];
+
+  // Side-nav keys (= /discovery/:key route keys) → FEED_DEFS keys.
+  // 'movie' is accepted as an alias of 'movies'.
+  const DISCOVERY_ROUTES = {
+    movies: 'movie',
+    movie: 'movie',
+    series: 'tv',
+    anime: 'anime',
+    trending: 'trending',
+    'top-movies': 'topMovies',
+    'top-tv': 'topTv',
+    'now-playing': 'nowPlaying',
+    'airing-today': 'airingToday',
+  };
+
   // ---- browse surface -----------------------------------------------------------------
   function mountBrowse(container, opts) {
     opts = opts || {};
@@ -873,20 +901,11 @@
     let seq = 0;
 
     // ---- browse feed (vertical infinite scroll) --------------------------------
-    // The home feed is an ordered list of sections. New sections appear as you
-    // scroll toward the bottom (vertical infinite scroll); each section is a
-    // horizontal row that also deepens page by page. Sections are addressable
-    // by `key` so the side rail can jump straight to them.
-    const ROW_DEFS = [
-      { key: 'movie', title: 'Popular Movies', path: (p) => `/movie/popular?page=${p}`, map: normMovie },
-      { key: 'tv', title: 'Popular TV Shows', path: (p) => `/tv/popular?page=${p}`, map: (t) => normTv(t, false) },
-      { key: 'anime', title: 'Popular Anime', path: (p) => `/discover/tv?with_keywords=${ANIME_KEYWORD}&sort_by=popularity.desc&page=${p}`, map: (t) => normTv(t, true) },
-      { key: 'trending', title: 'Trending Now', path: (p) => `/trending/all/week?page=${p}`, map: normAny },
-      { key: 'topMovies', title: 'Top Rated Movies', path: (p) => `/movie/top_rated?page=${p}`, map: normMovie },
-      { key: 'topTv', title: 'Top Rated Series', path: (p) => `/tv/top_rated?page=${p}`, map: (t) => normTv(t, false) },
-      { key: 'nowPlaying', title: 'In Theaters', path: (p) => `/movie/now_playing?page=${p}`, map: normMovie },
-      { key: 'airingToday', title: 'Airing Today', path: (p) => `/tv/airing_today?page=${p}`, map: (t) => normTv(t, false) },
-    ];
+    // The home feed is an ordered list of sections (FEED_DEFS, module scope —
+    // shared with the /discovery pages). New sections appear as you scroll
+    // toward the bottom; each section is a horizontal row that also deepens
+    // page by page. Sections are addressable by `key` so the side nav can
+    // jump straight to them.
     const INITIAL_SECTIONS = 4;
 
     let sections = [];
@@ -1242,6 +1261,119 @@
     };
   }
 
+  // ---- discovery pages (/discovery/:key) ----------------------------------------------
+  // One feed section promoted to a full page with vertical infinite scroll.
+  // Shares the home feed's row definitions (FEED_DEFS) and card renderer; the
+  // worker's /api/tmdb proxy already passes `page` through, so this is a
+  // frontend-only feature. Clicks behave exactly like the home feed: movies
+  // start a room directly, series/anime open the detail preview first.
+  function mountDiscovery(container, opts) {
+    opts = opts || {};
+    const onSelect = opts.onSelect || function () {};
+    const def = FEED_DEFS.find((d) => d.key === DISCOVERY_ROUTES[opts.routeKey]);
+
+    container.classList.add('discovery');
+    container.innerHTML = '';
+
+    if (!def) {
+      const missing = h('div', 'discovery__missing');
+      missing.appendChild(h('h1', 'discovery__title', 'Unknown collection'));
+      missing.appendChild(h('p', 'discovery__sub', 'No library page matches \u201C' + opts.routeKey + '\u201D.'));
+      const back = /** @type {HTMLAnchorElement} */ (h('a', 'btn btn--ghost btn--sm', '\u2190 Back to browsing'));
+      back.href = '/';
+      missing.appendChild(back);
+      container.appendChild(missing);
+      return {
+        destroy() {
+          container.innerHTML = '';
+          container.classList.remove('discovery');
+        },
+      };
+    }
+
+    const head = h('div', 'discovery__head');
+    head.appendChild(h('h1', 'discovery__title', def.title));
+    head.appendChild(h('p', 'discovery__sub', 'Keep scrolling \u2014 more titles load automatically.'));
+    container.appendChild(head);
+
+    const grid = h('div', 'grid');
+    container.appendChild(grid);
+    const status = h('div', 'discovery__status');
+    container.appendChild(status);
+    const sentinel = h('div', 'browse__sentinel');
+    container.appendChild(sentinel);
+
+    function choose(item) {
+      if (item.type === 'movie') {
+        onSelect(buildVideo(item));
+      } else {
+        openDetail(item, (video) => onSelect(video));
+      }
+    }
+
+    let page = 0;
+    let loading = false;
+    let done = false;
+    let destroyed = false;
+    let seq = 0;
+
+    async function loadMore() {
+      if (destroyed || loading || done) return;
+      loading = true;
+      const mySeq = ++seq;
+      status.textContent = 'Loading\u2026';
+      try {
+        const data = await api(def.path(page + 1));
+        if (destroyed || mySeq !== seq) return;
+        const items = (data.results || []).map(def.map).filter(Boolean);
+        page += 1;
+        const totalPages = data.total_pages || 1;
+        if (!items.length || page >= totalPages) done = true;
+        items.forEach((it) => grid.appendChild(cardNode(it, choose)));
+        status.textContent = done && page === 1 && !grid.childElementCount ? 'Nothing here yet.' : '';
+      } catch (e) {
+        if (destroyed || mySeq !== seq) return;
+        done = true;
+        status.textContent = 'Could not load more' + (e && e.message ? ' \u2014 ' + e.message : '');
+        const retry = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', 'Retry'));
+        retry.type = 'button';
+        retry.addEventListener('click', () => {
+          done = false;
+          status.textContent = '';
+          void loadMore();
+        });
+        status.appendChild(retry);
+      } finally {
+        if (!destroyed && mySeq === seq) loading = false;
+      }
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((en) => en.isIntersecting)) void loadMore();
+      },
+      { rootMargin: '600px 0px' } // start loading before the bottom is reached
+    );
+    io.observe(sentinel);
+
+    void loadMore(); // first page, immediately
+
+    return {
+      destroy() {
+        destroyed = true;
+        io.disconnect();
+        container.innerHTML = '';
+        container.classList.remove('discovery');
+      },
+      reload() {
+        page = 0;
+        done = false;
+        grid.innerHTML = '';
+        void loadMore();
+      },
+    };
+  }
+
   global.WP.Catalog = {
     api,
     anilistApi,
@@ -1249,6 +1381,7 @@
     watchUrl,
     typeLabel,
     mountBrowse,
+    mountDiscovery,
     openDetail,
     fetchRecommendations,
   };

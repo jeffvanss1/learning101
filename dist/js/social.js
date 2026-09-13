@@ -1647,33 +1647,18 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 8. Friends rail — right side of the home surface
+  // 8. Friends drawer — global slide-over panel (right → left)
   //
-  // Desktop (>= 1100px): a sticky card column next to the browse feed
-  // (.home--with-rail grid). Narrower: a slide-over drawer opened from the
-  // "Friends" item in the side nav. Polls /api/friends every 30s while
-  // visible; instant refresh on 'wp:friends-changed'.
+  // Opened from the "Friends" item in the side nav on ANY surface: home,
+  // /discovery pages, profiles and rooms alike (the markup lives at body
+  // level, outside every view). Slides in from the right like the old
+  // mobile drawer — that behavior is now the only behavior. Polls
+  // /api/friends every 30s while open; instant refresh on
+  // 'wp:friends-changed'.
   // ---------------------------------------------------------------------------
-  const RAIL_PREF_KEY = 'wp:friends-rail'; // 'open' | 'closed' (desktop)
   const RAIL_REFRESH_MS = 30_000;
-  const RAIL_BREAKPOINT = '(max-width: 1099px)';
   /** @type {{ destroy: () => void, refresh: () => void, toggle: () => void } | null} */
   let railHandle = null;
-
-  function railPrefClosed() {
-    try {
-      return localStorage.getItem(RAIL_PREF_KEY) === 'closed';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /** @param {boolean} closed */
-  function setRailPrefClosed(closed) {
-    try {
-      localStorage.setItem(RAIL_PREF_KEY, closed ? 'closed' : 'open');
-    } catch (_) {}
-  }
 
   /**
    * @param {HTMLElement | null} container no-ops when the rail markup is
@@ -1686,7 +1671,7 @@
     return railHandle;
   }
 
-  /** Toggle: drawer on narrow screens, collapse/expand on desktop. */
+  /** Toggle the global drawer — works on every route. */
   function toggleFriendsRail() {
     if (!railHandle) return;
     railHandle.toggle();
@@ -1737,28 +1722,11 @@
     let changeDebounce = /** @type {any} */ (null);
 
     // ---- visibility ----------------------------------------------------------
-    const isNarrow = () => global.matchMedia(RAIL_BREAKPOINT).matches;
-
+    // The drawer is "visible" (and worth polling for) whenever it is open —
+    // regardless of which surface is underneath it.
     function railIsVisible() {
       if (disposed || document.hidden || container.hidden) return false;
-      const homeEl = $('home');
-      if (!homeEl || homeEl.hidden) return false;
-      if (isNarrow() && !container.classList.contains('is-open')) return false;
-      return true;
-    }
-
-    function applyVisibility() {
-      if (isNarrow()) {
-        container.hidden = false; // CSS keeps it off-canvas until .is-open
-        const homeEl = $('home');
-        if (homeEl) homeEl.classList.remove('home--with-rail');
-        return;
-      }
-      closeDrawer();
-      const closed = railPrefClosed();
-      container.hidden = closed;
-      const homeEl = $('home');
-      if (homeEl) homeEl.classList.toggle('home--with-rail', !closed);
+      return container.classList.contains('is-open');
     }
 
     function openDrawer() {
@@ -1772,19 +1740,12 @@
     }
 
     function toggle() {
-      if (isNarrow()) {
-        if (container.classList.contains('is-open')) closeDrawer();
-        else {
-          applyVisibility();
-          openDrawer();
-          refresh();
-        }
+      if (container.classList.contains('is-open')) {
+        closeDrawer();
         return;
       }
-      const nowClosed = !railPrefClosed();
-      setRailPrefClosed(nowClosed);
-      applyVisibility();
-      if (!nowClosed) refresh();
+      openDrawer();
+      refresh();
     }
 
     // ---- rendering -------------------------------------------------------------
@@ -1844,6 +1805,10 @@
           if (inp) {
             inp.focus();
             inp.select();
+          } else {
+            // Top bar hidden on this surface (e.g. a profile page) — go home,
+            // where both search bars live.
+            location.assign('/');
           }
         });
         empty.appendChild(find);
@@ -1999,32 +1964,13 @@
       changeDebounce = setTimeout(() => refresh(), 400);
     }
 
-    let resizeTimer = /** @type {any} */ (null);
-    const onResize = () => {
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        if (disposed) return;
-        if (!isNarrow()) closeDrawer();
-        applyVisibility();
-      }, 150);
-    };
-
     // ---- wire up -----------------------------------------------------------------
     refreshBtn.addEventListener('click', () => refresh());
-    closeBtn.addEventListener('click', () => {
-      if (isNarrow()) closeDrawer();
-      else {
-        setRailPrefClosed(true);
-        applyVisibility();
-      }
-    });
+    closeBtn.addEventListener('click', () => closeDrawer());
     if (backdrop) backdrop.addEventListener('click', closeDrawer);
     global.addEventListener('wp:friends-changed', onFriendsChanged);
-    global.addEventListener('resize', onResize);
 
     const poll = setInterval(() => refresh(), RAIL_REFRESH_MS);
-    applyVisibility();
-    refresh();
 
     return {
       refresh,
@@ -2033,14 +1979,10 @@
         disposed = true;
         clearInterval(poll);
         if (changeDebounce) clearTimeout(changeDebounce);
-        if (resizeTimer) clearTimeout(resizeTimer);
         global.removeEventListener('wp:friends-changed', onFriendsChanged);
-        global.removeEventListener('resize', onResize);
         closeDrawer();
         container.innerHTML = '';
         container.hidden = true;
-        const homeEl = $('home');
-        if (homeEl) homeEl.classList.remove('home--with-rail');
       },
     };
   }
@@ -2051,7 +1993,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.8';
+  global.WP.build = 'ui-2026-09-13.9';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
