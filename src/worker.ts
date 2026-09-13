@@ -18,6 +18,8 @@ import {
   composeWyzieNote,
   fetchWyzieAvailableSources,
   fetchWyzieMultiSource,
+  wyzieFanSources,
+  wyzieSearchCacheKey,
   decodeWyzieToken,
   fetchSubtitleVtt,
   fetchWyzieVtt,
@@ -300,8 +302,34 @@ export default {
           }
           if (!wyzieSources || !wyzieSources.length) wyzieSources = ['charlie', 'lima'];
           let queryEcho = 'no-wyzie-key';
+          // Shared search cache: warm titles answer in ~1 KV read instead of
+          // a multi-second upstream chain (15 min TTL). Checked BEFORE the
+          // upstream so a stale-but-good answer also rides out upstream
+          // hiccups. Error responses are never cached.
+          const searchKey = wyzieKey
+            ? wyzieSearchCacheKey({
+                tmdb: tmdb,
+                season: season,
+                episode: episode,
+                lang: lang,
+                sources: wyzieSources,
+              })
+            : '';
+          if (wyzieKey && kv && searchKey) {
+            try {
+              const hit = await kv.get(searchKey);
+              if (hit) {
+                return new Response(hit, {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=60' },
+                });
+              }
+            } catch (_) {}
+          }
           if (wyzieKey) {
-            const ms = await fetchWyzieMultiSource({ sources: wyzieSources, tmdb, season, episode, lang, key: wyzieKey });
+            // TV-only sources (lima) only make sense when season+episode exist.
+            const fanSources = wyzieFanSources(wyzieSources, season != null && episode != null);
+            const ms = await fetchWyzieMultiSource({ sources: fanSources, tmdb, season, episode, lang, key: wyzieKey });
             const usable = ms.perSource.filter((p) => !p.http && !p.bad);
             if (!usable.length && ms.perSource.some((p) => p.http === 429)) {
               return json({ error: 'Subtitle search is rate-limited right now — retry in a moment.' }, 429);
@@ -310,7 +338,7 @@ export default {
               return json({ error: 'Wyzie rejected the API key — check WYZIE_API_KEY (store.wyzie.io).' }, 502);
             }
             // Echo the query WITHOUT the key.
-            const echo = new URLSearchParams({ sources: wyzieSources.join(','), id: String(tmdb) });
+            const echo = new URLSearchParams({ sources: fanSources.join(','), id: String(tmdb) });
             if (season != null && episode != null) {
               echo.set('season', String(season));
               echo.set('episode', String(episode));
@@ -320,11 +348,24 @@ export default {
             queryEcho = echo.toString();
             const shaped = shapeWyzieResults(ms.records);
             if (shaped.best) {
-              return json(
-                { ...shaped, total: shaped.results.length, provider: 'wyzie', wyzieNote: composeWyzieNote(shaped, ms), query: queryEcho },
-                200,
-                { 'Cache-Control': 'public, max-age=60' }
-              );
+              const body = {
+                results: shaped.results,
+                best: shaped.best,
+                total: shaped.results.length,
+                provider: 'wyzie',
+                wyzieNote: composeWyzieNote(shaped, ms),
+                query: queryEcho,
+              };
+              const bodyText = JSON.stringify(body);
+              if (kv && searchKey) {
+                try {
+                  await kv.put(searchKey, bodyText, { expirationTtl: 900 });
+                } catch (_) {}
+              }
+              return new Response(bodyText, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=300' },
+              });
             }
             wyzieNote = 'empty:' + shaped.shape + (ms.note ? ' | src ' + ms.note : '');
           }
@@ -399,7 +440,7 @@ export default {
             status: 200,
             headers: {
               'Content-Type': 'text/vtt; charset=utf-8',
-              'Cache-Control': cached ? 'public, max-age=86400' : 'public, max-age=600',
+              'Cache-Control': 'public, max-age=86400', // VTT is immutable per fileId token
               'X-Subs-Cache': cached ? 'hit' : 'miss',
               ...corsHeaders(),
             },

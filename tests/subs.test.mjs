@@ -30,6 +30,9 @@ import {
   WYZIE_FREE_SOURCES,
   parseWyzieSources,
   fetchWyzieAvailableSources,
+  wyzieFanSources,
+  wyzieSearchCacheKey,
+  WYZIE_TV_ONLY_SOURCES,
 } from '../src/subs.js';
 
 const SRT = `1
@@ -616,6 +619,68 @@ test('source discovery: live /sources payload scopes the fan-out (no ghost codes
   });
   assert.deepEqual(called, ['bravo', 'charlie', 'india', 'lima']);
   assert.ok(hit[0].startsWith('https://sub.wyzie.io/sources?key=SECRET'), 'key scoped, server-side only');
+});
+
+test('fan-out trims TV-only sources for movies; cache key scopes precisely', () => {
+  // Live 2026-09-14: lima answers movie queries with http400 (TV-only).
+  assert.deepEqual(WYZIE_TV_ONLY_SOURCES, ['lima']);
+  const srcs = ['charlie', 'lima'];
+  assert.deepEqual(wyzieFanSources(srcs, false), ['charlie'], 'movie: dead leg trimmed');
+  assert.deepEqual(wyzieFanSources(srcs, true), ['charlie', 'lima'], 'tv: both queried');
+  assert.deepEqual(wyzieFanSources(['charlie'], false), ['charlie'], 'no TV-only codes: unchanged');
+  assert.deepEqual(wyzieFanSources([], true), []);
+
+  const k1 = wyzieSearchCacheKey({ tmdb: 286217, season: null, episode: null, lang: 'id', sources: ['charlie'] });
+  const k2 = wyzieSearchCacheKey({ tmdb: 286217, season: 1, episode: 2, lang: 'id', sources: ['charlie', 'lima'] });
+  const k3 = wyzieSearchCacheKey({ tmdb: 286217, season: null, episode: null, lang: 'en', sources: ['charlie'] });
+  assert.notEqual(k1, k2, 'movie vs episode differ');
+  assert.notEqual(k1, k3, 'language differs');
+  assert.ok(k1.startsWith('subs:search:v2:286217:-x-:id:charlie'), k1);
+});
+
+test('SPEED: file downloads exactly ONCE (no double fetch), fresh user auto-loads, opt-out respected', async () => {
+  let fileFetches = 0;
+  let searchFetches = 0;
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/subs/search')) {
+      searchFetches++;
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          results: [{ fileId: 'Z', release: 'Fast.Release', lang: 'en', downloads: 100, machineTranslated: false }],
+          best: { fileId: 'Z', release: 'Fast.Release', lang: 'en', downloads: 100 },
+        }),
+      });
+    }
+    if (u.includes('fileId=Z')) {
+      fileFetches++;
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:01,000 --> 00:00:02,000\nfast cue\n' });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+
+  // FRESH USER: never enabled anything, no warmup — opening a player must
+  // auto-load. (This used to require the user to press CC first.)
+  const { Subs } = await freshSubs();
+  Subs.mount(new El2());
+  Subs.__test.setLang('en');
+  Subs.setVideo({ type: 'movie', id: '9' });
+  await new Promise((r) => setTimeout(r, 50));
+  const st = Subs.__test.state();
+  assert.equal(st.cues, 1, 'fresh user gets subtitles on open');
+  assert.ok(st.status.includes('Fast.Release'), 'status names the release: ' + st.status);
+  assert.equal(searchFetches, 1, 'one search');
+  assert.equal(fileFetches, 1, 'file downloaded EXACTLY once (was: twice — searchBest and autoLoad both fetched)');
+
+  // EXPLICIT OPT-OUT: the CC toggle memory must stop auto-load entirely.
+  const store = globalThis.localStorage;
+  store.setItem('wp:subs:pref', 'off');
+  searchFetches = 0;
+  Subs.setVideo({ type: 'movie', id: '10' });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(searchFetches, 0, 'opted-out user: no search fired at all');
+  store.setItem('wp:subs:pref', 'on');
 });
 
 test('language fallback: id -> en -> any, and the status says what loaded', async () => {

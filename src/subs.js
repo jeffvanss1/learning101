@@ -19,6 +19,7 @@
 // @ts-check
 
 export const SUBS_KV_PREFIX = 'subs:vtt:';
+export const SEARCH_TIMEOUT_MS = 8000; // fan-out search hard-stop: fail fast into the fallback
 export const SUBS_KV_TTL_S = 7 * 24 * 60 * 60; // subtitles never change
 
 const OPENSUBTITLES_ORIGIN = 'https://api.opensubtitles.com';
@@ -400,7 +401,10 @@ export async function fetchWyzieMultiSource(o) {
     sources.map(async (source) => {
       const url = buildWyzieSearchUrl({ tmdb: o.tmdb, season: o.season, episode: o.episode, lang: o.lang, key: o.key, source: source });
       try {
-        const r = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } });
+        const r = await fetchImpl(url, {
+          headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' },
+          signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(SEARCH_TIMEOUT_MS) : undefined,
+        });
         if (!r.ok) return { source: source, records: [], http: r.status, bad: false };
         let payload = null;
         try {
@@ -457,6 +461,39 @@ export async function fetchWyzieMultiSource(o) {
     })
     .join(' ');
   return { records: records, note: note, perSource: perSource };
+}
+
+// Live-observed (2026-09-14): lima answers movie queries with http400 —
+// it is a TV-only source. Querying it for movies wastes a full upstream
+// roundtrip on every search.
+export const WYZIE_TV_ONLY_SOURCES = ['lima'];
+
+/**
+ * Sources to actually fan out over. TV-only codes are dropped for movies
+ * (season+episode absent) — they can only 400 there.
+ * @param {string[]} sources
+ * @param {boolean} hasEpisodes
+ * @returns {string[]}
+ */
+export function wyzieFanSources(sources, hasEpisodes) {
+  if (hasEpisodes) return sources;
+  return sources.filter((/** @type {string} */ x) => WYZIE_TV_ONLY_SOURCES.indexOf(x) === -1);
+}
+
+/**
+ * KV cache key for a shaped search response. Includes the fan-out list so a
+ * WYZIE_SOURCES change never serves stale provenance.
+ * @param {{ tmdb: any, season?: any, episode?: any, lang?: string, sources: string[] }} o
+ * @returns {string}
+ */
+export function wyzieSearchCacheKey(o) {
+  return (
+    'subs:search:v2:' + String(o.tmdb) +
+    ':' + (o.season != null ? String(o.season) : '-') +
+    'x' + (o.episode != null ? String(o.episode) : '-') +
+    ':' + (o.lang || '') +
+    ':' + o.sources.join(',')
+  );
 }
 
 /**

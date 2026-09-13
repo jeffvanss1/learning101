@@ -193,7 +193,7 @@
     statusEl.className = 'subs-panel__status' + (isError ? ' subs-panel__status--err' : '');
   }
 
-  /** @param {{ type: string, id: string, season?: number, episode?: number }} v @param {string} lang @returns {Promise<{ fileId: number, release: string, lang: string, downloads: number } | null>} */
+  /** @param {{ type: string, id: string, season?: number, episode?: number }} v @param {string} lang @returns {Promise<{ cand: { fileId: number, release: string, lang: string, downloads: number }, text: string } | null>} */
   async function searchBest(v, lang) {
     const qs = new URLSearchParams({
       type: v.type === 'movie' ? 'movie' : 'tv',
@@ -225,18 +225,10 @@
           lastErr = (err && err.error) || 'HTTP ' + fileRes.status;
           continue;
         }
-        loadCues(await fileRes.text());
-        const label = (LANGS.find((l) => l[0] === cand.lang) || [cand.lang, cand.lang])[1];
-        const suffix =
-          cand.lang && cand.lang !== lang
-            ? ' · ' + tr('subs.fallback', 'no {lang} subs — language fallback').replace('{lang}', primary.toUpperCase())
-            : '';
-        setStatus(
-          tr('subs.loaded', 'Loaded') +
-            ': ' + (cand.release || 'subtitle') +
-            ' [' + label + ', ' + (cand.downloads || 0) + '\u2193]' + suffix
-        );
-        return cand;
+        // Single download owner: return the text; the caller renders it.
+        // (This used to load cues AND the caller re-fetched the same file —
+        // doubling every load.)
+        return { cand: cand, text: await fileRes.text() };
       } catch (e) {
         lastErr = e instanceof Error ? e.message : String(e);
       }
@@ -276,22 +268,16 @@
         return;
       }
       if (!best) continue;
-      const fileRes = await fetch('/api/subs/file?fileId=' + best.fileId);
-      if (!fileRes.ok) {
-        const err = await fileRes.json().catch(() => null);
-        setStatus((err && err.error) || tr('subs.loadFailed', 'Could not download the subtitle.'), true);
-        return;
-      }
-      loadCues(await fileRes.text());
-      const label = (LANGS.find((l) => l[0] === best.lang) || [best.lang, best.lang])[1];
+      loadCues(best.text); // already downloaded by searchBest — no second fetch
+      const label = (LANGS.find((l) => l[0] === best.cand.lang) || [best.cand.lang, best.cand.lang])[1];
       const suffix =
         lang !== primary
           ? ' · ' + tr('subs.fallback', 'no {lang} subs — language fallback').replace('{lang}', primary.toUpperCase())
           : '';
       setStatus(
         tr('subs.loaded', 'Loaded') +
-          ': ' + (best.release || 'subtitle') +
-          ' [' + label + ', ' + (best.downloads || 0) + '\u2193]' + suffix
+          ': ' + (best.cand.release || 'subtitle') +
+          ' [' + label + ', ' + (best.cand.downloads || 0) + '\u2193]' + suffix
       );
       return;
     }
@@ -490,7 +476,13 @@
     row3b.appendChild(sizeBtn);
     const toggle = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.toggle', 'On/Off')));
     toggle.type = 'button';
-    toggle.addEventListener('click', () => setEnabled(!enabled));
+    toggle.addEventListener('click', () => {
+    const next = !enabled;
+    setEnabled(next);
+    try {
+      localStorage.setItem('wp:subs:pref', next ? 'on' : 'off'); // explicit choice wins over auto-load
+    } catch (_) {}
+  });
     row3b.appendChild(toggle);
     panel.appendChild(row3b);
 
@@ -563,7 +555,15 @@
     offset = loadOffset();
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
     if (statusEl) statusEl.textContent = '';
-    if (video && enabled) void autoLoad(video); // next episode: reload automatically
+    // AUTO-LOAD ON OPEN: every video gets subtitles automatically unless the
+    // user explicitly turned them off (the CC toggle remembers the choice).
+    if (video) {
+      let pref = '';
+      try {
+        pref = localStorage.getItem('wp:subs:pref') || '';
+      } catch (_) {}
+      if (pref !== 'off') void autoLoad(video);
+    }
   }
 
   WP.Subs = {
