@@ -15,7 +15,8 @@ import { routeApi } from './router.js';
 import { injectGeoScript, resolveGeo } from './geo.js';
 import {
   buildSearchQuery,
-  buildWyzieSearchUrl,
+  composeWyzieNote,
+  fetchWyzieMultiSource,
   decodeWyzieToken,
   fetchSubtitleVtt,
   fetchWyzieVtt,
@@ -273,48 +274,49 @@ export default {
           // wyzieNote explains, in the final response, exactly what happened
           // to the primary attempt ("not-configured" = the secret is unset).
           let wyzieNote = 'not-configured';
+          // Free Wyzie keys can ONLY query alpha/charlie/kilo/lima (per Wyzie
+          // support): 'all' silently degrades to the opensubtitles source,
+          // whose download host is gated. Fan out over the free set explicitly;
+          // WYZIE_SOURCES overrides (e.g. 'all' once upgraded to Pro).
+          const wyzieSources = (env.WYZIE_SOURCES || 'alpha,charlie,kilo,lima')
+            .split(',')
+            .map((x) => x.trim())
+            .filter(Boolean);
+          let queryEcho = 'no-wyzie-key';
           if (wyzieKey) {
-            const wyzieUrl = buildWyzieSearchUrl({ tmdb, season, episode, lang, key: wyzieKey });
-            const wz = await fetch(wyzieUrl, {
-              headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' },
-            });
-            if (wz.status === 429) {
+            const ms = await fetchWyzieMultiSource({ sources: wyzieSources, tmdb, season, episode, lang, key: wyzieKey });
+            const usable = ms.perSource.filter((p) => !p.http && !p.bad);
+            if (!usable.length && ms.perSource.some((p) => p.http === 429)) {
               return json({ error: 'Subtitle search is rate-limited right now — retry in a moment.' }, 429);
             }
-            if (wz.status === 401 || wz.status === 403) {
-              return json({ error: 'Wyzie rejected the API key (' + wz.status + ') — check WYZIE_API_KEY (store.wyzie.io).' }, 502);
+            if (!usable.length && ms.perSource.some((p) => p.http === 401 || p.http === 403)) {
+              return json({ error: 'Wyzie rejected the API key — check WYZIE_API_KEY (store.wyzie.io).' }, 502);
             }
-            if (wz.ok) {
-              let list: any = null;
-              let wyzieShape = 'unparseable';
-              try {
-                list = await wz.json();
-              } catch (_) {
-                wyzieNote = 'bad-json';
-              }
-              if (list !== null) {
-                const shaped = shapeWyzieResults(list);
-                wyzieShape = shaped.shape;
-                if (shaped.best) {
-                  // Echo the query WITHOUT the key.
-                  return json(
-                    { ...shaped, total: shaped.results.length, provider: 'wyzie', wyzieNote: 'ok', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
-                    200,
-                    { 'Cache-Control': 'public, max-age=60' }
-                  );
-                }
-                wyzieNote = 'empty:' + shaped.shape;
-              }
-            } else {
-              wyzieNote = 'http ' + wz.status;
+            // Echo the query WITHOUT the key.
+            const echo = new URLSearchParams({ sources: wyzieSources.join(','), id: String(tmdb) });
+            if (season != null && episode != null) {
+              echo.set('season', String(season));
+              echo.set('episode', String(episode));
             }
+            if (lang) echo.set('language', lang);
+            echo.set('format', 'srt');
+            queryEcho = echo.toString();
+            const shaped = shapeWyzieResults(ms.records);
+            if (shaped.best) {
+              return json(
+                { ...shaped, total: shaped.results.length, provider: 'wyzie', wyzieNote: composeWyzieNote(shaped, ms), query: queryEcho },
+                200,
+                { 'Cache-Control': 'public, max-age=60' }
+              );
+            }
+            wyzieNote = 'empty:' + shaped.shape + (ms.note ? ' | src ' + ms.note : '');
           }
 
           // FALLBACK: OpenSubtitles v3.
           if (!osKey) {
             // No fallback configured: report the primary's fate honestly.
             return json(
-              { results: [], best: null, total: 0, provider: 'wyzie', wyzieNote: wyzieNote, query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
+              { results: [], best: null, total: 0, provider: 'wyzie', wyzieNote: wyzieNote, query: queryEcho },
               200,
               { 'Cache-Control': 'public, max-age=60' }
             );

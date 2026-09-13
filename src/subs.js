@@ -283,6 +283,11 @@ export const WYZIE_ALLOWED_SUFFIXES = [
 ];
 export const WYZIE_GATED_SUFFIXES = ['.opensubtitles.org', '.opensubtitles.com'];
 
+// Free Wyzie keys can ONLY query these source codes (per Wyzie support,
+// 2026-09-14). 'all' is NOT the union on free keys — it silently degrades
+// to the opensubtitles source, whose download host is gated (401 on fetch).
+export const WYZIE_FREE_SOURCES = ['alpha', 'charlie', 'kilo', 'lima'];
+
 /** @param {string} url @returns {'fetchable' | 'gated' | 'foreign'} */
 export function wyzieHostPolicy(url) {
   try {
@@ -303,7 +308,7 @@ export function wyzieHostPolicy(url) {
 /**
  * Build a Wyzie search URL. `key` is optional so tests and the response's
  * `query` echo never embed a secret.
- * @param {{ tmdb: string, season?: number | null, episode?: number | null, lang?: string, key?: string }} v
+ * @param {{ tmdb: string, season?: number | null, episode?: number | null, lang?: string, key?: string, source?: string }} v
  * @returns {string}
  */
 export function buildWyzieSearchUrl(v) {
@@ -315,9 +320,103 @@ export function buildWyzieSearchUrl(v) {
   }
   if (v.lang) params.set('language', v.lang);
   params.set('format', 'srt'); // our converter's native input
-  params.set('source', 'all'); // aggregate every source; the default (opensubtitles) returns GATED urls (401 on fetch)
+  params.set('source', v.source || 'all'); // caller picks the source code; fan-out queries the free set explicitly
   if (v.key) params.set('key', v.key);
   return WYZIE_ORIGIN + '/search?' + params.toString();
+}
+
+/**
+ * Fan a Wyzie search out over every source code the key can access, in
+ * parallel, and merge the raw records (deduped by url). Per-source fate is
+ * reported so an empty merge is explainable DOWN TO THE SOURCE CODE.
+ * @param {{ fetchImpl?: typeof fetch, sources?: string[], tmdb: any, season?: any, episode?: any, lang?: string, key?: string }} o
+ * @returns {Promise<{ records: any[], note: string, perSource: Array<{source: string, count: number, gated: number, foreign: number, host: string, http: number, bad: boolean}> }>}
+ */
+export async function fetchWyzieMultiSource(o) {
+  const sources = o.sources && o.sources.length ? o.sources : ['all'];
+  const fetchImpl = o.fetchImpl || globalThis.fetch;
+  /** @param {any} u */
+  const hostOf = (u) => {
+    try {
+      return new URL(String(u)).hostname;
+    } catch (_) {
+      return '';
+    }
+  };
+  const settled = await Promise.all(
+    sources.map(async (source) => {
+      const url = buildWyzieSearchUrl({ tmdb: o.tmdb, season: o.season, episode: o.episode, lang: o.lang, key: o.key, source: source });
+      try {
+        const r = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } });
+        if (!r.ok) return { source: source, records: [], http: r.status, bad: false };
+        let payload = null;
+        try {
+          payload = await r.json();
+        } catch (_) {
+          return { source: source, records: [], http: 0, bad: true };
+        }
+        const extracted = wyzieExtractList(payload);
+        return { source: source, records: Array.isArray(extracted.list) ? extracted.list : [], http: 0, bad: !Array.isArray(extracted.list) };
+      } catch (_) {
+        return { source: source, records: [], http: 0, bad: true };
+      }
+    })
+  );
+  const seen = new Set();
+  const records = [];
+  for (const one of settled) {
+    for (const rec of one.records) {
+      const k = String((rec && rec.url) || '');
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      records.push(rec);
+    }
+  }
+  const perSource = settled.map((one) => {
+    let gated = 0;
+    let foreign = 0;
+    let host = '';
+    for (const rec of one.records) {
+      const policy = wyzieHostPolicy(rec && rec.url);
+      if (policy === 'gated') {
+        gated++;
+        if (!host) host = hostOf(rec.url);
+      } else if (policy === 'foreign') {
+        foreign++;
+        if (!host) host = hostOf(rec.url);
+      }
+    }
+    return { source: one.source, count: one.records.length, gated: gated, foreign: foreign, host: host, http: one.http, bad: one.bad };
+  });
+  const note = perSource
+    .map((p) => {
+      let t = p.source + ':' + p.count;
+      if (p.http) t += ':http' + p.http;
+      else if (p.bad) t += ':bad';
+      else if (p.count) {
+        const bits = [];
+        if (p.gated) bits.push('g' + p.gated);
+        if (p.foreign) bits.push('f' + p.foreign);
+        if (p.host && (p.gated || p.foreign)) bits.push('@' + p.host);
+        if (bits.length) t += '(' + bits.join('') + ')';
+      }
+      return t;
+    })
+    .join(' ');
+  return { records: records, note: note, perSource: perSource };
+}
+
+/**
+ * Final wyzieNote for the success path. The 'gated:N' token is LOAD-BEARING:
+ * the frontend parses it to say "found but provider-gated" instead of "none".
+ * @param {{ shape: string }} shaped
+ * @param {{ note: string }} ms
+ */
+export function composeWyzieNote(shaped, ms) {
+  const ix = shaped.shape.indexOf(' dropped:');
+  const dropPart = ix >= 0 ? ' |' + shaped.shape.slice(ix) : '';
+  const srcPart = ms && ms.note ? ' | src ' + ms.note : '';
+  return 'ok' + dropPart + srcPart;
 }
 
 /** @param {string} url @returns {string} urlsafe base64 (no padding) */

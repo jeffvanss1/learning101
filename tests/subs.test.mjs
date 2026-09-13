@@ -25,6 +25,9 @@ import {
   pickBest,
   shapeSearchResponse,
   shapeWyzieResults,
+  fetchWyzieMultiSource,
+  composeWyzieNote,
+  WYZIE_FREE_SOURCES,
 } from '../src/subs.js';
 
 const SRT = `1
@@ -450,6 +453,69 @@ test('auto-load iterates candidates when the top one fails to download', async (
   const st = Subs.__test.state();
   assert.equal(st.cues, 1, 'the second candidate must load');
   assert.ok(st.status.includes('Good.Release'), 'status names the release that actually loaded: ' + st.status);
+});
+
+test('multi-source fan-out: free codes queried explicitly, merged, deduped by url', async () => {
+  // Wyzie support (2026-09-14): free keys = alpha, charlie, kilo, lima ONLY.
+  // 'all' silently degrades to charlie (gated OS host). The worker must query
+  // each free code EXPLICITLY and merge what comes back.
+  assert.deepEqual(WYZIE_FREE_SOURCES, ['alpha', 'charlie', 'kilo', 'lima']);
+
+  const gated = 'https://dl.opensubtitles.org/p/subs/1';
+  const pub1 = 'https://subf2m.co.uk/dl/1';
+  const pub2 = 'https://yifysubtitles.com/sub/1';
+  const urlsHit = [];
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    urlsHit.push(u);
+    const src = /[?&]source=([a-z]+)/.exec(u)[1];
+    if (src === 'alpha') {
+      return { ok: true, json: async () => [
+        { id: 1, url: pub1, language: 'en', release: 'Alpha.Rel.1', downloadCount: 100 },
+        { id: 2, url: gated, language: 'en', release: 'Alpha.Gated', downloadCount: 9000 },
+      ] };
+    }
+    if (src === 'kilo') {
+      return { ok: true, json: async () => [
+        { id: 3, url: pub1, language: 'en', release: 'DUP.same.url', downloadCount: 5 }, // dup of alpha's pub1
+        { id: 4, url: pub2, language: 'en', release: 'Kilo.YIFY', downloadCount: 50 },
+      ] };
+    }
+    if (src === 'charlie') return { ok: true, json: async () => ({ code: 404, message: 'none here' }) };
+    if (src === 'lima') return { ok: false, status: 500, json: async () => ({}) };
+    throw new Error('unexpected ' + u);
+  };
+
+  const ms = await fetchWyzieMultiSource({
+    fetchImpl,
+    sources: ['alpha', 'charlie', 'kilo', 'lima'],
+    tmdb: 286217,
+    lang: 'en',
+    key: 'k',
+  });
+
+  assert.equal(urlsHit.length, 4, 'one explicit request per free source code');
+  assert.ok(urlsHit.every((u) => /[?&]format=srt/.test(u)), 'format=srt preserved');
+  assert.equal(ms.records.length, 3, 'merged, deduped by url (dup + gated both collapse/handled downstream)');
+  const ids = ms.records.map((r) => r.id).sort();
+  assert.deepEqual(ids, [1, 2, 4], 'url-duplicates dropped, records kept in source order');
+  assert.equal(ms.perSource.find((p) => p.source === 'alpha').gated, 1, 'alpha gated tally');
+  assert.equal(ms.perSource.find((p) => p.source === 'lima').http, 500, 'per-source http fate');
+  assert.ok(ms.note.includes('alpha:2(g1@dl.opensubtitles.org)'), 'note names source + tally + host: ' + ms.note);
+  assert.ok(ms.note.includes('charlie:0'), 'wrapper-only source counts 0: ' + ms.note);
+  assert.ok(ms.note.includes('lima:0:http500'), 'http failure visible: ' + ms.note);
+});
+
+test('composeWyzieNote keeps the gated:N token the frontend parses', () => {
+  const shaped = shapeWyzieResults([
+    { id: 1, url: 'https://dl.opensubtitles.org/p/a', language: 'en' },
+    { id: 2, url: 'https://dl.opensubtitles.org/p/b', language: 'en' },
+  ]);
+  assert.equal(shaped.best, null, 'all gated -> no candidates');
+  const note = composeWyzieNote(shaped, { note: 'charlie:2(g2@dl.opensubtitles.org)' });
+  assert.ok(/gated:2/.test(note), 'gated:N token present for the frontend regex: ' + note);
+  assert.ok(note.startsWith('ok'), 'success-path note still opens with ok');
+  assert.ok(note.includes('src charlie:2(g2@dl.opensubtitles.org)'), 'per-source provenance included');
 });
 
 test('language fallback: id -> en -> any, and the status says what loaded', async () => {

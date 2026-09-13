@@ -34,6 +34,8 @@ export interface Env {
   OPENSUBTITLES_API_KEY?: string;
   /** Wyzie Subs API key (https://sub.wyzie.io — free at store.wyzie.io/redeem). */
   WYZIE_API_KEY?: string;
+  /** Comma list of Wyzie source codes to fan out over. Default: the free tier 'alpha,charlie,kilo,lima'. Set 'all' on a Pro key. */
+  WYZIE_SOURCES?: string;
   /** HMAC secret for session tokens (`wrangler secret put SESSION_SECRET`). */
   SESSION_SECRET?: string;
 }
