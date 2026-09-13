@@ -682,3 +682,22 @@ ALTER) is seeded idempotently by `ensureSchema` for username `jeff`.
   joined/seen times.
 - `is_admin` rides ONLY on `/api/auth/me`; public profile/search payloads
   never include it. All enforcement is server-side.
+
+## Subtitles: language stays put + floating sync bar (api-2026-09-13.40)
+
+**Language-flip fixes (subs v15):**
+- `searchBest` now tries ALL ranked candidates (server caps at 12) instead
+  of the top 5 — a run of dead hosts no longer reads as "no Indonesian
+  subs" and silently flips the chain to English.
+- **Room priority:** the host's loaded file outranks every guest's local
+  auto-load (`roomSubsActive`); an arriving host load cancels in-flight
+  local searches (generation counter) so a slower guest search can never
+  override the room's language. Manual picks (language select / Auto-load
+  button, `force`) still win.
+- Per-step console logging: `[WatchParty] subs <lang>: N candidates…`.
+
+**Floating mini sync bar (style v11):** a draggable pill appears when
+subtitles load — drag the ⠿ grip to park it anywhere (position persists
+across sessions), drag the knob to shift timing live (0.25 s/px, ±15 s,
+host drags replicate room-wide), double-tap the value to reset. Hides
+with subtitles off / on video change.

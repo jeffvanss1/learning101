@@ -348,4 +348,8 @@ test('subs auto-load: same-video guard + force flag + room dedup wired', async (
   assert.match(subs, /\(opts && opts\.force\) && key === autoKey/, 'auto-load dedupes unless forced');
   assert.equal(/autoLoad\(video, \{ force: true \}\)/.test(subs), true, 'manual paths force-reload');
   assert.match(subs, /if \(pref !== 'off'\) void autoLoad\(video\);/, 'setVideo auto-load stays on the dedupe path');
+  // Room priority + full-candidate downloads (language-flip fix).
+  assert.doesNotMatch(subs, /slice\(0, 5\)/, 'searchBest must NOT cap downloads at 5 candidates');
+  assert.match(subs, /roomSubsActive/, 'host subs suppress local auto-load');
+  assert.match(subs, /autoLoadGen\+\+/, 'in-flight auto-loads are generation-checked');
 });

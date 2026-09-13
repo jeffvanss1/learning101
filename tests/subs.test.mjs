@@ -1192,3 +1192,109 @@ test('subs.js overlay follows the player clock and the offset (runtime)', async 
   rafQueue.splice(0).forEach((cb) => cb());
   assert.equal(text.textContent, 'Auto-synced cue', 'cue must reappear once playback passes (start + offset)');
 });
+
+test('subs floating sync bar: drag knob shifts offset live, grip moves the bar, dbl-tap resets', async () => {
+  // --- listener-recording DOM stubs (fresh module instance) -----------------
+  class El2 {
+    constructor(tag) {
+      this.tagName = tag;
+      this.children = [];
+      this.style = {};
+      this.hidden = false;
+      this.textContent = '';
+      this.className = '';
+      this._listeners = {};
+      this.addEventListener = (type, fn) => ((this._listeners[type] || (this._listeners[type] = [])).push(fn));
+      this.removeEventListener = () => {};
+      this.setAttribute = () => {};
+      this.appendChild = (c) => (this.children.push(c), c);
+      this.classList = { add() {}, remove() {}, contains: () => false, toggle() {} };
+      this.getOffsetWidth = 0;
+    }
+  }
+  const store2 = {};
+  const raf2 = [];
+  const doc2 = {
+    createElement: (t) => new El2(t),
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    documentElement: new El2('html'),
+    body: new El2('body'),
+    addEventListener() {},
+    readyState: 'complete',
+    hidden: false,
+  };
+  globalThis.window = {
+    WP: {},
+    innerWidth: 1200,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {},
+    requestAnimationFrame: (cb) => (raf2.push(cb), raf2.length),
+    cancelAnimationFrame() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    localStorage: {
+      getItem: (k) => (k in store2 ? store2[k] : null),
+      setItem: (k, v) => (store2[k] = String(v)),
+      removeItem: (k) => delete store2[k],
+    },
+  };
+  globalThis.document = doc2;
+  globalThis.location = { search: '' };
+  globalThis.localStorage = globalThis.window.localStorage;
+  Object.assign(globalThis.window, { document: doc2, location: globalThis.location, localStorage: globalThis.localStorage });
+  globalThis.fetch = () => Promise.resolve({ ok: true, json: async () => ({ results: [], best: null }) });
+
+  const mod = await import(join(ROOT, 'dist/js/subs.js') + '?syncbar=' + Date.now());
+  const Subs = globalThis.window.WP.Subs;
+  assert.ok(Subs, 'fresh subs module registered');
+
+  const wrap2 = new El2('div');
+  Subs.mount(wrap2);
+  Subs.loadCues(FRESH_SRT);
+
+  const bar = doc2.body.children.find((c) => c.className === 'subs-syncbar');
+  assert.ok(bar, 'sync bar appended to body when cues load');
+  assert.equal(bar.hidden, false, 'bar visible while subs are on');
+  const grip = bar.children.find((c) => c.className === 'subs-syncbar__grip');
+  const track = bar.children.find((c) => c.className === 'subs-syncbar__track');
+  const value = bar.children.find((c) => c.className === 'subs-syncbar__value');
+  assert.ok(grip && track && value, 'bar has grip, track and readout');
+  assert.ok(track.children.some((c) => c.className === 'subs-syncbar__knob'), 'track has a knob');
+  for (const ev of ['pointerdown', 'pointermove', 'pointerup']) {
+    assert.ok((grip._listeners[ev] || []).length === 1, 'grip handles ' + ev);
+    assert.ok((track._listeners[ev] || []).length === 1, 'track handles ' + ev);
+  }
+  assert.equal(value.textContent, '0.00s', 'readout starts at zero');
+  assert.equal(value.textContent, '0.00s', 'zero carries no sign');
+
+  const fire = (el, type, ev) => (el._listeners[type] || []).forEach((fn) => fn(ev));
+  const pd = (x) => ({ pointerId: 1, clientX: x, clientY: 10, preventDefault() {} });
+
+  // Drag the knob +40px right => +40*0.25s = +10s, live in the readout.
+  fire(track, 'pointerdown', pd(100));
+  fire(track, 'pointermove', pd(140));
+  assert.equal(value.textContent, '+10.00s', 'knob drag shifts the offset live (0.25s/px)');
+  // Beyond the range: clamps at +15s.
+  fire(track, 'pointermove', pd(1000));
+  assert.equal(value.textContent, '+15.00s', 'knob drag clamps at the range edge');
+  fire(track, 'pointerup', pd(1000));
+
+  // Double-tap the readout: reset to zero.
+  fire(value, 'dblclick', {});
+  assert.equal(value.textContent, '0.00s', 'double-tap resets the offset');
+
+  // Drag the grip: the bar moves and the position persists.
+  fire(grip, 'pointerdown', pd(10));
+  fire(grip, 'pointermove', { pointerId: 1, clientX: 110, clientY: 60, preventDefault() {} });
+  assert.equal(bar.style.left, '100px', 'grip drag moves the bar');
+  assert.equal(bar.style.top, '50px', 'grip drag moves vertically too');
+  fire(grip, 'pointerup', pd(110));
+  assert.ok(store2['wp:subsbar:pos'], 'position persisted for the next session');
+
+  // Turning subs off hides the bar.
+  Subs.setEnabled(false);
+  assert.equal(bar.hidden, true, 'bar hides when subtitles are disabled');
+});

@@ -232,10 +232,14 @@
     try {
       console.info('[WatchParty] subs search:', data.query, '-> total', data.total, 'candidates', (data.results || []).length);
     } catch (_) {}
-    const candidates = (data.results || []).slice(0, 5);
+    // Try ALL ranked candidates (server caps at 12) — the old top-5 cap made
+    // a run of dead hosts read as "no <lang> subs" and silently flipped the
+    // chain to English even when Indonesian files existed just below.
+    const candidates = data.results || [];
+    try {
+      console.info('[WatchParty] subs ' + (lang || 'any') + ': ' + candidates.length + ' candidates, trying downloads');
+    } catch (_) {}
     if (!candidates.length) return null;
-    // Try candidates in ranked order until one FILE actually downloads —
-    // a bad host on the top result must not kill auto-load.
     let lastErr = '';
     for (const cand of candidates) {
       try {
@@ -355,12 +359,19 @@
 
   // ---- room sync: apply what the HOST loaded/matched -------------------------
   /** @param {{ fileId?: string, label?: string }} info */
+  /** host/room subtitle priority: once the host's file is applied, local
+   * auto-load must never override it (its arrival cancels in-flight runs). */
+  let roomSubsActive = false;
+  let autoLoadGen = 0;
+
   async function loadRemote(info) {
     const fileId = String((info && info.fileId) || '');
     if (!fileId) {
       if (info && info.label) setStatus((info.label) + ' \u00b7 ' + tr('subs.byHost', 'loaded by host'));
       return;
     }
+    roomSubsActive = true;
+    autoLoadGen++; // any in-flight local auto-load is now stale: discard it
     if (fileId === lastLoadedFileId && cues.length) return; // echo guard
     try {
       const res = await fetch('/api/subs/file?fileId=' + encodeURIComponent(fileId));
@@ -389,6 +400,12 @@
 
   async function autoLoad(v, opts) {
     if (!v || !v.id) return;
+    // ROOM PRIORITY: the host's pick (state.subs / broadcasts) outranks every
+    // local auto-load — a guest's own search (possibly another language) must
+    // never race and override what the room is already watching.
+    if (roomSubsActive && !(opts && opts.force)) return;
+    const myGen = ++autoLoadGen;
+    if (opts && opts.force) roomSubsActive = false; // manual pick outranks the room
     // ONE AUTO-LOAD PER VIDEO+LANGUAGE: manual triggers (language switch,
     // Auto-load button) pass {force:true}; automatic calls dedupe here so a
     // burst of setVideo calls can never stack parallel searches whose last
@@ -409,9 +426,11 @@
       try {
         best = await searchBest(v, lang);
       } catch (e) {
+        if (myGen !== autoLoadGen) return; // superseded (host load / newer run)
         setStatus(e instanceof Error ? e.message : tr('subs.searchFailed', 'Subtitle search failed.'), true);
         return;
       }
+      if (myGen !== autoLoadGen) return; // superseded while searching
       if (!best) continue;
       loadCues(best.text); // already downloaded by searchBest — no second fetch
       const label = (LANGS.find((l) => l[0] === best.cand.lang) || [best.cand.lang, best.cand.lang])[1];
@@ -455,6 +474,7 @@
     cueIdx = 0;
     if (cues.length && !enabled) setEnabled(true);
     buildEditorTicks();
+    if (cues.length) showSyncBar(true); // floating sync bar rides every load
   }
 
   function setEnabled(on) {
@@ -470,6 +490,7 @@
       }, 8000);
     } else {
       stopLoop();
+      showSyncBar(false);
     }
   }
 
@@ -479,6 +500,7 @@
     offset = Math.round(abs * 100) / 100;
     saveOffset(offset);
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
+    paintSyncBar();
     cueIdx = 0;
     // Local edits fire the room-sync hook; remote-applied ones don't (no echo).
     if ((!opts || !opts.remote) && onOffsetCb) {
@@ -530,6 +552,139 @@
       '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
         ' \u00b7 ' + tr('subs.snapAgain', 'Still off? Press again while someone speaks.')
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Floating mini sync bar: drag the bar anywhere (grip), drag the knob to
+  // shift timing live (0.25s per px, +-15s), double-tap the value to reset.
+  // Far less confusing than burying sync inside the CC panel.
+  // ---------------------------------------------------------------------------
+  const SYNCBAR_POS_KEY = 'wp:subsbar:pos';
+  const SYNC_PX_TO_S = 0.25; // knob drag resolution
+  const SYNC_MAX_S = 15; // knob range (panel buttons go beyond)
+  let syncBar = null;
+  let syncKnob = null;
+  let syncReadout = null;
+
+  /** @returns {{ el: HTMLElement, knob: HTMLElement, readout: HTMLElement }} */
+  function ensureSyncBar() {
+    if (syncBar) return { el: syncBar, knob: syncKnob, readout: syncReadout };
+    syncBar = h('div', 'subs-syncbar');
+    syncBar.hidden = true;
+
+    const grip = h('span', 'subs-syncbar__grip', '\\u283f');
+    grip.title = tr('subs.barMove', 'Drag to move this bar');
+    grip.setAttribute('aria-label', 'Move sync bar');
+    syncBar.appendChild(grip);
+    // Grip drag: reposition (fixed coordinates, clamped to the viewport,
+    // remembered across sessions so it never "wanders back" mid-episode).
+    let moveActive = false;
+    let moveStartX = 0;
+    let moveStartY = 0;
+    let barX = 0;
+    let barY = 0;
+    grip.addEventListener('pointerdown', (/** @type {any} */ e) => {
+      moveActive = true;
+      if (grip.setPointerCapture) {
+        try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      const rect = syncBar.getBoundingClientRect ? syncBar.getBoundingClientRect() : { left: 0, top: 0 };
+      barX = rect.left;
+      barY = rect.top;
+      moveStartX = e.clientX;
+      moveStartY = e.clientY;
+      if (e.preventDefault) e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (/** @type {any} */ e) => {
+      if (!moveActive) return;
+      const w = (global.innerWidth || 1200);
+      const hh = (global.innerHeight || 800);
+      const nx = Math.min(Math.max(4, barX + (e.clientX - moveStartX)), w - 200);
+      const ny = Math.min(Math.max(4, barY + (e.clientY - moveStartY)), hh - 48);
+      syncBar.style.left = nx + 'px';
+      syncBar.style.top = ny + 'px';
+      syncBar.style.right = 'auto';
+      syncBar.style.bottom = 'auto';
+    });
+    const endMove = () => {
+      if (!moveActive) return;
+      moveActive = false;
+      try {
+        localStorage.setItem(SYNCBAR_POS_KEY, JSON.stringify({ x: syncBar.style.left, y: syncBar.style.top }));
+      } catch (_) {}
+    };
+    grip.addEventListener('pointerup', endMove);
+    grip.addEventListener('pointercancel', endMove);
+
+    syncBar.appendChild(h('span', 'subs-syncbar__label', tr('subs.barSync', 'Sync')));
+
+    // Knob drag: shift timing live. The knob maps offset to track position,
+    // so dragging IS the sync — no buttons, no arithmetic.
+    const track = h('div', 'subs-syncbar__track');
+    track.title = tr('subs.barDrag', 'Drag left/right to shift subtitles');
+    syncKnob = h('div', 'subs-syncbar__knob');
+    track.appendChild(syncKnob);
+    syncBar.appendChild(track);
+    let knobActive = false;
+    let knobStartX = 0;
+    let knobStartOffset = 0;
+    track.addEventListener('pointerdown', (/** @type {any} */ e) => {
+      knobActive = true;
+      if (track.setPointerCapture) {
+        try { track.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      knobStartX = e.clientX;
+      knobStartOffset = offset;
+      if (e.preventDefault) e.preventDefault();
+    });
+    track.addEventListener('pointermove', (/** @type {any} */ e) => {
+      if (!knobActive) return;
+      const next = Math.min(SYNC_MAX_S, Math.max(-SYNC_MAX_S, knobStartOffset + (e.clientX - knobStartX) * SYNC_PX_TO_S));
+      applyOffsetValue(Math.round(next * 100) / 100);
+    });
+    const endKnob = () => {
+      knobActive = false;
+    };
+    track.addEventListener('pointerup', endKnob);
+    track.addEventListener('pointercancel', endKnob);
+
+    syncReadout = h('span', 'subs-syncbar__value', '+0.00s');
+    syncReadout.title = tr('subs.barReset', 'Double-tap to reset');
+    syncReadout.addEventListener('dblclick', () => {
+      applyOffsetValue(0);
+    });
+    syncBar.appendChild(syncReadout);
+
+    document.body.appendChild(syncBar);
+    // Restore a saved position (values are full CSS strings).
+    try {
+      const saved = JSON.parse(localStorage.getItem(SYNCBAR_POS_KEY) || 'null');
+      if (saved && saved.x && saved.y) {
+        syncBar.style.left = saved.x;
+        syncBar.style.top = saved.y;
+        syncBar.style.right = 'auto';
+        syncBar.style.bottom = 'auto';
+      }
+    } catch (_) {}
+    return { el: syncBar, knob: syncKnob, readout: syncReadout };
+  }
+
+  /** Reflect the current offset into the knob position + readout. */
+  function paintSyncBar() {
+    if (!syncReadout) return;
+    syncReadout.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
+    if (syncKnob) {
+      const half = 44; // half track width in px (matches CSS)
+      const px = Math.max(-half, Math.min(half, (offset / SYNC_MAX_S) * half));
+      syncKnob.style.left = 50 + (px / 1.32) + '%'; // knob centers on the track
+    }
+  }
+
+  /** @param {boolean} on */
+  function showSyncBar(on) {
+    const bar = ensureSyncBar();
+    bar.el.hidden = !on;
+    if (on) paintSyncBar();
   }
 
   function buildPanel() {
@@ -788,6 +943,7 @@
     }
     lastVideoKey = nextKey;
     video = next;
+    if (syncBar) syncBar.hidden = true; // new video: bar returns with the new cues
     cues = [];
     cueIdx = 0;
     gotClock = false;
