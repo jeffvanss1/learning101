@@ -184,11 +184,22 @@ First Watch, Binge Watcher, Social Butterfly, Showcase Curator, Party Host.
 ### Setup (one-time)
 
 ```bash
-npx wrangler d1 create watchparty-db            # paste database_id into wrangler.toml
-npx wrangler kv namespace create PRESENCE_KV    # paste id into wrangler.toml
-npx wrangler d1 migrations apply watchparty-db --remote   # apply migrations/
-npx wrangler secret put SESSION_SECRET          # any long random string
+npx wrangler login
+npm run setup:remote          # creates D1 + KV under your account and writes the ids into wrangler.toml
+npm run db:migrate:remote     # create the profile tables
+npx wrangler secret put SESSION_SECRET   # any long random string
+npm run deploy
 ```
+
+`npm run setup:remote` is idempotent — it finds (or creates) the
+`watchparty-db` D1 database and the `watchparty-app-PRESENCE_KV` KV
+namespace, then replaces the placeholder ids in `wrangler.toml`. Without it,
+deploys fail with `KV namespace 'PRESENCE_KV_PLACEHOLDER' is not valid
+[code: 10042]` (and the same class of error for the D1 `database_id`).
+
+Prefer manual? `npx wrangler d1 create watchparty-db` and
+`npx wrangler kv namespace create PRESENCE_KV`, then paste both ids into
+`wrangler.toml` yourself.
 
 Locally, `wrangler dev` provisions D1/KV automatically — just run
 `npm run db:migrate:local` once (and copy `.dev.vars.example` to `.dev.vars`).

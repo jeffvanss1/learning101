@@ -28,15 +28,16 @@ tag = "v1"
 new_sqlite_classes = ["WatchRoom"]
 
 # Profile persistence: users, favorites, watch history, friendships.
+# The placeholder ids below are rewritten automatically by `npm run setup:remote`
+# (creates the database/namespace under your account and fills in the real ids).
 [[d1_databases]]
 binding = "DB"
 database_name = "watchparty-db"
-database_id = "watchparty-db" # replace with the real id from `wrangler d1 create watchparty-db`
+database_id = "watchparty-db" # placeholder — filled in by `npm run setup:remote`
 migrations_dir = "migrations"
 
 # Real-time presence: presence:user:<user_id> keys with short TTLs
-# (see src/presence.ts). Create with `wrangler kv namespace create PRESENCE_KV`
-# and paste the returned id below.
+# (see src/presence.ts).
 [[kv_namespaces]]
 binding = "PRESENCE_KV"
-id = "PRESENCE_KV_PLACEHOLDER" # replace with the real id from `wrangler kv namespace create`
+id = "PRESENCE_KV_PLACEHOLDER" # placeholder — filled in by `npm run setup:remote`
