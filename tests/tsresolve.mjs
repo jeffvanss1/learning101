@@ -4,7 +4,7 @@ export async function resolve(specifier, context, next) {
   try {
     return await next(specifier, context);
   } catch (e) {
-    if (specifier.startsWith('./') && specifier.endsWith('.js') && context.parentURL) {
+    if ((specifier.startsWith('./') || specifier.startsWith('../')) && specifier.endsWith('.js') && context.parentURL) {
       return next(specifier.slice(0, -3) + '.ts', context);
     }
     throw e;

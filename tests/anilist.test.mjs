@@ -68,3 +68,40 @@ test('presence wiring: no pagehide DELETE beacon (mobile backgrounding erased us
   const presence = readFileSync(join(ROOT, 'src/presence.ts'), 'utf8');
   assert.equal(/IDLE_PRESENCE_TTL_S = 3600/.test(presence), true, 'idle TTL 1h');
 });
+
+test('presence PUT never throws raw - KV failures become named 500 json', async () => {
+  const { register } = await import('node:module');
+  const { pathToFileURL } = await import('node:url');
+  const mod = await import(pathToFileURL(ROOT + '/src/routes/presence.ts').href + '?v=' + Math.random());
+  const auth = await import(pathToFileURL(ROOT + '/src/auth.ts').href + '?v=' + Math.random());
+  const env = {
+    SESSION_SECRET: 's',
+    PRESENCE_KV: {
+      get: async () => null,
+      put: async () => {
+        throw new Error('KV namespace not found (simulated)');
+      },
+      delete: async () => {},
+    },
+  };
+  const token = await auth.issueToken(env, { id: 'u-9', username: 'x' });
+  const req = new Request('https://x/api/presence', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ status: 'IDLE' }),
+  });
+  const res = await mod.handlePresencePut(req, env);
+  const body = await res.json();
+  assert.equal(res.status, 500, 'named 500, not a raw throw');
+  assert.equal(body.error, 'presence beat failed');
+  assert.ok(/KV namespace not found/.test(body.detail), 'detail names the cause: ' + body.detail);
+
+  // The self-check reports the broken step instead of dying.
+  const self = await mod.handlePresenceSelf(
+    new Request('https://x/api/presence/self', { headers: { Authorization: 'Bearer ' + token } }),
+    env
+  );
+  const selfBody = await self.json();
+  assert.equal(selfBody.ok, false);
+  assert.ok(/FAILED/.test(selfBody.steps.kvPut), 'self-check names the step: ' + JSON.stringify(selfBody.steps));
+});

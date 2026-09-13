@@ -534,6 +534,19 @@
     };
     beat();
     idleTimer = setInterval(beat, IDLE_HEARTBEAT_MS);
+    // One-shot storage self-check: names the failing STEP (auth / kvPut /
+    // kvGet / kvDelete) instead of leaving a plaintext 500 as the only clue.
+    api('/api/presence/self')
+      .then((r) => {
+        try {
+          console.info('[WatchParty] presence self-check:', JSON.stringify(r));
+        } catch (_) {}
+      })
+      .catch((/** @type {Error} */ e) => {
+        try {
+          console.warn('[WatchParty] presence self-check FAILED:', e && e.message);
+        } catch (_) {}
+      });
     if (!WP.Social._pagehideWired) {
       WP.Social._pagehideWired = true;
       // NO pagehide beacon at all: pagehide fires on mobile backgrounding
@@ -2105,7 +2118,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.26';
+  global.WP.build = 'ui-2026-09-13.27';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

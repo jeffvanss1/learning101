@@ -23,6 +23,7 @@ import {
   handlePresencePut,
   handlePresenceDelete,
   handlePresenceGet,
+  handlePresenceSelf,
 } from './routes/presence.js';
 
 const USERNAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -34,7 +35,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-13.35';
+export const WORKER_BUILD = 'api-2026-09-13.36';
 
 /** Routes that require the D1/KV bindings (the profile/presence surface). */
 const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;
@@ -143,6 +144,9 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
   if (path === '/api/presence') {
     if (method === 'PUT' || method === 'POST') return handlePresencePut(request, env);
     if (method === 'DELETE') return handlePresenceDelete(request, env);
+  }
+  if (path === '/api/presence/self' && method === 'GET') {
+    return handlePresenceSelf(request, env);
   }
   const presenceMatch = path.match(/^\/api\/presence\/([^/]+)\/?$/);
   if (presenceMatch && method === 'GET') {
