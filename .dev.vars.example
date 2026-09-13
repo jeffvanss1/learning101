@@ -1,0 +1,4 @@
+# The Movie Database API key.
+# Create one for free at https://www.themoviedb.org/settings/api
+# Copy this file to `.dev.vars` and paste your key (do NOT commit `.dev.vars`).
+TMDB_API_KEY=""

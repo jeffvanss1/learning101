@@ -1,0 +1,16 @@
+{
+  "name": "watchparty-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A modern, YouTube-inspired watch party web app built on Cloudflare Workers, Static Assets, and Durable Objects.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:local": "wrangler dev --ip 0.0.0.0 --port 8787",
+    "deploy": "wrangler deploy",
+    "check": "node --check src/worker.js && node --check src/WatchRoom.js && node --check src/anilist.js && node --check dist/js/utils.js && node --check dist/js/api.js && node --check dist/js/player.js && node --check dist/js/catalog.js && node --check dist/js/app.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.131.1"
+  }
+}
