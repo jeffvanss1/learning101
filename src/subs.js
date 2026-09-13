@@ -326,6 +326,44 @@ export function buildWyzieSearchUrl(v) {
 }
 
 /**
+ * Parse a /sources payload into the source-code list a key may query.
+ * Prefers the key-scoped 'available' list, then the global free tier,
+ * then the caller's fallback. Returns null when nothing usable remains.
+ * @param {any} payload
+ * @param {string[]} fallback
+ * @returns {string[] | null}
+ */
+export function parseWyzieSources(payload, fallback) {
+  if (!payload || typeof payload !== 'object') return null;
+  const pick = (/** @type {any} */ v) =>
+    Array.isArray(v) && v.length ? v.filter((/** @type {any} */ x) => typeof x === 'string' && x) : null;
+  const scoped = payload.key && payload.key.valid !== false ? pick(payload.available) : null;
+  const free = payload.allFree === false ? pick(payload.free) : pick(payload.sources);
+  const chosen = scoped || free || pick(fallback);
+  return chosen && chosen.length ? chosen : null;
+}
+
+/**
+ * Ask the API which sources THIS key can actually query (GET /sources).
+ * Does not consume search quota (per docs). Returns null on any failure —
+ * the caller then uses its fallback list.
+ * @param {{ fetchImpl?: typeof fetch, key?: string, fallback: string[] }} o
+ * @returns {Promise<string[] | null>}
+ */
+export async function fetchWyzieAvailableSources(o) {
+  const fetchImpl = o.fetchImpl || globalThis.fetch;
+  const url = WYZIE_ORIGIN + '/sources' + (o.key ? '?key=' + encodeURIComponent(o.key) : '');
+  try {
+    const r = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } });
+    if (!r.ok) return null;
+    const payload = await r.json();
+    return parseWyzieSources(payload, o.fallback);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * Fan a Wyzie search out over every source code the key can access, in
  * parallel, and merge the raw records (deduped by url). Per-source fate is
  * reported so an empty merge is explainable DOWN TO THE SOURCE CODE.

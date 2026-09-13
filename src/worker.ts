@@ -16,6 +16,7 @@ import { injectGeoScript, resolveGeo } from './geo.js';
 import {
   buildSearchQuery,
   composeWyzieNote,
+  fetchWyzieAvailableSources,
   fetchWyzieMultiSource,
   decodeWyzieToken,
   fetchSubtitleVtt,
@@ -274,14 +275,30 @@ export default {
           // wyzieNote explains, in the final response, exactly what happened
           // to the primary attempt ("not-configured" = the secret is unset).
           let wyzieNote = 'not-configured';
-          // Free Wyzie keys can ONLY query alpha/charlie/kilo/lima (per Wyzie
-          // support): 'all' silently degrades to the opensubtitles source,
-          // whose download host is gated. Fan out over the free set explicitly;
-          // WYZIE_SOURCES overrides (e.g. 'all' once upgraded to Pro).
-          const wyzieSources = (env.WYZIE_SOURCES || 'alpha,charlie,kilo,lima')
-            .split(',')
-            .map((x) => x.trim())
-            .filter(Boolean);
+          // Which sources may THIS key query? Live truth via GET /sources
+          // (KV-cached 24h) — support-quoted code lists and the docs both
+          // drifted from the live set. WYZIE_SOURCES overrides everything
+          // (set 'all' on a Pro key).
+          const kv = env.PRESENCE_KV || null;
+          let wyzieSources = /** @type {string[] | null} */ (null);
+          if (env.WYZIE_SOURCES) {
+            wyzieSources = env.WYZIE_SOURCES.split(',').map((x) => x.trim()).filter(Boolean);
+          } else {
+            const ck = 'wyzie:sources:v1';
+            try {
+              const cached = kv ? await kv.get(ck) : null;
+              if (cached) wyzieSources = /** @type {string[]} */ (JSON.parse(cached));
+            } catch (_) {}
+            if (!wyzieSources) {
+              wyzieSources = await fetchWyzieAvailableSources({ key: wyzieKey, fallback: ['charlie', 'lima'] });
+              if (wyzieSources && kv) {
+                try {
+                  await kv.put(ck, JSON.stringify(wyzieSources), { expirationTtl: 86400 });
+                } catch (_) {}
+              }
+            }
+          }
+          if (!wyzieSources || !wyzieSources.length) wyzieSources = ['charlie', 'lima'];
           let queryEcho = 'no-wyzie-key';
           if (wyzieKey) {
             const ms = await fetchWyzieMultiSource({ sources: wyzieSources, tmdb, season, episode, lang, key: wyzieKey });

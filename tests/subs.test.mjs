@@ -28,6 +28,8 @@ import {
   fetchWyzieMultiSource,
   composeWyzieNote,
   WYZIE_FREE_SOURCES,
+  parseWyzieSources,
+  fetchWyzieAvailableSources,
 } from '../src/subs.js';
 
 const SRT = `1
@@ -516,6 +518,61 @@ test('composeWyzieNote keeps the gated:N token the frontend parses', () => {
   assert.ok(/gated:2/.test(note), 'gated:N token present for the frontend regex: ' + note);
   assert.ok(note.startsWith('ok'), 'success-path note still opens with ok');
   assert.ok(note.includes('src charlie:2(g2@dl.opensubtitles.org)'), 'per-source provenance included');
+});
+
+test('source discovery: live /sources payload scopes the fan-out (no ghost codes)', async () => {
+  // LIVE /sources (2026-09-14, keyless): bravo/charlie/foxtrot/india/juliet/
+  // lima/mike/november; free = [charlie, lima]. Support-quoted 'alpha'/'kilo'
+  // DO NOT EXIST live -> they 400'd. Discovery must never emit them.
+  const live = {
+    sources: ['bravo', 'charlie', 'foxtrot', 'india', 'juliet', 'lima', 'mike', 'november'],
+    free: ['charlie', 'lima'],
+    paid: ['bravo', 'foxtrot', 'india', 'juliet', 'mike', 'november'],
+    allFree: false,
+  };
+
+  // Keyless payload -> free tier.
+  assert.deepEqual(parseWyzieSources(live, ['x']), ['charlie', 'lima']);
+
+  // Key-scoped payload -> 'available' wins.
+  const scoped = { ...live, key: { valid: true, type: 'free' }, available: ['charlie', 'lima'], restricted: ['bravo'] };
+  assert.deepEqual(parseWyzieSources(scoped, ['x']), ['charlie', 'lima']);
+  const scopedPaid = { ...live, key: { valid: true, type: 'paid' }, available: ['bravo', 'charlie', 'india', 'lima'] };
+  assert.deepEqual(parseWyzieSources(scopedPaid, ['x']), ['bravo', 'charlie', 'india', 'lima']);
+
+  // Garbage -> null (caller uses its own fallback); unusable payloads ->
+  // the fallback list is APPLIED (graceful degradation when the endpoint
+  // changes shape again); no fallback -> null.
+  assert.equal(parseWyzieSources(null, ['charlie']), null);
+  assert.deepEqual(parseWyzieSources({}, ['charlie', 'lima']), ['charlie', 'lima']);
+  assert.deepEqual(parseWyzieSources({ available: [], free: [] }, ['charlie', 'lima']), ['charlie', 'lima']);
+
+  // fetchWyzieAvailableSources: network/HTTP/JSON failures -> null.
+  const ok = await fetchWyzieAvailableSources({
+    fetchImpl: async () => ({ ok: true, json: async () => scopedPaid }),
+    key: 'k',
+    fallback: ['charlie'],
+  });
+  assert.deepEqual(ok, ['bravo', 'charlie', 'india', 'lima']);
+  assert.equal(
+    await fetchWyzieAvailableSources({ fetchImpl: async () => ({ ok: false, json: async () => ({}) }), key: 'k', fallback: ['charlie'] }),
+    null
+  );
+  assert.equal(
+    await fetchWyzieAvailableSources({ fetchImpl: async () => { throw new Error('down'); }, key: 'k', fallback: ['charlie'] }),
+    null
+  );
+  const hit = [];
+  const called = await fetchWyzieAvailableSources({
+    fetchImpl: async (u) => {
+      hit.push(String(u));
+      return { ok: true, json: async () => scopedPaid };
+    },
+    key: 'SECRET',
+    fallback: ['charlie'],
+  });
+  assert.deepEqual(called, ['bravo', 'charlie', 'india', 'lima']);
+  assert.ok(hit[0].startsWith('https://sub.wyzie.io/sources?key=SECRET'), 'key scoped, server-side only');
 });
 
 test('language fallback: id -> en -> any, and the status says what loaded', async () => {
