@@ -13,7 +13,16 @@ import { WatchRoom } from './WatchRoom.js';
 import { classifyIsAnime, matchAnilist } from './anilist.js';
 import { routeApi } from './router.js';
 import { injectGeoScript, resolveGeo } from './geo.js';
-import { buildSearchQuery, fetchSubtitleVtt, pickBest, shapeSearchResponse } from './subs.js';
+import {
+  buildSearchQuery,
+  buildWyzieSearchUrl,
+  decodeWyzieToken,
+  fetchSubtitleVtt,
+  fetchWyzieVtt,
+  pickBest,
+  shapeSearchResponse,
+  shapeWyzieResults,
+} from './subs.js';
 import { buildTmdbUrl, looksLikeToken } from './tmdburl.js';
 import type { Env } from './types.js';
 
@@ -236,16 +245,17 @@ export default {
       }
     }
 
-    // --- Subtitles (OpenSubtitles v3, own overlay in the player) ---------------
+    // --- Subtitles (Wyzie primary, OpenSubtitles fallback; own overlay) --------
     if (path.startsWith('/api/subs/')) {
-      const key = env.OPENSUBTITLES_API_KEY;
-      if (!key) {
+      const wyzieKey = env.WYZIE_API_KEY;
+      const osKey = env.OPENSUBTITLES_API_KEY;
+      if (!wyzieKey && !osKey) {
         return json(
           {
             error:
-              'OPENSUBTITLES_API_KEY is not configured. Add it as a Worker secret ' +
-              '(`wrangler secret put OPENSUBTITLES_API_KEY`) or to .dev.vars. ' +
-              'Uploading a subtitle file still works without it.',
+              'No subtitle provider is configured. Get a free key at store.wyzie.io/redeem and set it ' +
+              '(`wrangler secret put WYZIE_API_KEY`), and/or OPENSUBTITLES_API_KEY. ' +
+              'Uploading a subtitle file still works without either.',
           },
           503
         );
@@ -255,16 +265,63 @@ export default {
           const type = url.searchParams.get('type') === 'movie' ? 'movie' : 'tv';
           const tmdb = url.searchParams.get('tmdb') || '';
           if (!/^\d+$/.test(tmdb)) return json({ error: 'tmdb id required' }, 400);
+          const season = url.searchParams.get('season') ? Number(url.searchParams.get('season')) : null;
+          const episode = url.searchParams.get('episode') ? Number(url.searchParams.get('episode')) : null;
+          const lang = url.searchParams.get('lang') || undefined;
+
+          // PRIMARY: Wyzie Subs (key IS the query param; kept server-side).
+          if (wyzieKey) {
+            const wyzieUrl = buildWyzieSearchUrl({ tmdb, season, episode, lang, key: wyzieKey });
+            const wz = await fetch(wyzieUrl, {
+              headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' },
+            });
+            if (wz.status === 429) {
+              return json({ error: 'Subtitle search is rate-limited right now — retry in a moment.' }, 429);
+            }
+            if (wz.status === 401 || wz.status === 403) {
+              return json({ error: 'Wyzie rejected the API key (' + wz.status + ') — check WYZIE_API_KEY (store.wyzie.io).' }, 502);
+            }
+            if (wz.ok) {
+              const list: any = await wz.json();
+              const shaped = shapeWyzieResults(list);
+              if (shaped.best) {
+                // Echo the query WITHOUT the key.
+                return json(
+                  { ...shaped, total: shaped.results.length, provider: 'wyzie', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
+                  200,
+                  { 'Cache-Control': 'public, max-age=60' }
+                );
+              }
+              // Wyzie empty AND OpenSubtitles configured -> fall through to it.
+              if (!osKey) {
+                return json(
+                  { results: [], best: null, total: 0, provider: 'wyzie', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
+                  200,
+                  { 'Cache-Control': 'public, max-age=60' }
+                );
+              }
+            }
+          }
+
+          // FALLBACK: OpenSubtitles v3.
+          if (!osKey) {
+            // Wyzie answered empty and no fallback configured.
+            return json(
+              { results: [], best: null, total: 0, provider: 'wyzie', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
+              200,
+              { 'Cache-Control': 'public, max-age=60' }
+            );
+          }
           const query = buildSearchQuery({
             type: type,
             tmdb: tmdb,
-            season: url.searchParams.get('season') ? Number(url.searchParams.get('season')) : null,
-            episode: url.searchParams.get('episode') ? Number(url.searchParams.get('episode')) : null,
-            lang: url.searchParams.get('lang') || undefined,
+            season: season,
+            episode: episode,
+            lang: lang,
           });
           const res = await fetch(
             'https://api.opensubtitles.com/api/v1/subtitles?' + query,
-            { headers: { 'Api-Key': key, Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } }
+            { headers: { 'Api-Key': osKey, Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } }
           );
           if (res.status === 429) {
             return json({ error: 'Subtitle search is rate-limited right now — retry in a moment.' }, 429);
@@ -285,6 +342,7 @@ export default {
               results: shapeSearchResponse(payload),
               best: pickBest(payload && payload.data),
               total: payload && payload.total,
+              provider: 'opensubtitles',
               // The EXACT upstream query — makes any future "why empty" a glance.
               query: query,
             },
@@ -294,8 +352,22 @@ export default {
         }
         if (path === '/api/subs/file' && request.method === 'GET') {
           const fileId = url.searchParams.get('fileId') || '';
-          if (!/^\d+$/.test(fileId)) return json({ error: 'fileId required' }, 400);
-          const { vtt, cached } = await fetchSubtitleVtt(fileId, key, env.PRESENCE_KV || null);
+          if (!fileId) return json({ error: 'fileId required' }, 400);
+          // OpenSubtitles fileIds are numeric; Wyzie tokens are opaque base64url.
+          let vtt: string;
+          let cached: boolean;
+          if (/^\d+$/.test(fileId)) {
+            if (!osKey) {
+              return json({ error: 'OpenSubtitles fallback is not configured — numeric file ids are unsupported.' }, 400);
+            }
+            const r = await fetchSubtitleVtt(fileId, osKey, env.PRESENCE_KV || null);
+            vtt = r.vtt;
+            cached = r.cached;
+          } else {
+            const r = await fetchWyzieVtt(fileId, env.PRESENCE_KV || null);
+            vtt = r.vtt;
+            cached = r.cached;
+          }
           return new Response(vtt, {
             status: 200,
             headers: {

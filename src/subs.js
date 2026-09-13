@@ -250,3 +250,128 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
   }
   return { vtt: vtt, cached: false };
 }
+
+
+// ---- Wyzie Subs provider (primary; https://sub.wyzie.io) -------------------
+//
+// Free/libre aggregator (OpenSubtitles, Subf2m, YIFY, Jimaku, ...): search by
+// TMDB id, JSON array back, DIRECT subtitle-file URLs. Needs a key as a
+// `key` query param (free at store.wyzie.io/redeem, 1000 req/day) — the key
+// is appended by the WORKER only, never sent to the browser.
+//
+// The frontend contract is unchanged: search returns the same compact
+// candidate shape, with `fileId` now carrying an OPAQUE base64url token of
+// the record's direct URL. /api/subs/file decodes it behind a strict host
+// allowlist (sub.wyzie.io) — the endpoint can never be abused as a proxy.
+
+export const WYZIE_ORIGIN = 'https://sub.wyzie.io';
+export const WYZIE_ALLOWED_HOST = 'sub.wyzie.io';
+
+/**
+ * Build a Wyzie search URL. `key` is optional so tests and the response's
+ * `query` echo never embed a secret.
+ * @param {{ tmdb: string, season?: number | null, episode?: number | null, lang?: string, key?: string }} v
+ * @returns {string}
+ */
+export function buildWyzieSearchUrl(v) {
+  const params = new URLSearchParams();
+  params.set('id', String(v.tmdb));
+  if (v.season != null && v.episode != null) {
+    params.set('season', String(v.season));
+    params.set('episode', String(v.episode));
+  }
+  if (v.lang) params.set('language', v.lang);
+  params.set('format', 'srt'); // our converter's native input
+  params.set('source', 'all'); // every enabled source: opensubtitles, subf2m, ...
+  if (v.key) params.set('key', v.key);
+  return WYZIE_ORIGIN + '/search?' + params.toString();
+}
+
+/** @param {string} url @returns {string} urlsafe base64 (no padding) */
+export function encodeWyzieToken(url) {
+  return btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** @param {string} token @returns {string | null} the decoded URL iff it points at the allowlisted host */
+export function decodeWyzieToken(token) {
+  try {
+    let b64 = String(token).replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const url = atob(b64);
+    if (url.indexOf('https://' + WYZIE_ALLOWED_HOST + '/') !== 0) return null;
+    return url;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Rank a raw Wyzie record for auto-pick: human translations over AI,
+ * non-hearing-impaired over HI, then download count.
+ * @param {any} rec @returns {number}
+ */
+function wyzieScore(rec) {
+  return (rec.ai ? 0 : 4_000_000) + (rec.isHearingImpaired ? 0 : 2_000_000) + Number(rec.downloadCount || 0);
+}
+
+/**
+ * Shape + rank raw Wyzie results into the compact candidate contract.
+ * @param {any} list
+ * @returns {{ results: any[], best: any }}
+ */
+export function shapeWyzieResults(list) {
+  // Score the RAW records first, shape in ranked order (the shaped record
+  // renames ai -> machineTranslated, so shaping first would lose the flags).
+  const raw = (Array.isArray(list) ? list : [])
+    .filter((r) => r && r.url && r.id)
+    .filter((r) => String(r.url).indexOf('https://' + WYZIE_ALLOWED_HOST + '/') === 0)
+    .sort((a, b) => wyzieScore(b) - wyzieScore(a));
+  const out = [];
+  for (const r of raw) {
+    /** @type {any} */ const rec = {
+      fileId: encodeWyzieToken(String(r.url)),
+      release: String(r.release || r.fileName || r.media || '').slice(0, 80),
+      lang: String(r.language || '').slice(0, 3),
+      display: String(r.display || ''),
+      downloads: Number(r.downloadCount || 0),
+      machineTranslated: !!r.ai,
+      foreignPartsOnly: false,
+      source: String(r.source || ''),
+    };
+    out.push(rec);
+    if (out.length >= 12) break;
+  }
+  const best = out.length ? { ...out[0] } : null;
+  return { results: out, best: best };
+}
+
+/**
+ * Fetch a Wyzie subtitle file (direct URL from the token) and return WebVTT.
+ * @param {string} token
+ * @param {{ get(key: string): Promise<string | null>, put(key: string, value: string, opts?: any): Promise<void> } | null} kv
+ * @returns {Promise<{ vtt: string, cached: boolean }>}
+ */
+export async function fetchWyzieVtt(token, kv) {
+  const url = decodeWyzieToken(token);
+  if (!url) throw new Error('invalid subtitle token');
+  const cacheKey = SUBS_KV_PREFIX + 'w:' + token;
+  if (kv) {
+    try {
+      const hit = await kv.get(cacheKey);
+      if (hit) return { vtt: hit, cached: true };
+    } catch (_) {}
+  }
+  const res = await fetch(url, {
+    headers: { Accept: '*/*', 'User-Agent': 'WatchParty v1.0.0' },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error('subtitle file fetch ' + res.status);
+  const vtt = toVtt(await res.text());
+  if (!vtt) throw new Error('unsupported subtitle format (need SRT/VTT)');
+  if (kv) {
+    try {
+      await kv.put(cacheKey, vtt, { expirationTtl: SUBS_KV_TTL_S });
+    } catch (_) {}
+  }
+  return { vtt: vtt, cached: false };
+}

@@ -280,7 +280,16 @@ offset you can nudge (±¼s / ±1s buttons or `[` / `]` keys) — the offset is
 **persisted per movie/episode** (`wp:suboff:*`), so a fix stays fixed.
 
 Sources:
-- **Auto-load** (OpenSubtitles v3 via the worker): `GET /api/subs/search`
+- **Auto-load** (**Wyzie Subs primary** — free key at store.wyzie.io/redeem,
+  1000 req/day, set via `wrangler secret put WYZIE_API_KEY`): the worker
+  proxies sub.wyzie.io (search by TMDB id + season/episode, `format=srt`,
+  `source=all`); subtitle files are direct URLs fetched server-side behind a
+  strict sub.wyzie.io allowlist and KV-cached as VTT. The panel's `fileId`
+  is an opaque base64url token of the file URL — `/api/subs/file` can never
+  act as an open proxy. **OpenSubtitles remains the automatic fallback**
+  when Wyzie returns nothing (and vice-versa config-wise). The response
+  names its `provider` and echoes the upstream `query` (key stripped):
+- **Auto-load fallback** (OpenSubtitles v3 via the worker): `GET /api/subs/search`
   finds subtitles per the official API contract — `tmdb_id` for movies,
   **`parent_tmdb_id` + `season_number` + `episode_number` for series/anime**
   (tmdb_id + season/episode is an invalid combination there and returns
@@ -483,14 +492,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.12",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.13",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.14` and
-   `[WatchParty] API build: api-2026-09-13.12`.
+   `[WatchParty] API build: api-2026-09-13.13`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.

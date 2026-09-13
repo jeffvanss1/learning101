@@ -32,6 +32,8 @@ export interface Env {
   TMDB_API_KEY?: string;
   /** OpenSubtitles v3 API key (https://api.opensubtitles.com). */
   OPENSUBTITLES_API_KEY?: string;
+  /** Wyzie Subs API key (https://sub.wyzie.io — free at store.wyzie.io/redeem). */
+  WYZIE_API_KEY?: string;
   /** HMAC secret for session tokens (`wrangler secret put SESSION_SECRET`). */
   SESSION_SECRET?: string;
 }

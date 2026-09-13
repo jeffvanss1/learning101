@@ -12,12 +12,17 @@ import { join } from 'node:path';
 import { ROOT } from './dompath.mjs';
 import {
   buildSearchQuery,
+  buildWyzieSearchUrl,
+  decodeWyzieToken,
+  encodeWyzieToken,
   fetchSubtitleVtt,
+  fetchWyzieVtt,
   parseTimestamp,
   formatVttTimestamp,
   toVtt,
   pickBest,
   shapeSearchResponse,
+  shapeWyzieResults,
 } from '../src/subs.js';
 
 const SRT = `1
@@ -109,6 +114,77 @@ test('download quota exhaustion surfaces a plain-language error', async () => {
   }
   assert.ok(message.includes('daily download limit'), 'quota errors must be plain-language: ' + message);
   assert.ok(message.includes('cached'), 'the error must mention cached subs keep working');
+});
+
+
+// ---- Wyzie provider (primary) ----------------------------------------------
+
+const WY = {
+  id: '1955024019',
+  url: 'https://sub.wyzie.io/c/198e0c4d/id/1955024019?format=srt&encoding=UTF-8',
+  format: 'srt',
+  display: 'English',
+  language: 'en',
+  media: 'The Martian',
+  isHearingImpaired: false,
+  source: 'subf2m',
+  release: 'The.Martian.2015.1080p.WEB-DL',
+  fileName: 'the.martian.2015.1080p.web-dl.srt',
+  downloadCount: 4321,
+  ai: false,
+};
+
+test('Wyzie search URL: TMDB id, season+episode, language, srt, all sources, key only when given', () => {
+  const u = new URL(buildWyzieSearchUrl({ tmdb: '286217', season: 1, episode: 2, lang: 'id', key: 'K' }));
+  assert.equal(u.origin + u.pathname, 'https://sub.wyzie.io/search');
+  assert.equal(u.searchParams.get('id'), '286217');
+  assert.equal(u.searchParams.get('season'), '1');
+  assert.equal(u.searchParams.get('episode'), '2');
+  assert.equal(u.searchParams.get('language'), 'id');
+  assert.equal(u.searchParams.get('format'), 'srt');
+  assert.equal(u.searchParams.get('source'), 'all');
+  assert.equal(u.searchParams.get('key'), 'K');
+  const noKey = new URL(buildWyzieSearchUrl({ tmdb: '286217' }));
+  assert.equal(noKey.searchParams.get('key'), null, 'the echo must never embed the key');
+  const mv = new URL(buildWyzieSearchUrl({ tmdb: '420818' }));
+  assert.equal(mv.searchParams.get('season'), null, 'movies carry no season/episode');
+});
+
+test('Wyzie token round-trips; foreign hosts are rejected (no open proxy)', () => {
+  const tok = encodeWyzieToken(WY.url);
+  assert.equal(decodeWyzieToken(tok), WY.url);
+  assert.equal(decodeWyzieToken(encodeWyzieToken('https://evil.example/x.srt')), null);
+  assert.equal(decodeWyzieToken('http://sub.wyzie.io/a.srt'.slice(0, 0) + '!!!'), null);
+  assert.equal(decodeWyzieToken(encodeWyzieToken('http://sub.wyzie.io/a.srt')), null, 'https only');
+});
+
+test('Wyzie shaping ranks human > AI, clean > HI, then downloads; best carries an opaque token', () => {
+  const { results, best } = shapeWyzieResults([
+    { ...WY, id: '1', ai: true, downloadCount: 999_999 },
+    { ...WY, id: '2', isHearingImpaired: true, downloadCount: 500_000 },
+    { ...WY, id: '3' }, // clean human, 4321 downloads -> winner
+    { url: 'https://evil.example/a.srt', id: '4', downloadCount: 9_999_999 }, // non-allowlisted -> never a candidate
+  ]);
+  assert.equal(best.fileId, encodeWyzieToken(WY.url));
+  assert.equal(results.length, 3, 'non-allowlisted urls must not become candidates');
+  assert.equal(best.release, 'The.Martian.2015.1080p.WEB-DL');
+  assert.equal(best.machineTranslated, false);
+  assert.ok(!best._score, 'ranking bookkeeping must not leak into the response');
+  // order: human-clean (3) first
+  assert.equal(results[0].downloads, 4321);
+});
+
+test('fetchWyzieVtt converts the direct file to VTT and honors the allowlist', async () => {
+  const SRT = '1\n00:00:01,000 --> 00:00:02,000\nWyzie cue\n';
+  globalThis.fetch = (url) => {
+    assert.ok(String(url).startsWith('https://sub.wyzie.io/'), 'only allowlisted hosts may be fetched');
+    return Promise.resolve({ ok: true, text: async () => SRT });
+  };
+  const tok = encodeWyzieToken('https://sub.wyzie.io/c/x/id/1?format=srt');
+  const { vtt } = await fetchWyzieVtt(tok, null);
+  assert.ok(vtt.startsWith('WEBVTT'));
+  assert.ok(vtt.includes('Wyzie cue'));
+  await assert.rejects(fetchWyzieVtt(encodeWyzieToken('https://evil.example/a.srt'), null), /invalid subtitle token/);
 });
 
 // ---- client bundle runtime smoke -------------------------------------------
