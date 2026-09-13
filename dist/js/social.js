@@ -499,9 +499,20 @@
   // ---------------------------------------------------------------------------
   let idleTimer = /** @type {any} */ (null);
 
+  let anonPresenceWarned = false;
   function startIdlePresence() {
     stopIdlePresence();
-    if (!loadSession()) return;
+    if (!loadSession()) {
+      // Anonymous users CANNOT have presence (writes are authenticated):
+      // say so instead of letting "always offline" look like a bug.
+      if (!anonPresenceWarned) {
+        anonPresenceWarned = true;
+        try {
+          console.info('[WatchParty] presence: not signed in — you will show OFFLINE to others. Sign in (profile) to appear online.');
+        } catch (_) {}
+      }
+      return;
+    }
     let beatWarned = false;
     const beat = () => {
       // Skip while a room socket owns presence.
@@ -2092,7 +2103,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.24';
+  global.WP.build = 'ui-2026-09-13.25';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
