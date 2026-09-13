@@ -210,12 +210,41 @@
     }
     // Diagnosability: the exact upstream query + result count, in DevTools.
     try {
-      console.info('[WatchParty] subs search:', data.query, '-> total', data.total, 'best', !!data.best);
+      console.info('[WatchParty] subs search:', data.query, '-> total', data.total, 'candidates', (data.results || []).length);
     } catch (_) {}
-    if (data.best) return data.best;
-    if (data.total > 0) {
-      setStatus(tr('subs.noneDownloadable', 'Subtitles exist but none are downloadable with this API key/plan.'), true);
+    const candidates = (data.results || []).slice(0, 5);
+    if (!candidates.length) return null;
+    // Try candidates in ranked order until one FILE actually downloads —
+    // a bad host on the top result must not kill auto-load.
+    let lastErr = '';
+    for (const cand of candidates) {
+      try {
+        const fileRes = await fetch('/api/subs/file?fileId=' + cand.fileId);
+        if (!fileRes.ok) {
+          const err = await fileRes.json().catch(() => null);
+          lastErr = (err && err.error) || 'HTTP ' + fileRes.status;
+          continue;
+        }
+        loadCues(await fileRes.text());
+        const label = (LANGS.find((l) => l[0] === cand.lang) || [cand.lang, cand.lang])[1];
+        const suffix =
+          cand.lang && cand.lang !== lang
+            ? ' · ' + tr('subs.fallback', 'no {lang} subs — language fallback').replace('{lang}', primary.toUpperCase())
+            : '';
+        setStatus(
+          tr('subs.loaded', 'Loaded') +
+            ': ' + (cand.release || 'subtitle') +
+            ' [' + label + ', ' + (cand.downloads || 0) + '\u2193]' + suffix
+        );
+        return cand;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : String(e);
+      }
     }
+    setStatus(
+      tr('subs.loadFailed', 'Could not download the subtitle.') + ' (' + lastErr + ')',
+      true
+    );
     return null;
   }
 

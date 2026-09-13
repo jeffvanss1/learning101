@@ -265,22 +265,37 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
 // allowlist (sub.wyzie.io) — the endpoint can never be abused as a proxy.
 
 export const WYZIE_ORIGIN = 'https://sub.wyzie.io';
-// Wyzie aggregates sources and returns the SOURCE's own file urls (live API:
-// dl.opensubtitles.org etc. — the docs' sub.wyzie.io/c/... examples lag
-// behind). The allowlist is explicit and suffix-checked so the /file
-// endpoint can never be steered to an arbitrary host.
-export const WYZIE_ALLOWED_SUFFIXES = ['.wyzie.io', '.opensubtitles.org'];
+// Wyzie aggregates sources and returns the SOURCE's own file urls. Host
+// policy, learned from live traffic (2026-09-13):
+//   * dl.opensubtitles.org|.com are GATED (401 without OS credentials) —
+//     those titles belong in the authenticated OpenSubtitles fallback
+//     pipeline, so gated records are dropped from the Wyzie candidate list.
+//   * everything on the fetchable suffix list is fetched server-side; the
+//     list is explicit and suffix-checked so /api/subs/file can never be
+//     steered to an arbitrary host. New source hosts appear in the
+//     dropped-host diagnostics first and are added here deliberately.
+export const WYZIE_ALLOWED_SUFFIXES = [
+  '.wyzie.io',
+  'subf2m.co.uk',
+  'yifysubtitles.com',
+  'podnapisi.net',
+  'titlovi.com',
+];
+export const WYZIE_GATED_SUFFIXES = ['.opensubtitles.org', '.opensubtitles.com'];
 
-/** @param {string} url @returns {boolean} https + allowlisted host suffix */
-export function isWyzieUrl(url) {
+/** @param {string} url @returns {'fetchable' | 'gated' | 'foreign'} */
+export function wyzieHostPolicy(url) {
   try {
     const u = new URL(String(url));
-    if (u.protocol !== 'https:') return false;
-    return WYZIE_ALLOWED_SUFFIXES.some(
-      (suffix) => u.hostname === suffix.slice(1) || u.hostname.endsWith(suffix)
-    );
+    if (u.protocol !== 'https:') return 'foreign';
+    const host = u.hostname;
+    const matches = (list) =>
+      list.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix));
+    if (matches(WYZIE_GATED_SUFFIXES)) return 'gated';
+    if (matches(WYZIE_ALLOWED_SUFFIXES)) return 'fetchable';
+    return 'foreign';
   } catch (_) {
-    return false;
+    return 'foreign';
   }
 }
 
@@ -299,8 +314,7 @@ export function buildWyzieSearchUrl(v) {
   }
   if (v.lang) params.set('language', v.lang);
   params.set('format', 'srt'); // our converter's native input
-  // NOTE: no `source` param — their documented default (opensubtitles) is
-  // what their own examples use; `source=all` behaved flaky in practice.
+  params.set('source', 'all'); // aggregate every source; the default (opensubtitles) returns GATED urls (401 on fetch)
   if (v.key) params.set('key', v.key);
   return WYZIE_ORIGIN + '/search?' + params.toString();
 }
@@ -316,7 +330,7 @@ export function decodeWyzieToken(token) {
     let b64 = String(token).replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const url = atob(b64);
-    if (!isWyzieUrl(url)) return null;
+    if (wyzieHostPolicy(url) !== 'fetchable') return null;
     return url;
   } catch (_) {
     return null;
@@ -369,13 +383,19 @@ export function shapeWyzieResults(payload) {
   const usable = [];
   let missingFields = 0;
   let foreignHost = 0;
+  let gatedHost = 0;
   let foreignSample = '';
   for (const r of extracted.list) {
     if (!r || typeof r !== 'object' || !r.url || !r.id) {
       missingFields++;
       continue;
     }
-    if (!isWyzieUrl(r.url)) {
+    const policy = wyzieHostPolicy(r.url);
+    if (policy === 'gated') {
+      gatedHost++;
+      continue;
+    }
+    if (policy === 'foreign') {
       foreignHost++;
       if (!foreignSample) {
         try {
@@ -391,9 +411,11 @@ export function shapeWyzieResults(payload) {
   usable.sort((a, b) => wyzieScore(b) - wyzieScore(a));
   const raw = usable;
   let dropped = '';
-  if (missingFields + foreignHost > 0) {
+  if (missingFields + foreignHost + gatedHost > 0) {
     dropped =
-      ' dropped:' + (missingFields + foreignHost) + (missingFields ? '(fields:' + missingFields + ')' : '') +
+      ' dropped:' + (missingFields + foreignHost + gatedHost) +
+      (missingFields ? '(fields:' + missingFields + ')' : '') +
+      (gatedHost ? '(gated:' + gatedHost + ')' : '') +
       (foreignHost ? '(host:' + foreignHost + (foreignSample ? '@' + foreignSample : '') + ')' : '');
   }
   const out = [];
@@ -435,7 +457,12 @@ export async function fetchWyzieVtt(token, kv) {
     headers: { Accept: '*/*', 'User-Agent': 'WatchParty v1.0.0' },
     signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error('subtitle file fetch ' + res.status);
+  if (!res.ok) {
+    throw new Error(
+      'subtitle file fetch ' + res.status +
+      (res.status === 401 || res.status === 403 ? ' (gated host — needs credentials)' : '')
+    );
+  }
   const vtt = toVtt(await res.text());
   if (!vtt) throw new Error('unsupported subtitle format (need SRT/VTT)');
   if (kv) {

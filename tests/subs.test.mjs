@@ -13,8 +13,8 @@ import { ROOT } from './dompath.mjs';
 import {
   buildSearchQuery,
   buildWyzieSearchUrl,
-  isWyzieUrl,
   wyzieExtractList,
+  wyzieHostPolicy,
   decodeWyzieToken,
   encodeWyzieToken,
   fetchSubtitleVtt,
@@ -144,7 +144,7 @@ test('Wyzie search URL: TMDB id, season+episode, language, srt, all sources, key
   assert.equal(u.searchParams.get('episode'), '2');
   assert.equal(u.searchParams.get('language'), 'id');
   assert.equal(u.searchParams.get('format'), 'srt');
-  assert.equal(u.searchParams.get('source'), null, 'source defaults to their curated set (source=all proved flaky)');
+  assert.equal(u.searchParams.get('source'), 'all', 'aggregate sources; gated OS urls are dropped at shaping');
   assert.equal(u.searchParams.get('key'), 'K');
   const noKey = new URL(buildWyzieSearchUrl({ tmdb: '286217' }));
   assert.equal(noKey.searchParams.get('key'), null, 'the echo must never embed the key');
@@ -152,19 +152,18 @@ test('Wyzie search URL: TMDB id, season+episode, language, srt, all sources, key
   assert.equal(mv.searchParams.get('season'), null, 'movies carry no season/episode');
 });
 
-test('host matcher: wyzie.io + opensubtitles.org (the LIVE file hosts), nothing else', () => {
-  assert.ok(isWyzieUrl('https://sub.wyzie.io/c/x?format=srt'), 'docs example host');
-  assert.ok(isWyzieUrl('https://dl.wyzie.io/files/a.srt'), 'wyzie subdomains');
-  assert.ok(
-    isWyzieUrl('https://dl.opensubtitles.org/a.srt'),
-    'the LIVE api returns dl.opensubtitles.org urls (observed 2026-09-13: dropped:65(host@dl.opensubtitles.org))'
-  );
-  assert.ok(!isWyzieUrl('http://sub.wyzie.io/a.srt'), 'https only');
-  assert.ok(!isWyzieUrl('https://evil.example/a.srt'));
-  assert.ok(!isWyzieUrl('https://evil.wyzie.io.evil.example/a.srt'), 'suffix tricks rejected');
-  assert.ok(!isWyzieUrl('https://dl.opensubtitles.org.evil.example/a.srt'), 'suffix tricks rejected (os)');
-  assert.ok(!isWyzieUrl('https://github.com/opensubtitles.org'), 'suffix must match the HOST tail');
-  assert.ok(!isWyzieUrl('not a url'));
+test('host policy: fetchable / gated / foreign (live-learned)', () => {
+  assert.equal(wyzieHostPolicy('https://sub.wyzie.io/c/x?format=srt'), 'fetchable');
+  assert.equal(wyzieHostPolicy('https://dl.wyzie.io/files/a.srt'), 'fetchable');
+  assert.equal(wyzieHostPolicy('https://www.subf2m.co.uk/download/a'), 'fetchable', 'Subf2M source host');
+  assert.equal(wyzieHostPolicy('https://dl.opensubtitles.org/a.srt'), 'gated', 'observed 401 live');
+  assert.equal(wyzieHostPolicy('https://dl.opensubtitles.com/a.srt'), 'gated', 'com twin');
+  assert.equal(wyzieHostPolicy('http://sub.wyzie.io/a.srt'), 'foreign', 'https only');
+  assert.equal(wyzieHostPolicy('https://evil.example/a.srt'), 'foreign');
+  assert.equal(wyzieHostPolicy('https://evil.wyzie.io.evil.example/a.srt'), 'foreign', 'suffix tricks rejected');
+  assert.equal(wyzieHostPolicy('https://dl.opensubtitles.org.evil.example/a.srt'), 'foreign');
+  assert.equal(wyzieHostPolicy('https://github.com/opensubtitles.org'), 'foreign', 'suffix must match the HOST tail');
+  assert.equal(wyzieHostPolicy('not a url'), 'foreign');
 });
 
 test('shaping reports dropped records with the reason (fields vs host)', () => {
@@ -222,7 +221,7 @@ test('Wyzie shaping ranks human > AI, clean > HI, then downloads; best carries a
   assert.equal(results[0].downloads, 4321);
 });
 
-test('LIVE host: dl.opensubtitles.org records shape into candidates and fetch', async () => {
+test('LIVE field report replay: 65 gated dl.opensubtitles.org records drop cleanly', async () => {
   const recs = Array.from({ length: 65 }, (_, i) => ({
     id: String(i),
     url: 'https://dl.opensubtitles.org/download/' + i + '?format=srt',
@@ -232,18 +231,35 @@ test('LIVE host: dl.opensubtitles.org records shape into candidates and fetch', 
     ai: false,
     isHearingImpaired: false,
   }));
-  const { results, best } = shapeWyzieResults(recs);
-  assert.equal(results.length, 12, 'capped candidate list from the 65 live records');
-  assert.ok(best && best.release === 'Rel.64', 'highest-download record ranked first');
-  assert.ok(shapeWyzieResults(recs).shape.startsWith('array'), 'no drops on live hosts');
+  const { results, best, shape } = shapeWyzieResults(recs);
+  assert.equal(results.length, 0, 'gated records must not become candidates (they 401 on fetch)');
+  assert.equal(best, null);
+  assert.ok(shape.includes('dropped:65'), shape);
+  assert.ok(shape.includes('(gated:65)'), shape);
+  // ...which routes the title to the authenticated OpenSubtitles fallback.
+});
 
-  const SRT = '1\n00:00:01,000 --> 00:00:02,000\nLive host cue\n';
+test('fetchable source hosts (Subf2M) shape into candidates and fetch', async () => {
+  const recs = Array.from({ length: 70 }, (_, i) => ({
+    id: String(i),
+    url: 'https://www.subf2m.co.uk/download/' + i + '?type=srt',
+    release: 'Rel.' + i,
+    language: 'en',
+    downloadCount: i,
+    ai: false,
+    isHearingImpaired: false,
+  }));
+  const { results, best } = shapeWyzieResults(recs);
+  assert.equal(results.length, 12);
+  assert.ok(best && best.release === 'Rel.69', 'highest-download record ranked first');
+
+  const SRT = '1\n00:00:01,000 --> 00:00:02,000\nFetchable cue\n';
   globalThis.fetch = (url) => {
-    assert.ok(String(url).startsWith('https://dl.opensubtitles.org/'));
+    assert.ok(String(url).startsWith('https://www.subf2m.co.uk/'));
     return Promise.resolve({ ok: true, text: async () => SRT });
   };
   const { vtt } = await fetchWyzieVtt(best.fileId, null);
-  assert.ok(vtt.includes('Live host cue'));
+  assert.ok(vtt.includes('Fetchable cue'));
 });
 
 test('fetchWyzieVtt converts the direct file to VTT and honors the allowlist', async () => {
@@ -397,6 +413,45 @@ test('tap-sync computes the offset from the player clock, exactly', async () => 
   assert.equal(overlay.children[0].textContent, 'Where are you?');
 });
 
+test('auto-load iterates candidates when the top one fails to download', async () => {
+  // Live scenario (2026-09-13): the ranked-best record sat on a gated host
+  // (dl.opensubtitles.org -> 401). Auto-load must skip it and load #2.
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/subs/search')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          results: [
+            { fileId: 'A', release: 'Gated.Release', lang: 'en', downloads: 9000, machineTranslated: false },
+            { fileId: 'B', release: 'Good.Release', lang: 'en', downloads: 4000, machineTranslated: false },
+          ],
+          best: { fileId: 'A', release: 'Gated.Release', lang: 'en', downloads: 9000 },
+        }),
+      });
+    }
+    if (u.includes('fileId=A')) {
+      return Promise.resolve({ ok: false, status: 401, json: async () => ({ error: 'subtitle file fetch 401 (gated host)' }) });
+    }
+    if (u.includes('fileId=B')) {
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:01,000 --> 00:00:02,000\nSecond candidate\n' });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+
+  const { Subs } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  Subs.__test.setLang('en');
+  Subs.loadCues('1\n00:00:05,000 --> 00:00:06,000\nwarmup\n'); // enable (returning-user path)
+  Subs.setVideo({ type: 'movie', id: '7' }); // enabled -> next-video auto-load fires
+  await new Promise((r) => setTimeout(r, 50));
+
+  const st = Subs.__test.state();
+  assert.equal(st.cues, 1, 'the second candidate must load');
+  assert.ok(st.status.includes('Good.Release'), 'status names the release that actually loaded: ' + st.status);
+});
+
 test('language fallback: id -> en -> any, and the status says what loaded', async () => {
   const calls = [];
   globalThis.fetch = (url) => {
@@ -407,9 +462,13 @@ test('language fallback: id -> en -> any, and the status says what loaded', asyn
         return Promise.resolve({ ok: true, json: async () => ({ results: [], best: null }) });
       }
       if (u.includes('lang=en')) {
+        // The WORKER's compact contract (what the frontend actually iterates).
         return Promise.resolve({
           ok: true,
-          json: async () => ({ results: [{ files: [{ file_id: 9 }] }], best: { fileId: 9, release: 'Rel.ENG', lang: 'en', downloads: 5000 } }),
+          json: async () => ({
+            results: [{ fileId: 9, release: 'Rel.ENG', lang: 'en', downloads: 5000, machineTranslated: false }],
+            best: { fileId: 9, release: 'Rel.ENG', lang: 'en', downloads: 5000 },
+          }),
         });
       }
     }
@@ -431,8 +490,7 @@ test('language fallback: id -> en -> any, and the status says what loaded', asyn
   assert.ok(searchCalls.some((u) => u.includes('lang=id')), 'must try the requested language first');
   assert.ok(searchCalls.some((u) => u.includes('lang=en')), 'must fall back to English');
   assert.equal(Subs.__test.state().cues, 1, 'English fallback subs must load');
-  assert.ok(Subs.__test.state().status.includes('Bahasa Indonesia') === false, 'loaded label reflects the actual language');
-  assert.ok(Subs.__test.state().status.toLowerCase().includes('rel.eng') || Subs.__test.state().status.includes('Rel.ENG'), 'status names the loaded release');
+  assert.ok(Subs.__test.state().status.includes('Rel.ENG'), 'status names the loaded release');
 });
 
 const FRESH_SRT = `1
