@@ -103,6 +103,14 @@ test('the global drawer is mounted ONCE at boot (the dead-Friends-button bug)', 
   assert.ok(!/mountHome[\s\S]{0,400}mountFriendsRail/.test(appJs), 'the mount must live at boot level, not inside mountHome');
 });
 
+test('entering a room tears the discovery view down (no stacking)', () => {
+  // The room and #discovery are siblings in .app-shell__main; a room-enter
+  // that forgets to hide #discovery stacks the player and the grid (seen
+  // live 2026-09-13: discovery -> play -> room over discovery).
+  const re = /\$\('profile'\)\.hidden = true;\s*(?:\/\/[^\n]*\n\s*)*teardownDiscoveryView\(\);\s*(?:\/\/[^\n]*\n\s*)*\$\('room'\)\.hidden = false;/;
+  assert.ok(re.test(appJs), "the room-enter path must call teardownDiscoveryView() before showing #room");
+});
+
 test('discovery + drawer wiring: routing, lifecycle and entry points exist', () => {
   assert.ok(appJs.includes('showDiscoveryView'), 'app.js must define showDiscoveryView');
   assert.ok(appJs.includes('teardownDiscoveryView'), 'app.js must define teardownDiscoveryView');

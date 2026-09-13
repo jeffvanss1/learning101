@@ -385,6 +385,10 @@
     $('home-nav').hidden = true;
     $('home').hidden = true;
     $('profile').hidden = true;
+    // #discovery shares the fixed-height column with the room — leaving it
+    // visible stacks the player and the discovery grid on top of each other.
+    // Tear it down (hides it, disconnects its scroll observer).
+    teardownDiscoveryView();
     $('room').hidden = false;
     document.body.classList.add('in-room');
     if (WP.Social) WP.Social.stopIdlePresence();

@@ -401,7 +401,7 @@ Every build fingerprinted itself, so a stale deploy is visible in seconds:
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.10` and
+   `[WatchParty] UI build: ui-2026-09-13.11` and
    `[WatchParty] API build: api-2026-09-13.6`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
