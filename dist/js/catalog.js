@@ -1101,7 +1101,8 @@
     }
 
     const onInput = (ev) => {
-      const q = String((ev && ev.target && ev.target.value) || '').trim();
+      const raw = String((ev && ev.target && ev.target.value) || '');
+      const q = raw.trim();
       clearTimeout(searchTimer);
       if (!q) {
         seq++;
@@ -1116,7 +1117,15 @@
         loadBrowse();
         return;
       }
-      setInputsValue(q);
+      // Keep the OTHER synced input(s) in step with the RAW value. Writing
+      // the trimmed value back — especially into the input the user is
+      // typing in — ate every trailing space mid-keystroke, making
+      // multi-word search ("dune part two") impossible from the nav bars.
+      if (externalInputs) {
+        externalInputs.forEach((inp) => {
+          if (inp && inp !== ev.target && inp.value !== raw) inp.value = raw;
+        });
+      }
       searchTimer = setTimeout(async () => {
         const mySeq = ++seq;
         mode = 'search';
