@@ -1326,3 +1326,42 @@
   align-items: center;
   gap: 10px;
 }
+
+/* ---- Friends dock (desktop home) -------------------------------------------------- */
+/* On the home surface at >= 1100px the SAME #friends-rail node is re-parented
+   into #home by social.js and docks as a sticky right column; everywhere else
+   it stays the body-level drawer above. */
+@media (min-width: 1100px) {
+  .home--with-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 316px;
+    grid-template-areas:
+      'history rail'
+      'browse rail';
+    align-items: start;
+  }
+
+  .home--with-rail #history {
+    grid-area: history;
+  }
+
+  .home--with-rail #browse {
+    grid-area: browse;
+  }
+
+  .home--with-rail .friends-rail {
+    grid-area: rail;
+    position: sticky;
+    top: 12px;
+    bottom: auto;
+    right: auto;
+    width: auto;
+    transform: none;
+    max-height: calc(100vh - var(--topnav-h) - 24px);
+    margin: 0 16px 24px 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    box-shadow: none;
+    z-index: auto;
+  }
+}

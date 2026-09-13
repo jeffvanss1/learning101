@@ -92,10 +92,12 @@ function installDomStubs({ fetchImpl }) {
   };
   globalThis.document = doc;
   globalThis.location = { search: '' };
+  doc.body = new FakeEl('body'); // reparent target for the friends dock/drawer
   Object.assign(globalThis.window, {
     document: doc,
     location: globalThis.location,
     localStorage: globalThis.localStorage,
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
   });
   // Functional localStorage: overrides persist like in a real browser.
   const store = {};
@@ -193,7 +195,7 @@ test('friends drawer mounts at boot level and toggles open/closed', async () => 
 
   // Boot: exactly what app.js does once at startup.
   const aside = new FakeEl('aside');
-  window.WP.Social.mountFriendsRail(aside);
+  const handle = window.WP.Social.mountFriendsRail(aside);
 
   window.WP.Social.toggleFriendsRail();
   assert.ok(aside.classList.contains('is-open'), 'first toggle must OPEN the drawer');
@@ -201,8 +203,27 @@ test('friends drawer mounts at boot level and toggles open/closed', async () => 
   window.WP.Social.toggleFriendsRail();
   assert.ok(!aside.classList.contains('is-open'), 'second toggle must CLOSE the drawer');
 
-  // Destroy handles (clears their 30s polls) so the test process can exit.
-  window.WP.Social.mountFriendsRail(new FakeEl('aside')).destroy();
+  // Dock mode: home visible + wide viewport -> Friends re-docks the SAME
+  // node into #home as the built-in column (and a second click undocks).
+  const homeEl = new FakeEl('main');
+  homeEl.hidden = false;
+  window.document.getElementById = (id) => (id === 'home' ? homeEl : null);
+  window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+
+  // Default pref = open, so the dock was active: the first click CLOSES it,
+  // the next one RE-DOCKS the same node into #home (then a third closes).
+  window.WP.Social.toggleFriendsRail(); // docked (per pref) -> close
+  assert.ok(!homeEl.classList.contains('home--with-rail'), 'first click must undock (pref was open)');
+
+  window.WP.Social.toggleFriendsRail(); // pref closed -> re-dock
+  assert.ok(homeEl.classList.contains('home--with-rail'), 'must add .home--with-rail to #home');
+  assert.ok(homeEl.children.includes(aside), 'must reparent the rail node into #home');
+
+  window.WP.Social.toggleFriendsRail(); // docked -> close again
+  assert.ok(!homeEl.classList.contains('home--with-rail'), 'third click must undock again');
+
+  // Destroy the handle (clears its 30s poll) so the test process can exit.
+  handle.destroy();
   await tick(10);
 });
 

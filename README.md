@@ -259,12 +259,15 @@ open the detail preview first. The route map lives in `DISCOVERY_ROUTES`
 with the same scroll-surface contract as `#profile` (guarded by
 `tests/discovery-nav.test.mjs`).
 
-The **friends panel is a global drawer**: the side-nav "Friends" item slides
-it in from the right (with backdrop) on *any* surface — home, `/discovery`
-pages, profiles, even rooms. Its markup sits at body level (outside every
-view) and the old desktop "sticky column" mode (`.home--with-rail`) was
-removed; the drawer behavior is now the only behavior. It polls
-`/api/friends` every 30s while open.
+The **friends panel is hybrid — one shared DOM node, two modes**: on the
+home surface at desktop widths (>= 1100px) it docks into the home grid as
+a sticky right column (`.home--with-rail`, the built-in layout, driven by
+the saved `wp:friends-rail` preference); on every other surface
+(`/discovery` pages, profiles, rooms) and on narrow screens the same node
+is a body-level drawer that slides in right → left with a backdrop. The
+side-nav "Friends" item toggles whichever mode applies; surface changes
+arrive as `wp:view-changed` (dispatched by `routeCurrent`/boot). Polls
+`/api/friends` every 30s while visible.
 
 ## Geo language detection (country → language)
 
@@ -430,7 +433,7 @@ Every build fingerprinted itself, so a stale deploy is visible in seconds:
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.11` and
+   `[WatchParty] UI build: ui-2026-09-13.12` and
    `[WatchParty] API build: api-2026-09-13.7`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the

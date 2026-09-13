@@ -1263,6 +1263,8 @@
     // /search?q=... and /?q=... prefill the unified search.
     const q = new URLSearchParams(location.search).get('q');
     if (q) runSearch(q);
+    // The friends rail re-evaluates dock-vs-drawer on surface changes.
+    window.dispatchEvent(new CustomEvent('wp:view-changed'));
   }
 
   function onLeaveRoom() {
@@ -1616,6 +1618,8 @@
     // /search?q=... or /?q=... deep links drive the unified search.
     const q = new URLSearchParams(location.search).get('q');
     if (q) runSearch(q);
+    // Let the friends rail pick its mode for the deep-linked surface.
+    window.dispatchEvent(new CustomEvent('wp:view-changed'));
   }
 
   if (document.readyState === 'loading') {

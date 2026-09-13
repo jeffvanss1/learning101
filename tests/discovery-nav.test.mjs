@@ -65,13 +65,25 @@ test('friends drawer markup is body-level (overlays every surface)', () => {
   assert.ok(!hasAncestorClass(html, 'friends-rail', 'home'), '#friends-rail must not live inside #home');
 });
 
-test('the drawer is the only friends-panel mode (no desktop sticky column left)', () => {
-  assert.ok(!socialCss.includes('home--with-rail'), '.home--with-rail grid mode must be fully removed from CSS');
-  assert.ok(!socialJs.includes('home--with-rail'), '.home--with-rail toggling must be fully removed from JS');
+test('friends panel: drawer-first base + home-dock mode (hybrid)', () => {
+  // Base rule (body-level drawer) must stay fixed + off-canvas.
   const rail = cssBlock(socialCss, '.friends-rail {');
   assert.notEqual(rail, null, '.friends-rail rule missing');
   assert.ok(rail.includes('transform: translateX(105%)'), 'drawer must stay off-canvas until .is-open');
   assert.ok(rail.includes('position: fixed'), 'drawer must be a fixed overlay');
+  // Dock mode: the home grid + docked rail rules must exist...
+  const dock = cssBlock(socialCss, '.home--with-rail {');
+  assert.notEqual(dock, null, '.home--with-rail grid must exist (built-in home column)');
+  const dockRail = cssBlock(socialCss, '.home--with-rail .friends-rail {');
+  assert.notEqual(dockRail, null, 'docked rail rule missing');
+  assert.ok(dockRail.includes('position: sticky') && dockRail.includes('transform: none'),
+    'docked rail must be a sticky in-flow column (transform: none)');
+  // ...and JS must drive both modes (reparenting + pref).
+  assert.ok(socialJs.includes("home.classList.add('home--with-rail')"), 'social.js must dock the node into #home');
+  assert.ok(socialJs.includes('setDockPrefClosed'), 'social.js must persist the dock preference');
+  assert.ok(socialJs.includes("'wp:view-changed'"), 'social.js must listen for surface changes');
+  assert.ok(appJs.includes("dispatchEvent(new CustomEvent('wp:view-changed'))"),
+    'app.js must announce surface changes (routeCurrent/boot)');
 });
 
 test('the rail polls on every surface (visibility no longer gated on #home)', () => {

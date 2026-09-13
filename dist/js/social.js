@@ -1647,16 +1647,41 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 8. Friends drawer — global slide-over panel (right → left)
+  // 8. Friends panel — built-in home column + global slide-over drawer
   //
-  // Opened from the "Friends" item in the side nav on ANY surface: home,
-  // /discovery pages, profiles and rooms alike (the markup lives at body
-  // level, outside every view). Slides in from the right like the old
-  // mobile drawer — that behavior is now the only behavior. Polls
-  // /api/friends every 30s while open; instant refresh on
-  // 'wp:friends-changed'.
+  // Hybrid, one shared DOM node:
+  //   • Home on wide screens (>= 1100px): the panel DOCKS into the home
+  //     grid as a sticky right column (.home--with-rail) — the node is
+  //     reparented into #home, restoring the built-in layout. Visibility
+  //     follows the saved 'wp:friends-rail' preference; the side-nav item
+  //     and the × toggle that preference.
+  //   • Everywhere else (narrow screens, /discovery, profiles, rooms): the
+  //     same node is a body-level drawer sliding in right → left with a
+  //     backdrop.
+  // Polls /api/friends every 30s while visible; instant refresh on
+  // 'wp:friends-changed'. Surface changes arrive as 'wp:view-changed'
+  // (dispatched by app.js routeCurrent/boot).
   // ---------------------------------------------------------------------------
   const RAIL_REFRESH_MS = 30_000;
+  const DOCK_BREAKPOINT = '(min-width: 1100px)';
+
+  const RAIL_PREF_KEY = 'wp:friends-rail'; // docked-column pref (desktop home)
+
+  /** @returns {boolean} */
+  function dockPrefClosed() {
+    try {
+      return localStorage.getItem(RAIL_PREF_KEY) === 'closed';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** @param {boolean} closed */
+  function setDockPrefClosed(closed) {
+    try {
+      localStorage.setItem(RAIL_PREF_KEY, closed ? 'closed' : 'open');
+    } catch (_) {}
+  }
   /** @type {{ destroy: () => void, refresh: () => void, toggle: () => void } | null} */
   let railHandle = null;
 
@@ -1671,7 +1696,7 @@
     return railHandle;
   }
 
-  /** Toggle the global drawer — works on every route. */
+  /** Toggle: docked column on desktop home, drawer everywhere else. */
   function toggleFriendsRail() {
     if (!railHandle) return;
     railHandle.toggle();
@@ -1721,11 +1746,39 @@
     let loadSeq = 0;
     let changeDebounce = /** @type {any} */ (null);
 
+    // ---- mode: docked home column vs. body-level drawer ---------------------
+    let docked = false;
+
+    const isWide = () => global.matchMedia(DOCK_BREAKPOINT).matches;
+
+    function applyMode() {
+      const home = $('home');
+      const wantDock = !!(home && !home.hidden && isWide() && !dockPrefClosed());
+      if (wantDock === docked) return;
+      docked = wantDock;
+      if (docked) {
+        // Same node, new parent: content and listeners survive the move.
+        container.classList.remove('is-open');
+        if (backdrop) backdrop.hidden = true;
+        container.hidden = false;
+        if (home) {
+          home.appendChild(container);
+          home.classList.add('home--with-rail');
+        }
+      } else {
+        if (home) home.classList.remove('home--with-rail');
+        document.body.appendChild(container);
+        container.classList.remove('is-open');
+        if (backdrop) backdrop.hidden = true;
+      }
+    }
+
     // ---- visibility ----------------------------------------------------------
-    // The drawer is "visible" (and worth polling for) whenever it is open —
-    // regardless of which surface is underneath it.
+    // Polling gate: the docked column is always visible on its surface;
+    // the drawer only while it is open.
     function railIsVisible() {
       if (disposed || document.hidden || container.hidden) return false;
+      if (docked) return true;
       return container.classList.contains('is-open');
     }
 
@@ -1740,6 +1793,21 @@
     }
 
     function toggle() {
+      applyMode(); // the surface may have changed since the last click
+      if (docked) {
+        // Built-in column is open — Friends closes it (remember the pref).
+        setDockPrefClosed(true);
+        applyMode();
+        return;
+      }
+      const home = $('home');
+      if (home && !home.hidden && isWide()) {
+        // Dock is closed on desktop home — Friends re-docks it.
+        setDockPrefClosed(false);
+        applyMode();
+        if (docked) refresh();
+        return;
+      }
       if (container.classList.contains('is-open')) {
         closeDrawer();
         return;
@@ -1966,11 +2034,33 @@
 
     // ---- wire up -----------------------------------------------------------------
     refreshBtn.addEventListener('click', () => refresh());
-    closeBtn.addEventListener('click', () => closeDrawer());
+    closeBtn.addEventListener('click', () => {
+      if (docked) {
+        setDockPrefClosed(true);
+        applyMode();
+      } else {
+        closeDrawer();
+      }
+    });
     if (backdrop) backdrop.addEventListener('click', closeDrawer);
     global.addEventListener('wp:friends-changed', onFriendsChanged);
 
+    let resizeTimer = /** @type {any} */ (null);
+    const onResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (!disposed) applyMode();
+      }, 150);
+    };
+    const onViewChanged = () => {
+      if (!disposed) applyMode();
+    };
+    global.addEventListener('resize', onResize);
+    global.addEventListener('wp:view-changed', onViewChanged);
+
     const poll = setInterval(() => refresh(), RAIL_REFRESH_MS);
+    applyMode();
+    refresh();
 
     return {
       refresh,
@@ -1979,7 +2069,12 @@
         disposed = true;
         clearInterval(poll);
         if (changeDebounce) clearTimeout(changeDebounce);
+        if (resizeTimer) clearTimeout(resizeTimer);
         global.removeEventListener('wp:friends-changed', onFriendsChanged);
+        global.removeEventListener('resize', onResize);
+        global.removeEventListener('wp:view-changed', onViewChanged);
+        const homeEl = $('home');
+        if (homeEl) homeEl.classList.remove('home--with-rail');
         closeDrawer();
         container.innerHTML = '';
         container.hidden = true;
@@ -1993,7 +2088,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.11';
+  global.WP.build = 'ui-2026-09-13.12';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
