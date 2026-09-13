@@ -347,6 +347,14 @@ const El2 = class El {
     this.children.push(c);
     return c;
   }
+  get firstChild() {
+    return this.children[0] || null;
+  }
+  removeChild(c) {
+    const i = this.children.indexOf(c);
+    if (i !== -1) this.children.splice(i, 1);
+    return c;
+  }
   setAttribute() {}
   addEventListener(t, f) {
     (this._h || (this._h = {}))[t] = f; // recorded so tests can fire real handlers
@@ -388,6 +396,14 @@ async function freshSubs() {
     }
     appendChild(c) {
       this.children.push(c);
+      return c;
+    }
+    get firstChild() {
+      return this.children[0] || null;
+    }
+    removeChild(c) {
+      const i = this.children.indexOf(c);
+      if (i !== -1) this.children.splice(i, 1);
       return c;
     }
     setAttribute() {}
@@ -537,6 +553,58 @@ test('subtitle language crosses audio: defaults to geo locale, persists choice, 
   await new Promise((r) => setTimeout(r, 30));
   assert.equal(store['wp:subslang'], 'en', 'choice persisted');
   assert.ok(seenLangs.indexOf('en') !== -1, 'reloaded in the new language: ' + seenLangs.join(','));
+});
+
+test('editor zoom: the strip is a 5-minute window that follows the playhead', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  // Two lines 40 minutes apart: a full-movie strip would crush them together.
+  Subs.loadCues(
+    '1\n00:00:10,000 --> 00:00:11,000\nEarly line\n\n' +
+      '2\n00:00:40:00,000 --> 00:00:40:01,000\nLater line\n'.replace(/00:00:40:00/g, '00:40:00').replace(/00:00:40:01/g, '00:40:01')
+  );
+
+  const findBy = (root, cls) => {
+    if (String(root.className || '').split(/\s+/).indexOf(cls) !== -1) return root;
+    for (const c of root.children || []) {
+      const hit = findBy(c, cls);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const row = findBy(wrap, 'subs-editor');
+  const ticksWrap = row.children[0].children[0];
+
+  // At t=0 the window is [0, 5min] -> only the early line is on the strip.
+  assert.equal(ticksWrap.children.length, 1, 'window shows only nearby cues');
+  assert.ok(/0:10/.test(ticksWrap.children[0].title), 'early tick: ' + ticksWrap.children[0].title);
+
+  // Jump to 39:50 -> the window slides; the 40:00 line is now on the strip.
+  fireClock(listeners, rafQueue, 2390); // dispatches the clock + drains queued rafs
+  for (let i = 0; i < 4 && rafQueue.length; i++) {
+    rafQueue.splice(0).forEach((cb) => cb());
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  const titles = Array.from(ticksWrap.children).map((/** @type {any} */ x) => x.title).join(' | ');
+  assert.ok(/40:00/.test(titles), 'slid window reveals the far line: ' + titles);
+  assert.ok(!/Early line/.test(titles), 'the early line left the window: ' + titles);
+  assert.equal(ticksWrap.children.length, 1, 'window keeps the strip sparse');
+
+  // The playhead rides inside the window (39:50 in a [39:05..40:05]-ish window).
+  const play = row.children[0].children[1];
+  assert.ok(play.style.display !== 'none', 'playhead visible');
+  const pct = parseFloat(play.style.left);
+  assert.ok(pct > 0 && pct < 100, 'playhead inside the window: ' + play.style.left);
+
+  // Manual match still exact within the zoomed view.
+  fireClock(listeners, rafQueue, 2389);
+  rafQueue.splice(0).forEach((cb) => cb());
+  ticksWrap.children[0]._h.click(); // the 40:00 line
+  row.children[2]._h.click(); // Align to playhead
+  // now() ~= 2389 (+ real-clock drift from the drain loop) -> offset ~= -11.
+  const off = Subs.__test.state().offset;
+  assert.ok(Math.abs(off + 11) < 0.5, 'align snapped the 40:00 line to the playhead: ' + off);
 });
 
 test('room sync: onLoaded/onOffset fire locally; applyRemoteOffset does NOT echo', async () => {

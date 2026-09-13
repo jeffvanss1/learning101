@@ -143,9 +143,22 @@
     if (!overlay || !enabled) return;
     const t = now();
     if (t >= 0) {
-      if (edPlay && edSpan > 0) {
-        const pct = Math.min(100, Math.max(0, (t / edSpan) * 100));
-        edPlay.style.left = pct + '%';
+      if (edPlay && edWinEnd > edWinStart) {
+        if (t >= edWinStart && t <= edWinEnd) {
+          edPlay.style.display = 'block';
+          edPlay.style.left = ((t - edWinStart) / (edWinEnd - edWinStart)) * 100 + '%';
+        } else {
+          edPlay.style.display = 'none';
+        }
+        // Slide the 5-min window: forward when the playhead nears the right
+        // edge (keep upcoming lines visible), or back on a rewind/seek —
+        // unless the user is mid-match (a picked line pins the view). Only
+        // rebuild when the window would actually MOVE (no end-of-movie
+        // rebuild churn).
+        if (edSelected == null && (t > edWinEnd - 30 || t < edWinStart)) {
+          const win = editorWindowFor(t);
+          if (win.s !== edWinStart || win.e !== edWinEnd) buildEditorTicks();
+        }
       }
       while (cueIdx < cues.length && cues[cueIdx].end <= t) cueIdx++;
       const cue = cues[cueIdx];
@@ -264,9 +277,14 @@
   let edPlay = /** @type {HTMLElement | null} */ (null);
   let edInfo = /** @type {HTMLElement | null} */ (null);
   let edAlign = /** @type {HTMLButtonElement | null} */ (null);
-  let edSpan = 0;
   let edSelected = /** @type {number | null} */ (null);
   const EDITOR_MAX_TICKS = 500;
+  // ZOOM: the strip shows a 5-minute window around the playhead, not the
+  // whole movie (a 2h film compressed into one bar is unreadable). The
+  // window slides forward as playback approaches its right edge.
+  const EDITOR_WINDOW_S = 300;
+  let edWinStart = 0;
+  let edWinEnd = 0;
 
   /** @param {number} s @returns {string} h:mm:ss / m:ss */
   function fmtTS(s) {
@@ -279,36 +297,52 @@
     return (h ? h + ':' : '') + mm + ':' + ss;
   }
 
+  /** 5-min window centered on the playhead, clamped to the subtitle span. */
+  function editorWindowFor(t) {
+    const span = cues.length ? cues[cues.length - 1].end || 1 : 1;
+    const w = Math.min(EDITOR_WINDOW_S, Math.max(1, span));
+    let s = 0;
+    if (t >= 0) s = Math.min(Math.max(0, t - w / 2), Math.max(0, span - w));
+    return { s: s, e: s + w };
+  }
+
   function buildEditorTicks() {
     if (!edTicks) return;
     while (edTicks.firstChild) edTicks.removeChild(edTicks.firstChild);
-    edSelected = null;
-    if (edAlign) edAlign.disabled = true;
+    if (edAlign) edAlign.disabled = edSelected == null; // keep a picked line armed across slides
+    const t = now();
+    const win = editorWindowFor(t);
+    edWinStart = win.s;
+    edWinEnd = win.e;
     if (!cues.length) {
-      edSpan = 0;
       if (edPlay) edPlay.style.display = 'none';
       if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
       return;
     }
-    edSpan = cues[cues.length - 1].end || 1;
-    const step = Math.max(1, Math.ceil(cues.length / EDITOR_MAX_TICKS));
-    for (let i = 0; i < cues.length; i += step) {
-      const cue = cues[i];
-      const tick = h('div', 'subs-editor__tick');
-      tick.style.left = (cue.start / edSpan) * 100 + '%';
+    /** @type {number[]} */ const inWin = [];
+    for (let i = 0; i < cues.length; i++) {
+      const c = cues[i];
+      if (c.start >= edWinStart && c.start < edWinEnd) inWin.push(i);
+    }
+    const step = Math.max(1, Math.ceil(inWin.length / EDITOR_MAX_TICKS));
+    for (let k = 0; k < inWin.length; k += step) {
+      const ix = inWin[k];
+      const cue = cues[ix];
+      const tick = h('div', 'subs-editor__tick' + (ix === edSelected ? ' subs-editor__tick--sel' : ''));
+      tick.style.left = ((cue.start - edWinStart) / (edWinEnd - edWinStart)) * 100 + '%';
       tick.title = fmtTS(cue.start) + ' \u00b7 ' + String(cue.text).split('\n')[0].slice(0, 60);
-      ((/** @type {number} */ ix, /** @type {any} */ c) => {
-        tick.addEventListener('click', () => {
-          edSelected = ix;
+      ((/** @type {number} */ idx, /** @type {any} */ c, /** @type {HTMLElement} */ el) => {
+        el.addEventListener('click', () => {
+          edSelected = idx;
           const ticks = edTicks ? edTicks.children || [] : [];
-          for (let k = 0; k < ticks.length; k++) {
-            (/** @type {any} */ ticks[k]).classList.remove('subs-editor__tick--sel');
+          for (let j = 0; j < ticks.length; j++) {
+            (/** @type {any} */ ticks[j]).classList.remove('subs-editor__tick--sel');
           }
-          tick.classList.add('subs-editor__tick--sel');
+          el.classList.add('subs-editor__tick--sel');
           if (edInfo) edInfo.textContent = fmtTS(c.start) + ' \u00b7 ' + String(c.text).split('\n')[0].slice(0, 60);
           if (edAlign) edAlign.disabled = false;
         });
-      })(i, cue);
+      })(ix, cue, tick);
       edTicks.appendChild(tick);
     }
     if (edInfo) edInfo.textContent = tr('subs.editorHint', 'Tap a line, then align it to where you are.');
