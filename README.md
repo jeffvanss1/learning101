@@ -662,3 +662,23 @@ can render the roster and gate its own controls. If the host leaves, ownership
 transfers to the oldest remaining peer automatically. The shared `video` object
 carries `{ type, id, src, title, poster, backdrop, year, season, episode }` so
 every client can load the exact same title and episode.
+
+## Admin monitoring (api-2026-09-13.39)
+
+**@jeff is the deployment admin.** `users.is_admin` (self-provisioning
+ALTER) is seeded idempotently by `ensureSchema` for username `jeff`.
+
+- **Room registry:** `rooms_created` D1 table — `POST /api/rooms` records
+  the creator + timestamp (`INSERT OR IGNORE`, best-effort, never blocks
+  minting). Rooms live in non-enumerable Durable Objects, so this registry
+  is the only server-side "who created what, when".
+- **`GET /api/admin/overview`:** admin-only (401 anon / 403 otherwise).
+  Returns user + room stats (total, last 24h, last 7d), the 50 most
+  recent of each, and LIVE room occupancy parsed from presence KV
+  (list + get, capped at 200 keys).
+- **UI:** shield nav item — hidden unless `/api/auth/me` says `is_admin`
+  — opens an admin drawer: stats chips (Users / New 24h / Rooms / Live
+  now), live rooms with LIVE badges, rooms-created list, users list with
+  joined/seen times.
+- `is_admin` rides ONLY on `/api/auth/me`; public profile/search payloads
+  never include it. All enforcement is server-side.
