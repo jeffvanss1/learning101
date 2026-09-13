@@ -694,6 +694,96 @@
   }
 
   // ---------------------------------------------------------------------------
+  // 5b. Friend rows for profiles (list + people search)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * One friend row in a profile's friends list (same visual language as the
+   * friends rail: framed avatar, name, mini presence, [Join] when in a room).
+   * @param {FriendEntry} f
+   */
+  function profileFriendRow(f) {
+    const row = h('div', 'friend-row');
+    const main = /** @type {HTMLAnchorElement} */ (h('a', 'friend-row__main'));
+    main.href = '/user/' + encodeURIComponent(f.user.username);
+    main.title = 'View profile';
+    main.appendChild(
+      avatarWithFrame(f.user.displayName, f.user.avatarUrl, f.user.avatarFrameId, 'avatar--sm')
+    );
+    const meta = h('div', 'friend-row__meta');
+    meta.appendChild(h('span', 'friend-row__name', f.user.displayName));
+    const badge = presenceBadge(f.presence, false);
+    badge.node.classList.add('presence--mini');
+    meta.appendChild(badge.node);
+    main.appendChild(meta);
+    row.appendChild(main);
+
+    if (f.presence && f.presence.room_id) {
+      const join = /** @type {HTMLButtonElement} */ (
+        h('button', 'btn btn--primary btn--sm friend-row__join', 'Join')
+      );
+      join.type = 'button';
+      join.title = f.presence.media_title
+        ? 'Join and watch \u201c' + f.presence.media_title + '\u201d'
+        : 'Join the room';
+      join.addEventListener('click', () => {
+        location.assign('/room/' + encodeURIComponent(f.presence.room_id));
+      });
+      row.appendChild(join);
+    }
+    return row;
+  }
+
+  /**
+   * Re-render a `[data-friends-list]` host from profile data.
+   * @param {HTMLElement} host
+   * @param {FriendEntry[]} friends
+   * @param {boolean} ownProfile
+   */
+  function renderFriendsList(host, friends, ownProfile) {
+    host.innerHTML = '';
+    const list = friends || [];
+    if (!list.length) {
+      const empty = h('div', 'profile-friends__empty');
+      empty.appendChild(h('span', 'muted', ownProfile
+        ? 'No friends yet — search for a name below.'
+        : 'No friends yet.'));
+      host.appendChild(empty);
+      return;
+    }
+    const rows = h('div', 'profile-friends__rows');
+    list.forEach((f) => rows.appendChild(profileFriendRow(f)));
+    host.appendChild(rows);
+  }
+
+  /**
+   * One row in the profile's people-search results: identity + presence +
+   * the shared add/accept/friend button (fires 'wp:friends-changed').
+   * @param {UserSearchHit} hit
+   */
+  function friendSearchRow(hit) {
+    const row = h('div', 'friend-search__row');
+    const main = /** @type {HTMLAnchorElement} */ (h('a', 'friend-row__main'));
+    main.href = '/user/' + encodeURIComponent(hit.user.username);
+    main.title = 'View profile';
+    main.appendChild(
+      avatarWithFrame(hit.user.displayName, hit.user.avatarUrl, hit.user.avatarFrameId, 'avatar--sm')
+    );
+    const meta = h('div', 'friend-row__meta');
+    const nameRow = h('div', 'friend-row__name-row');
+    nameRow.appendChild(h('span', 'friend-row__name', hit.user.displayName));
+    nameRow.appendChild(h('span', 'friend-search__username', '@' + hit.user.username));
+    meta.appendChild(nameRow);
+    const badge = presenceBadge(hit.presence, false);
+    badge.node.classList.add('presence--mini');
+    meta.appendChild(badge.node);
+    main.appendChild(meta);
+    row.appendChild(main);
+    row.appendChild(friendButtonNode(hit, {}));
+    return row;
+  }
+
+  // ---------------------------------------------------------------------------
   // 6. Profile page (/user/:username)
   // ---------------------------------------------------------------------------
 
@@ -764,9 +854,12 @@
       }, PROFILE_REFRESH_MS);
     };
 
-    /** Hot-swap just the live pieces (presence badge + activity banner). */
+    /** Hot-swap the live pieces (badge, banner, stats, friends list). */
     /** @param {UserProfileResponse} fresh */
     const refreshLive = (fresh) => {
+      const me = getSession();
+      const ownFresh = !!(me && fresh.user.id === me.user.id);
+
       const badgeHost = container.querySelector('[data-live-presence]');
       const bannerHost = container.querySelector('[data-live-activity]');
       if (badgeHost) {
@@ -783,10 +876,95 @@
         const banner = activityBanner(fresh);
         if (banner) bannerHost.appendChild(banner);
       }
+
+      const statsHost = /** @type {HTMLElement | null} */ (
+        container.querySelector('[data-live-stats]')
+      );
+      if (statsHost) {
+        statsHost.innerHTML = '';
+        statsHost.appendChild(statNode(fresh.user.stats.watchCount, 'watched'));
+        statsHost.appendChild(statNode(fresh.user.stats.friendCount, 'friends'));
+        statsHost.appendChild(statNode(fresh.user.stats.favoritesCount, 'pinned'));
+      }
+
+      const friendsHost = /** @type {HTMLElement | null} */ (
+        container.querySelector('[data-friends-list]')
+      );
+      if (friendsHost) renderFriendsList(friendsHost, fresh.friends || [], ownFresh);
     };
+
+    // Friend actions anywhere (search rows, profile hero) fire this event —
+    // refresh the friends list + counts without losing the search input.
+    let changedTimer = /** @type {any} */ (null);
+    const onFriendsChanged = () => {
+      if (changedTimer) clearTimeout(changedTimer);
+      changedTimer = setTimeout(async () => {
+        if (destroyed) return;
+        try {
+          const fresh = await getProfile(username);
+          if (!destroyed && fresh) refreshLive(fresh);
+        } catch (_) {}
+      }, 450);
+    };
+    global.addEventListener('wp:friends-changed', onFriendsChanged);
+    cleanups.push(() => {
+      if (changedTimer) clearTimeout(changedTimer);
+      global.removeEventListener('wp:friends-changed', onFriendsChanged);
+    });
 
     void load();
     return cleanup;
+  }
+
+  /**
+   * Inline people search for your own profile's Friends section — type a
+   * name or username, add/accept right from the results.
+   * @returns {HTMLElement}
+   */
+  function friendSearchBox() {
+    const wrap = h('div', 'friend-search');
+    const input = /** @type {HTMLInputElement} */ (h('input', 'field__input friend-search__input'));
+    input.type = 'text';
+    input.placeholder = 'Find people by name or username\u2026';
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', 'Find people to add as friends');
+    wrap.appendChild(input);
+    const results = h('div', 'friend-search__results');
+    wrap.appendChild(results);
+
+    let timer = /** @type {any} */ (null);
+    let seq = 0;
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      if (timer) clearTimeout(timer);
+      if (q.length < 2) {
+        seq++;
+        results.innerHTML = '';
+        return;
+      }
+      timer = setTimeout(async () => {
+        const mySeq = ++seq;
+        results.innerHTML = '';
+        results.appendChild(h('div', 'muted friend-search__hint', 'Searching\u2026'));
+        try {
+          const hits = await searchUsers(q);
+          if (seq !== mySeq) return;
+          results.innerHTML = '';
+          // Yourself is not a friend candidate.
+          const relevant = hits.filter((hit) => hit.friendship !== 'self');
+          if (!relevant.length) {
+            results.appendChild(h('div', 'muted friend-search__hint', 'No people found.'));
+            return;
+          }
+          relevant.forEach((hit) => results.appendChild(friendSearchRow(hit)));
+        } catch (_) {
+          if (seq !== mySeq) return;
+          results.innerHTML = '';
+          results.appendChild(h('div', 'muted friend-search__hint', 'Search failed \u2014 try again.'));
+        }
+      }, 300);
+    });
+    return wrap;
   }
 
   function profileSkeleton() {
@@ -893,7 +1071,9 @@
     cleanups.push(liveBadge.destroy);
     heroSide.appendChild(liveSlot);
 
+    // Live-refreshable stats (refreshLive re-renders counts in place).
     const stats = h('div', 'profile-hero__stats');
+    stats.setAttribute('data-live-stats', '');
     stats.appendChild(statNode(user.stats.watchCount, 'watched'));
     stats.appendChild(statNode(user.stats.friendCount, 'friends'));
     stats.appendChild(statNode(user.stats.favoritesCount, 'pinned'));
@@ -928,7 +1108,7 @@
     if (banner) liveActivity.appendChild(banner);
     container.appendChild(liveActivity);
 
-    // ---- Columns: showcase + history -----------------------------------------
+    // ---- Columns: showcase | friends + history --------------------------------
     const cols = h('div', 'profile__cols');
 
     const showcase = h('section', 'showcase');
@@ -940,6 +1120,19 @@
     }
     showcase.appendChild(grid);
     cols.appendChild(showcase);
+
+    // Friends column: list (public) +, on your own profile, an inline
+    // people search so you can add friends without leaving the page.
+    const friendsSection = h('section', 'profile-friends');
+    friendsSection.appendChild(h('h2', 'section-title', 'Friends'));
+    const friendsList = h('div', 'profile-friends__list');
+    friendsList.setAttribute('data-friends-list', '');
+    renderFriendsList(friendsList, data.friends, own);
+    friendsSection.appendChild(friendsList);
+    if (own) {
+      friendsSection.appendChild(friendSearchBox());
+    }
+    cols.appendChild(friendsSection);
 
     const history = h('section', 'profile-history');
     history.appendChild(h('h2', 'section-title', 'Recently watched'));

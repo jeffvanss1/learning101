@@ -1180,6 +1180,82 @@
   }
 }
 
+/* ---- Profile: friends section + inline people search ------------------------------ */
+.profile-friends {
+  background: var(--bg-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.profile-friends .section-title {
+  margin-bottom: 12px;
+}
+
+.profile-friends__list {
+  margin-bottom: 8px;
+}
+
+.profile-friends__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-friends__empty {
+  padding: 8px 2px 4px;
+  font-size: 13px;
+}
+
+/* Inline people search (own profile) */
+.friend-search {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.friend-search__input {
+  width: 100%;
+}
+
+.friend-search__results {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friend-search__hint {
+  padding: 6px 2px;
+  font-size: 12.5px;
+}
+
+.friend-search__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.friend-search__row:hover {
+  background: var(--bg-elev);
+}
+
+.friend-search__username {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friend-row__name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
 /* ---- Responsive ------------------------------------------------------------------ */
 @media (max-width: 900px) {
   .profile__cols {

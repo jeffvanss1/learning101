@@ -164,11 +164,27 @@ export interface UserSearchHit {
   friendship: FriendshipState;
 }
 
+/** Slim friend row for lists (levels/stats would need extra queries). */
+export interface FriendUser {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  avatarFrameId: string;
+}
+
+export interface FriendEntry {
+  user: FriendUser;
+  presence: PresencePayload;
+}
+
 export interface UserProfileResponse {
   user: PublicUser;
   presence: PresencePayload;
   favorites: FavoriteItem[];
   history: HistoryItem[];
+  /** Accepted friends of the profile owner (presence merged), newest first. */
+  friends: FriendEntry[];
   friendship: FriendshipState;
 }
 

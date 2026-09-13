@@ -20,6 +20,8 @@ import type {
   AuthedUser,
   UserProfileResponse,
   FriendshipState,
+  FriendEntry,
+  FriendUser,
 } from '../types.js';
 import { json, errorJson, readJson } from '../http.js';
 import { sessionUser } from '../auth.js';
@@ -201,7 +203,7 @@ export async function handleGetProfile(
     .first<UserRow>();
   if (!user) return errorJson(404, 'User not found');
 
-  const [favoritesRes, historyRes, statsMap, presence, friendEdges] = await Promise.all([
+  const [favoritesRes, historyRes, statsMap, presence, friendEdges, friendsRes] = await Promise.all([
     env.DB.prepare(
       `SELECT user_id, media_id, media_type, media_title, poster_url, display_order, created_at
        FROM user_favorites WHERE user_id = ?1 ORDER BY display_order LIMIT 4`
@@ -217,7 +219,31 @@ export async function handleGetProfile(
     fetchStats(env, [user.id]),
     getPresence(env, user.id),
     me ? friendEdgeMap(env, me.id, [user.id]) : Promise.resolve(new Map()),
+    // Public friends list (Steam-style), live presence merged below.
+    env.DB.prepare(
+      `SELECT u.id, u.username, u.display_name, u.avatar_url, u.avatar_frame_id
+       FROM friendships f JOIN users u ON u.id = f.friend_id
+       WHERE f.user_id = ?1 AND f.status = 'accepted'
+       ORDER BY u.display_name LIMIT 24`
+    )
+      .bind(user.id)
+      .all<Pick<UserRow, 'id' | 'username' | 'display_name' | 'avatar_url' | 'avatar_frame_id'>>(),
   ]);
+
+  const friendPresences = await getPresences(
+    env,
+    friendsRes.results.map((r) => r.id)
+  );
+  const friendEntries: FriendEntry[] = friendsRes.results.map((r) => ({
+    user: {
+      id: r.id,
+      username: r.username,
+      displayName: r.display_name || r.username,
+      avatarUrl: r.avatar_url,
+      avatarFrameId: r.avatar_frame_id || 'default',
+    } satisfies FriendUser,
+    presence: friendPresences.get(r.id) ?? OFFLINE_PRESENCE,
+  }));
 
   const stats =
     statsMap.get(user.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0 };
@@ -228,6 +254,7 @@ export async function handleGetProfile(
     presence,
     favorites: favoritesRes.results.map(rowToFavorite),
     history: historyRes.results.map(rowToHistory),
+    friends: friendEntries,
     friendship: friendshipFor(edge, me, user.id),
   };
   // Presence is live — never cache.

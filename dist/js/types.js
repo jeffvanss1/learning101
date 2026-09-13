@@ -59,11 +59,23 @@
  * @property {PresencePayload} presence
  * @property {FriendshipState} friendship
  *
+ * @typedef {Object} FriendUser
+ * @property {string} id
+ * @property {string} username
+ * @property {string} displayName
+ * @property {string} avatarUrl
+ * @property {string} avatarFrameId
+ *
+ * @typedef {Object} FriendEntry
+ * @property {FriendUser} user
+ * @property {PresencePayload} presence
+ *
  * @typedef {Object} UserProfileResponse
  * @property {PublicUser} user
  * @property {PresencePayload} presence
  * @property {FavoriteItem[]} favorites
  * @property {HistoryItem[]} history
+ * @property {FriendEntry[]} friends  accepted friends, presence merged
  * @property {FriendshipState} friendship
  *
  * @typedef {Object} SessionState
