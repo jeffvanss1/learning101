@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeTitle, matchAnilist, classifyIsAnime } from '../src/anilist.js';
+import { ROOT } from './dompath.mjs';
 
 test('normalizeTitle keeps CJK/kana (unicode letters, not a-z0-9)', () => {
   // Voiced kana folds deterministically (NFKD + combining-mark strip) —
@@ -45,4 +46,15 @@ test('matchAnilist: native-script TMDB titles still lose to nothing (matching wo
 test('classifyIsAnime: animation + JP still classifies (sanity)', () => {
   const show = { genres: [{ name: 'Animation' }], origin_country: ['JP'] };
   assert.equal(classifyIsAnime(show, { results: [] }), true);
+});
+
+test('anime fix wiring: versioned endpoint (edge-bust), v3 cache, English catalog titles', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  assert.ok(cat.includes("wp:anilist:v3:"), 'localStorage prefix v3 (busts poisoned entries)');
+  assert.ok(cat.includes("'?v=2'"), 'endpoint query ?v=2 (never-hit URL: the edge cached the old nulls for 7 days)');
+  const worker = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
+  assert.ok(worker.includes("proxyTmdb(rest, url.search, apiKey, 'en-US')"), 'catalog titles pinned to English');
+  assert.ok(worker.includes("public, max-age=300"), 'unresolved lookups get a SHORT edge TTL (fixes propagate)');
 });

@@ -158,14 +158,23 @@ async function tmdbJson(path: string, apiKey: string): Promise<any> {
 
 // Classify a TMDB TV title and, when it is anime, resolve its AniList ID.
 async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<string, unknown>> {
+  /** @returns {Promise<any>} null when the id simply isn't a TMDB tv show (404) */
+  const tvOr404 = async (p: string) => {
+    try {
+      return await tmdbJson(p, apiKey);
+    } catch (e) {
+      if (String(e).indexOf('404') !== -1) return null;
+      throw e;
+    }
+  };
   // language=en-US: `name` must be locale-stable for title matching (a
   // Japanese-locale request returned Japanese for BOTH name and
   // original_name and the AniList match collapsed). original_name keeps the
   // native script, which the (now unicode-aware) matcher compares against
   // AniList's title.native.
   const [show, keywords] = await Promise.all([
-    tmdbJson(`/tv/${tmdbId}?language=en-US`, apiKey),
-    tmdbJson(`/tv/${tmdbId}/keywords`, apiKey),
+    tvOr404(`/tv/${tmdbId}?language=en-US`),
+    tvOr404(`/tv/${tmdbId}/keywords`),
   ]);
   if (!show || !show.id) return { anime: false };
   if (!classifyIsAnime(show, keywords)) return { anime: false };
@@ -248,7 +257,11 @@ export default {
           request.headers.get('accept-language'),
           url.searchParams.get('lang')
         );
-        return await proxyTmdb(rest, url.search, apiKey, geo.tmdbLang);
+        // English catalog titles (user request): TMDB content language is
+        // pinned to en-US — with geo locales, anime titles render in native
+        // script (ジョジョの奇妙な冒険) because id-ID data falls back to it.
+        // UI strings stay geo-localized (geo.uiLang path is unchanged).
+        return await proxyTmdb(rest, url.search, apiKey, 'en-US');
       } catch (e) {
         return json({ error: 'TMDB unavailable', detail: String(e) }, 502);
       }
@@ -486,13 +499,18 @@ export default {
         const tmdbId = m[1];
         const hit = animeCache.get(tmdbId);
         if (hit && hit.expires > Date.now()) {
-          return json(hit.data, 200, { 'Cache-Control': 'public, max-age=604800' });
+          // Resolved matches cache a day; misses/nulls only 5 minutes so a
+          // matcher fix propagates fast (the old 7d edge TTL poisoned the
+          // pre-fix null responses for a WEEK — clients couldn't un-see it).
+          const cc = (hit.data as any) && (hit.data as any).anilistId ? 'public, max-age=86400' : 'public, max-age=300';
+          return json(hit.data, 200, { 'Cache-Control': cc });
         }
         try {
           const data = await resolveAnime(tmdbId, apiKey);
           if (animeCache.size >= ANIME_CACHE_MAX) animeCache.clear();
-          animeCache.set(tmdbId, { data, expires: Date.now() + ANIME_TTL_MS });
-          return json(data, 200, { 'Cache-Control': 'public, max-age=604800' });
+          animeCache.set(tmdbId, { data, expires: Date.now() + (data.anilistId ? ANIME_TTL_MS : 5 * 60 * 1000) });
+          const cc = data.anilistId ? 'public, max-age=86400' : 'public, max-age=300';
+          return json(data, 200, { 'Cache-Control': cc });
         } catch (e) {
           return json({ error: 'AniList lookup failed', detail: String(e) }, 502);
         }

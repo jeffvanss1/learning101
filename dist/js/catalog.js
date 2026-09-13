@@ -25,7 +25,7 @@
   const CACHE_KEY_PREFIX = 'wp:cat:';
   const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
   const ANIME_KEYWORD = 210024; // TMDB keyword id for "anime"
-  const ANILIST_CACHE_PREFIX = 'wp:anilist:v2:'; // v2: busts cached anilistId:null from the CJK match bug
+  const ANILIST_CACHE_PREFIX = 'wp:anilist:v3:'; // v3: busts edge-poisoned nulls (old 7d Cache-Control) + old v2 entries
   const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
   // ---- tiny DOM helpers ------------------------------------------------------
@@ -82,7 +82,7 @@
         if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data;
       }
     } catch (_) {}
-    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId), {
+    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId) + '?v=2', { // v=2: never-hit URL (edge cached the pre-fix nulls 7 days)
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
