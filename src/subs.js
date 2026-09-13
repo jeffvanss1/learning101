@@ -31,6 +31,10 @@ const DOWNLOAD_TIMEOUT_MS = 12_000;
  */
 export function buildSearchQuery(v) {
   const params = new URLSearchParams();
+  // OpenSubtitles (July 2025 API change, confirmed by their admin): queries
+  // without an explicit `type` return ZERO results. movie -> 'movie',
+  // series/anime -> 'episode'.
+  params.set('type', v.type === 'movie' ? 'movie' : 'episode');
   if (v.type === 'movie') {
     // Movies: the movie's own TMDB id.
     params.set('tmdb_id', String(v.tmdb));

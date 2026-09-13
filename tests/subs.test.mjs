@@ -58,14 +58,17 @@ test('search query: PARENT tmdb id for series (docs), own id for movies', () => 
   // OpenSubtitles docs: season_number/episode_number pair with
   // parent_tmdb_id — tmdb_id + season/episode returns wrong/empty results.
   const tv = new URLSearchParams(buildSearchQuery({ type: 'tv', tmdb: '94605', season: 3, episode: 7, lang: 'id' }));
+  assert.equal(tv.get('type'), 'episode', 'series must send type=episode (missing type => 0 results since 2025-07)');
   assert.equal(tv.get('parent_tmdb_id'), '94605', 'series must search by parent_tmdb_id');
   assert.equal(tv.get('tmdb_id'), null, 'tmdb_id must NOT be sent for series');
   assert.equal(tv.get('season_number'), '3');
   assert.equal(tv.get('episode_number'), '7');
   assert.equal(tv.get('languages'), 'id');
   const an = new URLSearchParams(buildSearchQuery({ type: 'anime', tmdb: '123', season: 1, episode: 1 }));
+  assert.equal(an.get('type'), 'episode', 'anime follows the series rules (type=episode)');
   assert.equal(an.get('parent_tmdb_id'), '123', 'anime follows the series rules');
   const mv = new URLSearchParams(buildSearchQuery({ type: 'movie', tmdb: '420818' }));
+  assert.equal(mv.get('type'), 'movie', 'movies must send type=movie (missing type => 0 results since 2025-07)');
   assert.equal(mv.get('tmdb_id'), '420818', 'movies keep their own tmdb_id');
   assert.equal(mv.get('parent_tmdb_id'), null, 'movies must not carry a parent id');
   assert.equal(mv.get('season_number'), null, 'movies must not carry season/episode params');

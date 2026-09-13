@@ -283,7 +283,7 @@ export default {
           return json(
             { results: shapeSearchResponse(payload), best: pickBest(payload && payload.data), total: payload && payload.total },
             200,
-            { 'Cache-Control': 'public, max-age=600' }
+            { 'Cache-Control': 'public, max-age=60' }
           );
         }
         if (path === '/api/subs/file' && request.method === 'GET') {
