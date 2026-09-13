@@ -539,6 +539,98 @@ test('subtitle language crosses audio: defaults to geo locale, persists choice, 
   assert.ok(seenLangs.indexOf('en') !== -1, 'reloaded in the new language: ' + seenLangs.join(','));
 });
 
+test('room sync: onLoaded/onOffset fire locally; applyRemoteOffset does NOT echo', async () => {
+  // app.js wires these: the HOST broadcasts what they load/match; clients
+  // apply via loadRemote/applyRemoteOffset — which must not re-broadcast.
+  let fileFetches = 0;
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/subs/search')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          results: [{ fileId: 'R1', release: 'Host.Pick', lang: 'id', downloads: 900, machineTranslated: false }],
+          best: { fileId: 'R1', release: 'Host.Pick', lang: 'id', downloads: 900 },
+        }),
+      });
+    }
+    if (u.includes('fileId=R1')) {
+      fileFetches++;
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:01,000 --> 00:00:02,000\nroom cue\n' });
+    }
+    if (u.includes('fileId=R2')) {
+      fileFetches++;
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:03,000 --> 00:00:04,000\nremote cue\n' });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  Subs.mount(new El2());
+  const loaded = [];
+  const offsets = [];
+  Subs.onLoaded((info) => loaded.push(info));
+  Subs.onOffset((v) => offsets.push(v));
+
+  Subs.__test.setLang('id');
+  Subs.setVideo({ type: 'movie', id: '5' });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(loaded.length, 1, 'onLoaded fired once');
+  assert.equal(loaded[0].fileId, 'R1', 'carries the fileId (relayed to the room)');
+  assert.ok(/Host.Pick/.test(loaded[0].label), 'label names the release: ' + loaded[0].label);
+
+  // A sync press fires the offset hook (host relays it).
+  fireClock(listeners, rafQueue, 1.5);
+  Subs.syncSnap();
+  assert.equal(offsets.length, 1, 'onOffset fired for the local sync');
+
+  // Remote apply: offset lands, but the hook stays silent (no echo loop).
+  Subs.applyRemoteOffset(2.5);
+  assert.equal(Subs.__test.state().offset, 2.5, 'remote offset applied');
+  assert.equal(offsets.length, 1, 'remote apply did NOT re-fire the hook');
+
+  // loadRemote fetches once, loads cues, marks status.
+  const before = fileFetches;
+  await Subs.loadRemote({ fileId: 'R2', label: 'Rel [en]' });
+  assert.equal(fileFetches, before + 1, 'loadRemote downloaded the file');
+  assert.ok(Subs.__test.state().status.includes('host'), 'status says who loaded it: ' + Subs.__test.state().status);
+});
+
+test('mini timing editor: click a tick shows its timestamp; Align snaps it to now', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  Subs.loadCues(
+    '1\n00:00:10,000 --> 00:00:11,000\nFirst line\n\n' +
+      '2\n00:00:20,000 --> 00:00:21,000\nSecond line\n'
+  );
+
+  /** findClass but for compound classNames (the row is 'subs-panel__row subs-editor') */
+  const findBy = (root, cls) => {
+    if (String(root.className || '').split(/\s+/).indexOf(cls) !== -1) return root;
+    for (const c of root.children || []) {
+      const hit = findBy(c, cls);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const row = findBy(wrap, 'subs-editor');
+  assert.ok(row, 'editor row rendered');
+  const ticksWrap = row.children[0].children[0];
+  assert.ok(ticksWrap.children.length >= 2, 'both cues drawn as ticks');
+  assert.equal(row.children[2].disabled, true, 'Align disabled until a line is picked');
+
+  // Click the FIRST tick (cue at 10s) -> info shows its timestamp, Align arms.
+  ticksWrap.children[0]._h.click();
+  assert.ok(/0:10/.test(row.children[1].textContent), 'timestamp shown: ' + row.children[1].textContent);
+  assert.equal(row.children[2].disabled, false, 'Align armed');
+
+  // Player is at 11.3s -> aligning the 10s line sets offset = +1.3s.
+  fireClock(listeners, rafQueue, 11.3);
+  row.children[2]._h.click();
+  assert.equal(Subs.__test.state().offset, 1.3, 'manual match is exact');
+});
+
 test('auto-load iterates candidates when the top one fails to download', async () => {
   // Live scenario (2026-09-13): the ranked-best record sat on a gated host
   // (dl.opensubtitles.org -> 401). Auto-load must skip it and load #2.

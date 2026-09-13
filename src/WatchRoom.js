@@ -43,6 +43,7 @@ export const MSG = {
   ACCEPT: 'accept',
   REJECT: 'reject',
   REQUEST_RESOLVED: 'requestResolved',
+  SUBS: 'subs',
   PING: 'ping',
   PONG: 'pong',
   PRESENCE_SYNC: 'presenceSync',
@@ -146,17 +147,19 @@ export class WatchRoom {
     this.playback = undefined;
     this.sessions = undefined;
     this.requests = undefined;
+    this.subs = undefined;
   }
 
   // ---- Lifecycle / state ---------------------------------------------------
   async ensureLoaded() {
     if (this.meta !== undefined) return;
-    const [meta, chat, playback, sessions, requests] = await Promise.all([
+    const [meta, chat, playback, sessions, requests, subs] = await Promise.all([
       this.storage.get('meta'),
       this.storage.get('chat'),
       this.storage.get('playback'),
       this.storage.get('sessions'),
       this.storage.get('requests'),
+      this.storage.get('subs'),
     ]);
     this.meta = {
       id: this.ctx.id.toString(),
@@ -175,6 +178,8 @@ export class WatchRoom {
     };
     this.sessions = Array.isArray(sessions) ? sessions : [];
     this.requests = Array.isArray(requests) ? requests : [];
+    // Host's last subtitle choice: replicated to joiners (fileId + label).
+    this.subs = subs && typeof subs === 'object' ? subs : null;
   }
 
   async persist() {
@@ -184,6 +189,7 @@ export class WatchRoom {
       playback: this.playback,
       sessions: this.sessions,
       requests: this.requests.slice(-MAX_REQUESTS),
+      subs: this.subs || null,
     });
   }
 
@@ -443,6 +449,9 @@ export class WatchRoom {
           playback: this.playback,
           by: peer.name,
         });
+        if (this.shouldLogPlayback('play')) {
+          this.logSystem('\u25b6\ufe0f ' + (peer.name || 'Host') + ' resumed the movie');
+        }
         dirty = true;
         break;
       }
@@ -460,7 +469,38 @@ export class WatchRoom {
           playback: this.playback,
           by: peer.name,
         });
+        if (this.shouldLogPlayback('pause')) {
+          this.logSystem('\u23f8\ufe0f ' + (peer.name || 'Host') + ' paused the movie');
+        }
         dirty = true;
+        break;
+      }
+
+      case MSG.SUBS: {
+        // Host-authoritative subtitles: what the host loads/matches, the room
+        // inherits. Guests keep local override freedom (client-side).
+        if (!this.canControl(peer)) break;
+        if (msg.action === 'load') {
+          const label = sanitizeText(msg.label || '').slice(0, 140);
+          const fileId = sanitizeText(msg.fileId || '').slice(0, 300);
+          this.subs = { fileId: fileId, label: label, ts: now() };
+          this.logSystem(
+            '\ud83c\udf9f\ufe0f ' + (peer.name || 'Host') + ' loaded subtitles' + (label ? ': ' + label : '')
+          );
+          this.broadcast({ type: MSG.SUBS, action: 'load', fileId: fileId, label: label, by: peer.id });
+          dirty = true;
+        } else if (msg.action === 'offset') {
+          const v = Number(msg.value);
+          if (!isFinite(v) || Math.abs(v) > 3600) break;
+          this.subs = {
+            fileId: (this.subs && this.subs.fileId) || '',
+            label: (this.subs && this.subs.label) || '',
+            offset: v,
+            ts: now(),
+          };
+          this.broadcast({ type: MSG.SUBS, action: 'offset', value: v, by: peer.id });
+          dirty = true;
+        }
         break;
       }
 
@@ -724,6 +764,7 @@ export class WatchRoom {
       ownerId: this.meta.ownerId,
       video: this.meta.video,
       topic: this.meta.topic,
+      subs: this.subs || null,
       requests: this.requests.slice(-20),
       playback: stale
         ? { isPlaying: false, time: 0, timestamp: now() }
@@ -772,6 +813,30 @@ export class WatchRoom {
       type: MSG.PEERS,
       peers: this.sessions.slice(0, 50).map((p) => sanitizePeer(p, allowed)),
     });
+  }
+
+  // System line that ALSO lands in the chat history (broadcastSystem is
+  // ephemeral — late joiners would never see "Host paused the movie").
+  logSystem(text) {
+    const item = {
+      id: makeId(),
+      type: MSG.SYSTEM,
+      text: sanitizeText(text).slice(0, 300),
+      ts: now(),
+    };
+    this.chat.push(item);
+    if (this.chat.length > MAX_CHAT) this.chat = this.chat.slice(-MAX_CHAT);
+    this.broadcast(item);
+  }
+
+  // Pause/play log dedupe (player re-asserts must not spam the chat).
+  shouldLogPlayback(action) {
+    const t = now();
+    if (this._lastPlayLog && this._lastPlayLog.action === action && t - this._lastPlayLog.at < 2000) {
+      return false;
+    }
+    this._lastPlayLog = { action: action, at: t };
+    return true;
   }
 
   broadcastSystem(text) {

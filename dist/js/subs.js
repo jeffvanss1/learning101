@@ -143,6 +143,10 @@
     if (!overlay || !enabled) return;
     const t = now();
     if (t >= 0) {
+      if (edPlay && edSpan > 0) {
+        const pct = Math.min(100, Math.max(0, (t / edSpan) * 100));
+        edPlay.style.left = pct + '%';
+      }
       while (cueIdx < cues.length && cues[cueIdx].end <= t) cueIdx++;
       const cue = cues[cueIdx];
       const text = cue && cue.start <= t && t < cue.end ? cue.text : '';
@@ -248,6 +252,100 @@
    */
   /** @type {string} '' | 'gated:13' — what the last search chain saw dropped as gated */
   let lastGatedSeen = '';
+  // ---- room sync hooks (wired by app.js: host actions replicate to guests) ---
+  /** @type {null | function({fileId: string|null, label: string}): void} */
+  let onLoadedCb = null;
+  /** @type {null | function(number): void} */
+  let onOffsetCb = null;
+  /** @type {string} last fileId this client loaded (dedupes host echo) */
+  let lastLoadedFileId = '';
+  // ---- mini timing editor (manual match: click a line, align it to "now") ----
+  let edTicks = /** @type {HTMLElement | null} */ (null);
+  let edPlay = /** @type {HTMLElement | null} */ (null);
+  let edInfo = /** @type {HTMLElement | null} */ (null);
+  let edAlign = /** @type {HTMLButtonElement | null} */ (null);
+  let edSpan = 0;
+  let edSelected = /** @type {number | null} */ (null);
+  const EDITOR_MAX_TICKS = 500;
+
+  /** @param {number} s @returns {string} h:mm:ss / m:ss */
+  function fmtTS(s) {
+    const t = Math.max(0, Math.floor(s));
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = t % 60;
+    const mm = (h ? String(m).padStart(2, '0') : String(m));
+    const ss = String(sec).padStart(2, '0');
+    return (h ? h + ':' : '') + mm + ':' + ss;
+  }
+
+  function buildEditorTicks() {
+    if (!edTicks) return;
+    while (edTicks.firstChild) edTicks.removeChild(edTicks.firstChild);
+    edSelected = null;
+    if (edAlign) edAlign.disabled = true;
+    if (!cues.length) {
+      edSpan = 0;
+      if (edPlay) edPlay.style.display = 'none';
+      if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
+      return;
+    }
+    edSpan = cues[cues.length - 1].end || 1;
+    const step = Math.max(1, Math.ceil(cues.length / EDITOR_MAX_TICKS));
+    for (let i = 0; i < cues.length; i += step) {
+      const cue = cues[i];
+      const tick = h('div', 'subs-editor__tick');
+      tick.style.left = (cue.start / edSpan) * 100 + '%';
+      tick.title = fmtTS(cue.start) + ' \u00b7 ' + String(cue.text).split('\n')[0].slice(0, 60);
+      ((/** @type {number} */ ix, /** @type {any} */ c) => {
+        tick.addEventListener('click', () => {
+          edSelected = ix;
+          const ticks = edTicks ? edTicks.children || [] : [];
+          for (let k = 0; k < ticks.length; k++) {
+            (/** @type {any} */ ticks[k]).classList.remove('subs-editor__tick--sel');
+          }
+          tick.classList.add('subs-editor__tick--sel');
+          if (edInfo) edInfo.textContent = fmtTS(c.start) + ' \u00b7 ' + String(c.text).split('\n')[0].slice(0, 60);
+          if (edAlign) edAlign.disabled = false;
+        });
+      })(i, cue);
+      edTicks.appendChild(tick);
+    }
+    if (edInfo) edInfo.textContent = tr('subs.editorHint', 'Tap a line, then align it to where you are.');
+    if (edPlay) edPlay.style.display = 'block';
+  }
+
+
+  // ---- room sync: apply what the HOST loaded/matched -------------------------
+  /** @param {{ fileId?: string, label?: string }} info */
+  async function loadRemote(info) {
+    const fileId = String((info && info.fileId) || '');
+    if (!fileId) {
+      if (info && info.label) setStatus((info.label) + ' \u00b7 ' + tr('subs.byHost', 'loaded by host'));
+      return;
+    }
+    if (fileId === lastLoadedFileId && cues.length) return; // echo guard
+    try {
+      const res = await fetch('/api/subs/file?fileId=' + encodeURIComponent(fileId));
+      if (!res.ok) return;
+      const text = await res.text();
+      if (!parseSubtitles(text).length) return;
+      lastLoadedFileId = fileId;
+      loadCues(text);
+      setStatus((info && info.label ? info.label : '') + ' \u00b7 ' + tr('subs.byHost', 'loaded by host'));
+    } catch (_) {}
+  }
+
+  /** @param {number} v */
+  function applyRemoteOffset(v) {
+    const n = Number(v);
+    if (!isFinite(n)) return;
+    applyOffsetValue(n, { remote: true });
+    setStatus(
+      '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+        ' \u00b7 ' + tr('subs.byHostMatch', 'matched by host')
+    );
+  }
 
   async function autoLoad(v) {
     if (!v || !v.id) return;
@@ -274,11 +372,20 @@
         lang !== primary
           ? ' · ' + tr('subs.fallback', 'no {lang} subs — language fallback').replace('{lang}', primary.toUpperCase())
           : '';
+      lastLoadedFileId = String(best.cand.fileId || '');
       setStatus(
         tr('subs.loaded', 'Loaded') +
           ': ' + (best.cand.release || 'subtitle') +
           ' [' + label + ', ' + (best.cand.downloads || 0) + '\u2193]' + suffix
       );
+      if (onLoadedCb) {
+        try {
+          onLoadedCb({
+            fileId: lastLoadedFileId,
+            label: (best.cand.release || 'subtitle') + ' [' + label + ']',
+          });
+        } catch (_) {}
+      }
       return;
     }
     if (lastGatedSeen) {
@@ -300,6 +407,7 @@
     cues = parseSubtitles(raw);
     cueIdx = 0;
     if (cues.length && !enabled) setEnabled(true);
+    buildEditorTicks();
   }
 
   function setEnabled(on) {
@@ -320,11 +428,17 @@
 
   // ---- panel ----------------------------------------------------------------
 
-  function applyOffsetValue(abs) {
+  function applyOffsetValue(abs, opts) {
     offset = Math.round(abs * 100) / 100;
     saveOffset(offset);
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
     cueIdx = 0;
+    // Local edits fire the room-sync hook; remote-applied ones don't (no echo).
+    if ((!opts || !opts.remote) && onOffsetCb) {
+      try {
+        onOffsetCb(offset);
+      } catch (_) {}
+    }
   }
 
   function applyOffset(delta) {
@@ -415,12 +529,19 @@
       if (!f) return;
       const reader = new FileReader();
       reader.onload = () => {
-        const n = parseSubtitles(String(reader.result || '')).length;
-        if (!n) {
+        const raw = String(reader.result || '');
+        if (!parseSubtitles(raw).length) {
           setStatus(tr('subs.parseFailed', 'Could not read that subtitle file.'), true);
           return;
         }
-        setStatus(n + ' cues ' + tr('subs.fromFile', 'from file'));
+        loadCues(raw); // actually LOAD it (this used to only count the cues)
+        lastLoadedFileId = '';
+        setStatus(f.name + ' \u00b7 ' + tr('subs.fromFile', 'from file'));
+        if (onLoadedCb) {
+          try {
+            onLoadedCb({ fileId: null, label: f.name + ' (upload)' });
+          } catch (_) {}
+        }
       };
       reader.readAsText(f);
     });
@@ -454,6 +575,35 @@
     const snapHint = h('div', 'subs-panel__hint', tr('subs.snapHint', 'Press exactly when someone starts speaking \u2014 the next line snaps to now.'));
     row3a.appendChild(snapHint);
     panel.appendChild(row3a);
+
+    // mini timing editor: every cue as a tick on a strip; click = inspect,
+    // Align = that line starts NOW (manual match, no mic, no arithmetic).
+    const rowEd = h('div', 'subs-panel__row subs-editor');
+    const edBar = h('div', 'subs-editor__bar');
+    edTicks = h('div', 'subs-editor__ticks');
+    edPlay = h('div', 'subs-editor__play');
+    edPlay.style.display = 'none';
+    edBar.appendChild(edTicks);
+    edBar.appendChild(edPlay);
+    rowEd.appendChild(edBar);
+    edInfo = h('div', 'subs-panel__hint', tr('subs.editorEmpty', 'Load subtitles to see their timing here.'));
+    rowEd.appendChild(edInfo);
+    edAlign = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.align', 'Align to playhead')));
+    edAlign.type = 'button';
+    edAlign.disabled = true;
+    edAlign.title = tr('subs.alignHint', 'Makes this line start right now.');
+    edAlign.addEventListener('click', () => {
+      if (edSelected == null || !cues[edSelected]) return;
+      const t = now();
+      if (t < 0) return;
+      applyOffsetValue(t - cues[edSelected].start);
+      setStatus(
+        '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+          ' (' + fmtTS(cues[edSelected].start) + ' \u2192 ' + tr('subs.now', 'now') + ')'
+      );
+    });
+    rowEd.appendChild(edAlign);
+    panel.appendChild(rowEd);
 
     const row3b = h('div', 'subs-panel__row');
     const reset = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.reset', 'Reset offset')));
@@ -571,6 +721,14 @@
     setEnabled: setEnabled,
     parseSubtitles: parseSubtitles,
     syncSnap: syncSnap,
+    onLoaded: (/** @type {function({fileId: string|null, label: string}): void} */ cb) => {
+      onLoadedCb = cb;
+    },
+    onOffset: (/** @type {function(number): void} */ cb) => {
+      onOffsetCb = cb;
+    },
+    loadRemote: loadRemote,
+    applyRemoteOffset: applyRemoteOffset,
     // Internal hook for the runtime test-suite (not part of the UI contract).
     __test: {
       setLang(/** @type {string} */ l) {

@@ -477,6 +477,15 @@
       WP.Subs.mount(document.querySelector('.player-wrap'));
       const subsBtn = $('subs-toggle');
       if (subsBtn) subsBtn.onclick = () => WP.Subs.togglePanel();
+      // Host-authoritative subs: what the host loads/matches, everyone gets.
+      WP.Subs.onLoaded((info) => {
+        if (!state.client || !canControl() || !info || (!info.fileId && !info.label)) return;
+        state.client.send({ type: 'subs', action: 'load', fileId: info.fileId || '', label: info.label || '' });
+      });
+      WP.Subs.onOffset((v) => {
+        if (!state.client || !canControl()) return;
+        state.client.send({ type: 'subs', action: 'offset', value: v });
+      });
     }
     const sideHead = document.querySelector('.sidebar__head');
     if (sideHead) sideHead.onclick = onToggleChat;
@@ -524,6 +533,11 @@
       }
       updateHostUI();
       if (state.sync) state.sync.handleServerMessage(msg);
+      if (msg.subs && WP.Subs) {
+        // Late joiner: inherit what the host loaded + how they matched it.
+        if (msg.subs.fileId) WP.Subs.loadRemote(msg.subs);
+        if (typeof msg.subs.offset === 'number') WP.Subs.applyRemoteOffset(msg.subs.offset);
+      }
       if (Array.isArray(msg.chat)) {
         state.chatLoaded = true;
         renderChatHistory(msg.chat);
@@ -545,6 +559,13 @@
     });
 
     client.on('system', (msg) => appendSystemMessage(msg.text));
+    // Host subs replication: load the host's pick, mirror the host's match.
+    client.on('subs', (msg) => {
+      if (!msg || msg.by === state.myPeerId) return; // my own echo
+      if (!WP.Subs) return;
+      if (msg.action === 'load') WP.Subs.loadRemote(msg);
+      else if (msg.action === 'offset') WP.Subs.applyRemoteOffset(msg.value);
+    });
     client.on('chat', (msg) => appendChatMessage(msg.message));
 
     client.on('request', (msg) => {

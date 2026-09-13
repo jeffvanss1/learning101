@@ -1654,3 +1654,12 @@ button {
   opacity: 0.75;
   margin-top: 4px;
 }
+
+/* subs mini timing editor (manual match) */
+.subs-editor { flex-direction: column; align-items: stretch; gap: 4px; }
+.subs-editor__bar { position: relative; height: 26px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.subs-editor__ticks { position: absolute; inset: 0; }
+.subs-editor__tick { position: absolute; top: 4px; bottom: 4px; width: 2px; min-width: 2px; border-radius: 1px; background: rgba(122, 162, 255, 0.85); cursor: pointer; }
+.subs-editor__tick:hover { background: #7aa2ff; }
+.subs-editor__tick--sel { background: #ffd166; width: 3px; min-width: 3px; }
+.subs-editor__play { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff5d73; pointer-events: none; }
