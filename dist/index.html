@@ -11,7 +11,7 @@
        Roboto elsewhere) — no web font download, so it matches apple.com. -->
   <link rel="stylesheet" href="/css/style.css?v=9" />
   <link rel="stylesheet" href="/css/catalog.css?v=6" />
-  <link rel="stylesheet" href="/css/social.css?v=1" />
+  <link rel="stylesheet" href="/css/social.css?v=2" />
 </head>
 <body>
   <!-- Toast / notification surface -->
@@ -41,6 +41,10 @@
         <button class="sidenav__item" data-nav="anime" type="button" title="Anime">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"></path><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"></path></svg>
           <span class="sidenav__label">Anime</span>
+        </button>
+        <button class="sidenav__item" data-nav="friends" type="button" title="Friends">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          <span class="sidenav__label">Friends</span>
         </button>
         <button class="sidenav__item" data-nav="history" type="button" title="Watch history">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
@@ -121,6 +125,10 @@
       <div id="history-scroller" class="history__scroller"></div>
     </section>
     <div id="browse" class="browse"></div>
+
+    <!-- Friends rail (right side of the home surface; drawer on narrow screens) -->
+    <aside id="friends-rail" class="friends-rail" hidden aria-label="Friends"></aside>
+    <div id="friends-backdrop" class="friends-rail-backdrop" hidden></div>
   </main>
 
   <!-- Watch room -->
@@ -355,7 +363,7 @@
   <script src="/js/api.js?v=5"></script>
   <script src="/js/player.js?v=6"></script>
   <script src="/js/catalog.js?v=8"></script>
-  <script src="/js/social.js?v=1"></script>
-  <script src="/js/app.js?v=10"></script>
+  <script src="/js/social.js?v=2"></script>
+  <script src="/js/app.js?v=11"></script>
 </body>
 </html>

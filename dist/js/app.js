@@ -1279,6 +1279,14 @@
           } else {
             toast('Nothing in your watch history yet.');
           }
+        } else if (key === 'friends') {
+          // Right-side friends rail: drawer on narrow screens, collapse/
+          // expand on desktop. Returning from a room first lands on home.
+          if (inRoom) {
+            goHome();
+            return;
+          }
+          if (WP.Social) WP.Social.toggleFriendsRail();
         } else if (key === 'start-room') {
           startRoomWithVideo(null);
         } else {
@@ -1368,6 +1376,8 @@
       peopleProvider: WP.Social ? (q) => WP.Social.renderPeople(q) : null,
     });
     renderHistory();
+    // Right-side friends rail (lives inside #home, so it hides with the view).
+    if (WP.Social) WP.Social.mountFriendsRail($('friends-rail'));
   }
 
   // --------------------------------------------------------------------------

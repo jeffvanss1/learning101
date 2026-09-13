@@ -101,6 +101,8 @@
       const data = await res.json();
       if (!res.ok || !data.token) return existing;
       saveSession(/** @type {SessionState} */ (data));
+      // Let the friends rail (and anything else) react to sign-in.
+      global.dispatchEvent(new CustomEvent('wp:friends-changed'));
       return session;
     } catch (_) {
       return existing;
@@ -120,6 +122,7 @@
       }
     } catch (_) {}
     saveSession(null);
+    global.dispatchEvent(new CustomEvent('wp:friends-changed'));
   }
 
   /** @returns {Record<string, string>} */
@@ -486,6 +489,8 @@
               ? 'accepted'
               : 'pending-out';
         paint(hit.friendship);
+        // The friends rail listens for this and re-fetches.
+        global.dispatchEvent(new CustomEvent('wp:friends-changed'));
         if (opts && opts.onUpdate) opts.onUpdate();
       } catch (e) {
         toast(e instanceof Error ? e.message : 'Something went wrong', true);
@@ -1188,6 +1193,401 @@
   }
 
   // ---------------------------------------------------------------------------
+  // 8. Friends rail — right side of the home surface
+  //
+  // Desktop (>= 1100px): a sticky card column next to the browse feed
+  // (.home--with-rail grid). Narrower: a slide-over drawer opened from the
+  // "Friends" item in the side nav. Polls /api/friends every 30s while
+  // visible; instant refresh on 'wp:friends-changed'.
+  // ---------------------------------------------------------------------------
+  const RAIL_PREF_KEY = 'wp:friends-rail'; // 'open' | 'closed' (desktop)
+  const RAIL_REFRESH_MS = 30_000;
+  const RAIL_BREAKPOINT = '(max-width: 1099px)';
+  /** @type {{ destroy: () => void, refresh: () => void, toggle: () => void } | null} */
+  let railHandle = null;
+
+  function railPrefClosed() {
+    try {
+      return localStorage.getItem(RAIL_PREF_KEY) === 'closed';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** @param {boolean} closed */
+  function setRailPrefClosed(closed) {
+    try {
+      localStorage.setItem(RAIL_PREF_KEY, closed ? 'closed' : 'open');
+    } catch (_) {}
+  }
+
+  /** @param {HTMLElement} container */
+  function mountFriendsRail(container) {
+    if (railHandle) railHandle.destroy();
+    railHandle = createFriendsRail(container);
+    return railHandle;
+  }
+
+  /** Toggle: drawer on narrow screens, collapse/expand on desktop. */
+  function toggleFriendsRail() {
+    if (!railHandle) return;
+    railHandle.toggle();
+  }
+
+  function refreshFriendsRail() {
+    if (railHandle) railHandle.refresh();
+  }
+
+  /** @type {Record<string, number>} */
+  const PRESENCE_WEIGHT = { WATCHING_PARTY: 0, WATCHING_SOLO: 1, IDLE: 2, OFFLINE: 3 };
+
+  /**
+   * @param {HTMLElement} container
+   */
+  function createFriendsRail(container) {
+    container.innerHTML = '';
+    container.hidden = false;
+
+    // ---- chrome -------------------------------------------------------------
+    const head = h('div', 'friends-rail__head');
+    const titleWrap = h('div', 'friends-rail__title-wrap');
+    titleWrap.appendChild(h('h2', 'friends-rail__title', 'Friends'));
+    const count = h('span', 'friends-rail__count', '');
+    titleWrap.appendChild(count);
+    head.appendChild(titleWrap);
+
+    const refreshBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '⟳'));
+    refreshBtn.type = 'button';
+    refreshBtn.title = 'Refresh';
+    refreshBtn.setAttribute('aria-label', 'Refresh friends');
+    head.appendChild(refreshBtn);
+
+    const closeBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '×'));
+    closeBtn.type = 'button';
+    closeBtn.title = 'Hide panel';
+    closeBtn.setAttribute('aria-label', 'Hide friends panel');
+    head.appendChild(closeBtn);
+    container.appendChild(head);
+
+    const body = h('div', 'friends-rail__body');
+    container.appendChild(body);
+
+    const backdrop = $('friends-backdrop');
+
+    let disposed = false;
+    let loadSeq = 0;
+    let changeDebounce = /** @type {any} */ (null);
+
+    // ---- visibility ----------------------------------------------------------
+    const isNarrow = () => global.matchMedia(RAIL_BREAKPOINT).matches;
+
+    function railIsVisible() {
+      if (disposed || document.hidden || container.hidden) return false;
+      const homeEl = $('home');
+      if (!homeEl || homeEl.hidden) return false;
+      if (isNarrow() && !container.classList.contains('is-open')) return false;
+      return true;
+    }
+
+    function applyVisibility() {
+      if (isNarrow()) {
+        container.hidden = false; // CSS keeps it off-canvas until .is-open
+        const homeEl = $('home');
+        if (homeEl) homeEl.classList.remove('home--with-rail');
+        return;
+      }
+      closeDrawer();
+      const closed = railPrefClosed();
+      container.hidden = closed;
+      const homeEl = $('home');
+      if (homeEl) homeEl.classList.toggle('home--with-rail', !closed);
+    }
+
+    function openDrawer() {
+      container.classList.add('is-open');
+      if (backdrop) backdrop.hidden = false;
+    }
+
+    function closeDrawer() {
+      container.classList.remove('is-open');
+      if (backdrop) backdrop.hidden = true;
+    }
+
+    function toggle() {
+      if (isNarrow()) {
+        if (container.classList.contains('is-open')) closeDrawer();
+        else {
+          applyVisibility();
+          openDrawer();
+          refresh();
+        }
+        return;
+      }
+      const nowClosed = !railPrefClosed();
+      setRailPrefClosed(nowClosed);
+      applyVisibility();
+      if (!nowClosed) refresh();
+    }
+
+    // ---- rendering -------------------------------------------------------------
+    /** @param {{ friends?: any[], incoming?: any[] }} data */
+    function renderData(data) {
+      const friends = Array.isArray(data.friends) ? data.friends : [];
+      const incoming = Array.isArray(data.incoming) ? data.incoming : [];
+      count.textContent = String(friends.length);
+      body.innerHTML = '';
+
+      if (incoming.length) {
+        const sec = h('div', 'friends-rail__section');
+        sec.appendChild(
+          h('div', 'friends-rail__section-title', 'Requests · ' + incoming.length)
+        );
+        incoming.forEach((u) => sec.appendChild(requestRowNode(u)));
+        body.appendChild(sec);
+      }
+
+      const sorted = friends.slice().sort(
+        /** @returns {number} */
+        (a, b) =>
+          (PRESENCE_WEIGHT[a.presence && a.presence.status] ?? 3) -
+            (PRESENCE_WEIGHT[b.presence && b.presence.status] ?? 3) ||
+          String(a.displayName).localeCompare(String(b.displayName))
+      );
+      const active = sorted.filter((f) => f.presence && f.presence.status !== 'OFFLINE');
+      const offline = sorted.filter((f) => !f.presence || f.presence.status === 'OFFLINE');
+
+      if (sorted.length) {
+        if (active.length) {
+          const sec = h('div', 'friends-rail__section');
+          sec.appendChild(h('div', 'friends-rail__section-title', 'Active now · ' + active.length));
+          active.forEach((f) => sec.appendChild(friendRowNode(f)));
+          body.appendChild(sec);
+        }
+        if (offline.length) {
+          const sec = h('div', 'friends-rail__section');
+          sec.appendChild(h('div', 'friends-rail__section-title', 'Offline · ' + offline.length));
+          offline.forEach((f) => sec.appendChild(friendRowNode(f)));
+          body.appendChild(sec);
+        }
+      } else {
+        const empty = h('div', 'friends-rail__empty');
+        empty.appendChild(h('div', 'friends-rail__empty-icon', '👀'));
+        empty.appendChild(h('p', 'friends-rail__empty-text', 'No friends yet.'));
+        empty.appendChild(
+          h('p', 'friends-rail__empty-hint', 'Search people by name — their cards have an “Add friend” button.')
+        );
+        const find = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', 'Find people'));
+        find.type = 'button';
+        find.addEventListener('click', () => {
+          closeDrawer();
+          const inp = /** @type {HTMLInputElement | null} */ (
+            document.getElementById('topnav-search-input')
+          );
+          if (inp) {
+            inp.focus();
+            inp.select();
+          }
+        });
+        empty.appendChild(find);
+        body.appendChild(empty);
+      }
+
+    }
+
+    function renderSignedOut() {
+      count.textContent = '';
+      body.innerHTML = '';
+      const box = h('div', 'friends-rail__signin');
+      box.appendChild(h('div', 'friends-rail__empty-icon', '👋'));
+      box.appendChild(
+        h('p', 'friends-rail__empty-text', 'You are browsing anonymously.')
+      );
+      box.appendChild(
+        h(
+          'p',
+          'friends-rail__empty-hint',
+          'Pick a name to get a profile, add friends, and show what you are watching.'
+        )
+      );
+      const btn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', 'Pick a name'));
+      btn.type = 'button';
+      btn.addEventListener('click', () => {
+        closeDrawer();
+        global.dispatchEvent(new CustomEvent('wp:need-signin'));
+      });
+      box.appendChild(btn);
+      body.appendChild(box);
+    }
+
+    /** @param {Error} [err] */
+    function renderError(err) {
+      count.textContent = '';
+      body.innerHTML = '';
+      const box = h('div', 'friends-rail__empty');
+      box.appendChild(h('p', 'friends-rail__empty-text', 'Could not load friends.'));
+      const retry = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', 'Retry'));
+      retry.type = 'button';
+      retry.addEventListener('click', () => refresh());
+      box.appendChild(retry);
+      body.appendChild(box);
+      if (err) void err;
+    }
+
+    /**
+     * @param {{ username: string, displayName: string, avatarUrl: string, avatarFrameId: string }} u
+     */
+    function requestRowNode(u) {
+      const row = h('div', 'friend-row friend-row--request');
+      const main = /** @type {HTMLAnchorElement} */ (h('a', 'friend-row__main'));
+      main.href = '/user/' + encodeURIComponent(u.username);
+      main.appendChild(avatarWithFrame(u.displayName, u.avatarUrl, u.avatarFrameId, 'avatar--sm'));
+      const meta = h('div', 'friend-row__meta');
+      meta.appendChild(h('span', 'friend-row__name', u.displayName));
+      meta.appendChild(h('span', 'friend-row__sub', 'wants to be friends'));
+      main.appendChild(meta);
+      row.appendChild(main);
+
+      const actions = h('div', 'friend-row__actions');
+      const yes = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', '✓'));
+      yes.type = 'button';
+      yes.title = 'Accept';
+      yes.setAttribute('aria-label', 'Accept friend request from ' + u.displayName);
+      yes.addEventListener('click', async () => {
+        yes.disabled = true;
+        try {
+          await friendAction('accept', u.username);
+          toast('Added ' + u.displayName);
+          global.dispatchEvent(new CustomEvent('wp:friends-changed'));
+          refresh();
+        } catch (e) {
+          yes.disabled = false;
+          toast(e instanceof Error ? e.message : 'Could not accept', true);
+        }
+      });
+      const no = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', '×'));
+      no.type = 'button';
+      no.title = 'Decline';
+      no.setAttribute('aria-label', 'Decline friend request from ' + u.displayName);
+      no.addEventListener('click', async () => {
+        no.disabled = true;
+        try {
+          await friendAction('remove', u.username);
+          global.dispatchEvent(new CustomEvent('wp:friends-changed'));
+          refresh();
+        } catch (e) {
+          no.disabled = false;
+          toast(e instanceof Error ? e.message : 'Could not decline', true);
+        }
+      });
+      actions.appendChild(yes);
+      actions.appendChild(no);
+      row.appendChild(actions);
+      return row;
+    }
+
+    /**
+     * @param {{ username: string, displayName: string, avatarUrl: string, avatarFrameId: string, presence: PresencePayload }} f
+     */
+    function friendRowNode(f) {
+      const row = h('div', 'friend-row');
+      const main = /** @type {HTMLAnchorElement} */ (h('a', 'friend-row__main'));
+      main.href = '/user/' + encodeURIComponent(f.username);
+      main.title = 'View profile';
+      main.appendChild(avatarWithFrame(f.displayName, f.avatarUrl, f.avatarFrameId, 'avatar--sm'));
+      const meta = h('div', 'friend-row__meta');
+      meta.appendChild(h('span', 'friend-row__name', f.displayName));
+      const badge = presenceBadge(f.presence, false);
+      badge.node.classList.add('presence--mini');
+      meta.appendChild(badge.node);
+      main.appendChild(meta);
+      row.appendChild(main);
+
+      if (f.presence && f.presence.room_id) {
+        const join = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm friend-row__join', 'Join'));
+        join.type = 'button';
+        join.title = f.presence.media_title ? 'Join and watch “' + f.presence.media_title + '”' : 'Join the room';
+        join.addEventListener('click', () => {
+          location.assign('/room/' + encodeURIComponent(f.presence.room_id));
+        });
+        row.appendChild(join);
+      }
+      return row;
+    }
+
+    // ---- data ------------------------------------------------------------------
+    async function refresh() {
+      if (disposed) return;
+      if (!railIsVisible()) return;
+      const mySeq = ++loadSeq;
+
+      if (!getSession()) {
+        renderSignedOut();
+        return;
+      }
+      try {
+        const data = await api('/api/friends');
+        if (disposed || mySeq !== loadSeq) return;
+        renderData(data);
+      } catch (_) {
+        if (disposed || mySeq !== loadSeq) return;
+        // Session may have just been cleared — show the signed-out state.
+        if (!getSession()) renderSignedOut();
+        else renderError();
+      }
+    }
+
+    function onFriendsChanged() {
+      if (changeDebounce) clearTimeout(changeDebounce);
+      changeDebounce = setTimeout(() => refresh(), 400);
+    }
+
+    let resizeTimer = /** @type {any} */ (null);
+    const onResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (disposed) return;
+        if (!isNarrow()) closeDrawer();
+        applyVisibility();
+      }, 150);
+    };
+
+    // ---- wire up -----------------------------------------------------------------
+    refreshBtn.addEventListener('click', () => refresh());
+    closeBtn.addEventListener('click', () => {
+      if (isNarrow()) closeDrawer();
+      else {
+        setRailPrefClosed(true);
+        applyVisibility();
+      }
+    });
+    if (backdrop) backdrop.addEventListener('click', closeDrawer);
+    global.addEventListener('wp:friends-changed', onFriendsChanged);
+    global.addEventListener('resize', onResize);
+
+    const poll = setInterval(() => refresh(), RAIL_REFRESH_MS);
+    applyVisibility();
+    refresh();
+
+    return {
+      refresh,
+      toggle,
+      destroy() {
+        disposed = true;
+        clearInterval(poll);
+        if (changeDebounce) clearTimeout(changeDebounce);
+        if (resizeTimer) clearTimeout(resizeTimer);
+        global.removeEventListener('wp:friends-changed', onFriendsChanged);
+        global.removeEventListener('resize', onResize);
+        closeDrawer();
+        container.innerHTML = '';
+        container.hidden = true;
+        const homeEl = $('home');
+        if (homeEl) homeEl.classList.remove('home--with-rail');
+      },
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // Export
   // ---------------------------------------------------------------------------
   global.WP.Social = {
@@ -1206,5 +1606,8 @@
     mountProfile,
     avatarWithFrame,
     presenceBadge,
+    mountFriendsRail,
+    toggleFriendsRail,
+    refreshFriendsRail,
   };
 })(/** @type {any} */ (window));
