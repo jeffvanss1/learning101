@@ -296,13 +296,22 @@ Sources:
   15 min (shared across viewers); TV-only sources are skipped for movies;
   upstream calls have hard timeouts; the file downloads exactly once; and
   the panel auto-loads on every player open unless opted out via the CC
-  toggle. The subtitle language is decoupled from the audio language by
+  toggle. ROOM SYNC (api-2026-09-13.25): host pause/resume is logged in the
+  chat history (`Host paused the movie`); what the HOST loads (`Host loaded
+  subtitles: The Martian [Indonesian]`) and how they match it (offset)
+  replicate to every client AND to late joiners (persisted in room state;
+  guests keep local override freedom). The panel has a mini timing editor:
+  every cue is a tick on a strip — click one to see its timestamp, hit
+  `Align to playhead` to make that line start NOW (manual match, no mic).
+  The strip is ZOOMED to a 5-minute window that follows the playhead
+  (api-2026-09-13.26). Uploads now actually load the cues (they only
+  counted before). The subtitle language is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching
   reloads instantly. Sync is ONE PRESS ("Shazam-style"): hit ⚡ Sync (or `S`) exactly
   when a line starts being spoken and the next upcoming cue snaps to that
   instant — no arming, no reading a quoted line; repeat presses re-snap
-  (ui-2026-09-13.19). Per-record drop diagnostics
+  (ui-2026-09-13.20). Per-record drop diagnostics
   (`empty:array |dropped:65(host:65@dl.opensubtitles.org)`) make any
   remaining mismatch a one-probe answer. The panel's `fileId`
   is an opaque base64url token of the file URL — `/api/subs/file` can never
@@ -404,7 +413,7 @@ mirrored back to the room (that caused the host to pause itself), so guests
 can never desync the room by clicking inside their own player.
 
 **Controllers can use either seek bar.** The player's own play/pause is
-mirrored for the controller (debounced), and since ui-2026-09-13.19 a seek
+mirrored for the controller (debounced), and since ui-2026-09-13.20 a seek
 performed on the player's OWN seek bar is detected (an unexplained jump
 beyond 1.2s of playback progress) and mirrored to the room as a normal
 seek — no more snap-back, no need to scroll down to the in-app progress
@@ -512,14 +521,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.24",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.26",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.19` and
-   `[WatchParty] API build: api-2026-09-13.24`.
+   `[WatchParty] UI build: ui-2026-09-13.20` and
+   `[WatchParty] API build: api-2026-09-13.26`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
