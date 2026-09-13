@@ -79,6 +79,7 @@
       'subs.tapDone': 'Synced',
       'subs.persisted': 'saved for this title',
       'subs.noneDownloadable': 'Subtitles exist but none are downloadable with this API key/plan.',
+      'subs.gated': 'Found {n} subtitles, but they sit behind a provider approval gate. Upload an .srt meanwhile — it works instantly.',
     },
     id: {
       'nav.home': 'Beranda',
@@ -132,6 +133,7 @@
       'subs.tapDone': 'Sinkron',
       'subs.persisted': 'tersimpan untuk judul ini',
       'subs.noneDownloadable': 'Ada subtitle tetapi tidak ada yang bisa diunduh dengan key/paket API ini.',
+      'subs.gated': 'Ditemukan {n} subtitle, tetapi masih di belakang gerbang persetujuan penyedia. Unggah .srt dulu — langsung berfungsi.',
     },
     es: {
       'nav.home': 'Inicio',
@@ -185,6 +187,7 @@
       'subs.tapDone': 'Sincronizado',
       'subs.persisted': 'guardado para este título',
       'subs.noneDownloadable': 'Hay subtítulos pero ninguno se puede descargar con esta clave/plan.',
+      'subs.gated': 'Se encontraron {n} subtítulos, pero están tras una puerta de aprobación del proveedor. Sube un .srt mientras tanto: funciona al instante.',
     },
     fr: {
       'nav.home': 'Accueil',
@@ -238,6 +241,7 @@
       'subs.tapDone': 'Synchronisé',
       'subs.persisted': 'enregistré pour ce titre',
       'subs.noneDownloadable': 'Des sous-titres existent mais aucun n’est téléchargeable avec cette clé/ce plan.',
+      'subs.gated': '{n} sous-titres trouvés, mais derrière une barrière d’approbation de fournisseur. Déposez un .srt en attendant — ça marche immédiatement.',
     },
     pt: {
       'nav.home': 'In\u00edcio',
@@ -291,6 +295,7 @@
       'subs.tapDone': 'Sincronizada',
       'subs.persisted': 'salvo para este título',
       'subs.noneDownloadable': 'Existem legendas, mas nenhuma pode ser baixada com esta chave/plano.',
+      'subs.gated': 'Encontradas {n} legendas, mas atrás de um portão de aprovação do provedor. Envie um .srt enquanto isso — funciona na hora.',
     },
     ar: {
       'nav.home': '\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629',
@@ -344,6 +349,7 @@
       'subs.tapDone': 'تمت المزامنة',
       'subs.persisted': 'محفوظ لهذا العنوان',
       'subs.noneDownloadable': 'توجد ترجمات لكن لا يمكن تنزيل أي منها بهذا المفتاح/الخطة.',
+      'subs.gated': 'تم العثور على {n} ترجمات لكنها خلف بوابة موافقة المزوّد. ارفع ملف srt في هذه الأثناء — يعمل فورًا.',
     },
   };
 

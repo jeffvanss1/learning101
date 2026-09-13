@@ -254,8 +254,12 @@
    * "nothing found" must never be the end of the road when English ones exist.
    * @param {{ type: string, id: string, season?: number, episode?: number }} v
    */
+  /** @type {string} '' | 'gated:13' — what the last search chain saw dropped as gated */
+  let lastGatedSeen = '';
+
   async function autoLoad(v) {
     if (!v || !v.id) return;
+    lastGatedSeen = '';
     const primary = langSel ? langSel.value : 'en';
     const chain = primary === 'en' ? ['en', ''] : [primary, 'en', ''];
     /** @type {string[]} */
@@ -288,6 +292,14 @@
         tr('subs.loaded', 'Loaded') +
           ': ' + (best.release || 'subtitle') +
           ' [' + label + ', ' + (best.downloads || 0) + '\u2193]' + suffix
+      );
+      return;
+    }
+    if (lastGatedSeen) {
+      setStatus(
+        tr('subs.gated', 'Found {n} subtitles, but they sit behind a provider approval gate. Upload an .srt meanwhile — it works instantly.').replace('{n}', lastGatedSeen.replace('gated:', '')) +
+          ' [' + lastGatedSeen + ']',
+        true
       );
       return;
     }

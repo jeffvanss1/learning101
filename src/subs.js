@@ -289,8 +289,9 @@ export function wyzieHostPolicy(url) {
     const u = new URL(String(url));
     if (u.protocol !== 'https:') return 'foreign';
     const host = u.hostname;
+    /** @param {string[]} list */
     const matches = (list) =>
-      list.some((suffix) => host === suffix.slice(1) || host.endsWith(suffix));
+      list.some((/** @type {string} */ suffix) => host === suffix.slice(1) || host.endsWith(suffix));
     if (matches(WYZIE_GATED_SUFFIXES)) return 'gated';
     if (matches(WYZIE_ALLOWED_SUFFIXES)) return 'fetchable';
     return 'foreign';
