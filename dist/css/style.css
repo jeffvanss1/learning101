@@ -1524,3 +1524,133 @@ button {
 .chat-form {
   padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
 }
+
+/* ---- Custom subtitles (subs.js) --------------------------------------------------- */
+/* Overlay: rendered on top of the player iframe (pointer-events: none), synced
+   to the player clock reported via postMessage. Panel: CC button in the
+   room header toggles it; needs .player-wrap to be the positioning context. */
+.player-wrap {
+  position: relative;
+}
+
+.subs-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 6;
+  padding: 0 6%;
+}
+
+.subs-overlay__text {
+  display: none;
+  max-width: 100%;
+  white-space: pre-line;
+  text-align: center;
+  font-size: clamp(15px, 2.2vw, 26px);
+  line-height: 1.35;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.95), 0 2px 6px rgba(0, 0, 0, 0.85);
+}
+
+.subs-overlay.subs--sm .subs-overlay__text { font-size: clamp(13px, 1.7vw, 19px); }
+.subs-overlay.subs--lg .subs-overlay__text { font-size: clamp(18px, 2.8vw, 34px); }
+.subs-overlay.subs--xl .subs-overlay__text { font-size: clamp(21px, 3.5vw, 44px); }
+
+.subs-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 300px;
+  max-width: calc(100% - 24px);
+  background: var(--bg-soft, #16181f);
+  border: 1px solid var(--border, #2a2d3a);
+  border-radius: var(--radius, 12px);
+  padding: 12px;
+  z-index: 8;
+  box-shadow: var(--shadow, 0 12px 32px rgba(0, 0, 0, 0.45));
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.subs-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.subs-panel__title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.subs-panel__x {
+  background: none;
+  border: 0;
+  color: var(--text-dim, #8b90a0);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.subs-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.subs-panel__select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg, #0d0e13);
+  color: inherit;
+  border: 1px solid var(--border, #2a2d3a);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.subs-panel__file {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim, #8b90a0);
+}
+
+.subs-panel__label {
+  font-size: 12px;
+  color: var(--text-dim, #8b90a0);
+}
+
+.subs-panel__offset {
+  min-width: 52px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.subs-panel__status {
+  font-size: 12px;
+  color: var(--text-dim, #8b90a0);
+  min-height: 16px;
+  margin-top: 4px;
+}
+
+.subs-panel__status--err {
+  color: #ff6b6b;
+}
+
+.subs-panel__hint {
+  font-size: 11px;
+  color: var(--text-dim, #8b90a0);
+  opacity: 0.75;
+  margin-top: 4px;
+}

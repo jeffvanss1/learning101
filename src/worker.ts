@@ -13,6 +13,7 @@ import { WatchRoom } from './WatchRoom.js';
 import { classifyIsAnime, matchAnilist } from './anilist.js';
 import { routeApi } from './router.js';
 import { injectGeoScript, resolveGeo } from './geo.js';
+import { buildSearchQuery, fetchSubtitleVtt, pickBest, shapeSearchResponse } from './subs.js';
 import type { Env } from './types.js';
 
 export { WatchRoom };
@@ -238,6 +239,63 @@ export default {
         return await proxyTmdb(rest, url.search, apiKey, geo.tmdbLang);
       } catch (e) {
         return json({ error: 'TMDB unavailable', detail: String(e) }, 502);
+      }
+    }
+
+    // --- Subtitles (OpenSubtitles v3, own overlay in the player) ---------------
+    if (path.startsWith('/api/subs/')) {
+      const key = env.OPENSUBTITLES_API_KEY;
+      if (!key) {
+        return json(
+          {
+            error:
+              'OPENSUBTITLES_API_KEY is not configured. Add it as a Worker secret ' +
+              '(`wrangler secret put OPENSUBTITLES_API_KEY`) or to .dev.vars. ' +
+              'Uploading a subtitle file still works without it.',
+          },
+          503
+        );
+      }
+      try {
+        if (path === '/api/subs/search' && request.method === 'GET') {
+          const type = url.searchParams.get('type') === 'movie' ? 'movie' : 'tv';
+          const tmdb = url.searchParams.get('tmdb') || '';
+          if (!/^\d+$/.test(tmdb)) return json({ error: 'tmdb id required' }, 400);
+          const query = buildSearchQuery({
+            type: type,
+            tmdb: tmdb,
+            season: url.searchParams.get('season') ? Number(url.searchParams.get('season')) : null,
+            episode: url.searchParams.get('episode') ? Number(url.searchParams.get('episode')) : null,
+            lang: url.searchParams.get('lang') || undefined,
+          });
+          const res = await fetch(
+            'https://api.opensubtitles.com/api/v1/subtitles?' + query,
+            { headers: { 'Api-Key': key, Accept: 'application/json', 'User-Agent': 'WatchParty v1.0' } }
+          );
+          if (!res.ok) return json({ error: 'OpenSubtitles ' + res.status }, 502);
+          const payload: any = await res.json();
+          return json(
+            { results: shapeSearchResponse(payload), best: pickBest(payload && payload.data), total: payload && payload.total },
+            200,
+            { 'Cache-Control': 'public, max-age=600' }
+          );
+        }
+        if (path === '/api/subs/file' && request.method === 'GET') {
+          const fileId = url.searchParams.get('fileId') || '';
+          if (!/^\d+$/.test(fileId)) return json({ error: 'fileId required' }, 400);
+          const { vtt, cached } = await fetchSubtitleVtt(fileId, key, env.PRESENCE_KV || null);
+          return new Response(vtt, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/vtt; charset=utf-8',
+              'Cache-Control': cached ? 'public, max-age=86400' : 'public, max-age=600',
+              'X-Subs-Cache': cached ? 'hit' : 'miss',
+              ...corsHeaders(),
+            },
+          });
+        }
+      } catch (e) {
+        return json({ error: 'subtitle lookup failed', detail: String(e) }, 502);
       }
     }
 

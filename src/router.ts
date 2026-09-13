@@ -34,7 +34,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-13.7';
+export const WORKER_BUILD = 'api-2026-09-13.8';
 
 /** Routes that require the D1/KV bindings (the profile/presence surface). */
 const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;
@@ -79,7 +79,7 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
     return json({
       ok: true,
       build: WORKER_BUILD,
-      routes: ['auth', 'geo', 'user', 'search', 'friends', 'presence', 'rooms', 'tmdb'],
+      routes: ['auth', 'geo', 'subs', 'user', 'search', 'friends', 'presence', 'rooms', 'tmdb'],
       storage: { db: !!env.DB, presenceKv: !!env.PRESENCE_KV },
     }, 200, { 'Cache-Control': 'no-store' });
   }

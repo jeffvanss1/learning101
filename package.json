@@ -8,7 +8,7 @@
     "dev": "wrangler dev",
     "dev:local": "wrangler dev --ip 0.0.0.0 --port 8787",
     "deploy": "wrangler deploy",
-    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.frontend.json && node --check src/WatchRoom.js && node --check src/anilist.js && node --check dist/js/i18n.js && node --check dist/js/utils.js && node --check dist/js/api.js && node --check dist/js/player.js && node --check dist/js/catalog.js && node --check dist/js/social.js && node --check dist/js/types.js && node --check dist/js/app.js",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.frontend.json && node --check src/WatchRoom.js && node --check src/anilist.js && node --check dist/js/i18n.js && node --check dist/js/utils.js && node --check dist/js/api.js && node --check dist/js/player.js && node --check dist/js/subs.js && node --check dist/js/catalog.js && node --check dist/js/social.js && node --check dist/js/types.js && node --check dist/js/app.js",
     "test": "node --test tests/*.test.mjs",
     "setup:remote": "node scripts/setup-cloudflare.mjs",
     "db:migrate:local": "wrangler d1 migrations apply watchparty-db --local",

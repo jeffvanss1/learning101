@@ -360,9 +360,16 @@
   // --------------------------------------------------------------------------
   // Entering the room
   // --------------------------------------------------------------------------
+  // Keep the subtitle overlay in sync with the room's current video (it reads
+  // the same clock the sync manager consumes and persists offsets per title).
+  function notifySubs() {
+    if (WP.Subs) WP.Subs.setVideo(state.video);
+  }
+
   function enterRoom(roomId, video) {
     state.roomId = roomId;
     state.video = video || null;
+    notifySubs();
     state.peers = [];
     state.myPeerId = null;
     state.isOwner = false;
@@ -463,6 +470,14 @@
     // Mobile chat sheet toggle (header button + tapping the chat header).
     const chatToggle = $('chat-toggle');
     if (chatToggle) chatToggle.onclick = onToggleChat;
+
+    // Custom subtitles: CC button toggles the panel; the overlay lives in
+    // .player-wrap and tracks the room clock via postMessage (subs.js).
+    if (WP.Subs) {
+      WP.Subs.mount(document.querySelector('.player-wrap'));
+      const subsBtn = $('subs-toggle');
+      if (subsBtn) subsBtn.onclick = () => WP.Subs.togglePanel();
+    }
     const sideHead = document.querySelector('.sidebar__head');
     if (sideHead) sideHead.onclick = onToggleChat;
 
@@ -505,6 +520,7 @@
       if (msg.video && msg.video.src) {
         state.video = msg.video;
         updateVideoUI();
+        notifySubs();
       }
       updateHostUI();
       if (state.sync) state.sync.handleServerMessage(msg);
@@ -542,6 +558,7 @@
     client.on('videoChange', (msg) => {
       state.video = msg.video;
       updateVideoUI();
+      notifySubs();
       if (state.sync) state.sync.handleServerMessage(msg);
     });
 
@@ -824,6 +841,7 @@
     state.video = video;
     global.__wpCurrentVideo = video;
     updateVideoUI();
+    notifySubs();
     if (state.sync) state.sync.loadVideo(video);
     if (state.client) state.client.send({ type: 'videoChange', video });
   }
@@ -1156,6 +1174,7 @@
     if (WP.Social && WP.Social.getSession()) WP.Social.startIdlePresence();
     state.chatLoaded = false;
     state.video = null;
+    notifySubs();
     state.isOwner = false;
     state.amAllowed = false;
     state.myPeerId = null;

@@ -269,6 +269,32 @@ side-nav "Friends" item toggles whichever mode applies; surface changes
 arrive as `wp:view-changed` (dispatched by `routeCurrent`/boot). Polls
 `/api/friends` every 30s while visible.
 
+## Custom subtitles (auto-synced overlay)
+
+The embedded player's built-in subs are frequently out of sync — and we
+can't fix the embed's renderer. We CAN render our own: the Bingr player
+reports its playback clock via postMessage (`PLAYER_EVENT` →
+`playerstatus.currentTime`), so `dist/js/subs.js` draws a subtitle overlay
+driven by that clock (interpolated between reports), with a per-title
+offset you can nudge (±¼s / ±1s buttons or `[` / `]` keys) — the offset is
+**persisted per movie/episode** (`wp:suboff:*`), so a fix stays fixed.
+
+Sources:
+- **Auto-load** (OpenSubtitles v3 via the worker): `GET /api/subs/search`
+  finds subtitles for the exact TMDB id + season/episode (best candidate
+  auto-picked: real dialogue > machine-translated, popular releases,
+  23.976/24 fps); `GET /api/subs/file?fileId=` downloads and converts
+  SRT → WebVTT, cached in KV for 7 days (`subs:vtt:*`) so the API's tight
+  daily download quota is amortized across all users. Needs the
+  `OPENSUBTITLES_API_KEY` secret (`wrangler secret put
+  OPENSUBTITLES_API_KEY` — free key at api.opensubtitles.com).
+- **Upload**: any `.srt`/`.vtt` file, no key needed.
+
+The CC button in the room header toggles the panel. Caveats: custom subs
+follow the **main Bingr player** only (Server-2 fallback embeds don't
+report a clock — the panel says so); "auto-sync" here = exact-episode
+auto-pick + clock-driven rendering + persistent nudge, not audio analysis.
+
 ## Geo language detection (country → language)
 
 The site renders in the visitor's country language with **zero IP databases
@@ -427,14 +453,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.7",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.8",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.12` and
-   `[WatchParty] API build: api-2026-09-13.7`.
+   `[WatchParty] UI build: ui-2026-09-13.13` and
+   `[WatchParty] API build: api-2026-09-13.8`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.

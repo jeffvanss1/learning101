@@ -30,6 +30,8 @@ export interface Env {
   PRESENCE_KV: PresenceKV;
   /** TMDB catalog key (secret in production, .dev.vars locally). */
   TMDB_API_KEY?: string;
+  /** OpenSubtitles v3 API key (https://api.opensubtitles.com). */
+  OPENSUBTITLES_API_KEY?: string;
   /** HMAC secret for session tokens (`wrangler secret put SESSION_SECRET`). */
   SESSION_SECRET?: string;
 }
