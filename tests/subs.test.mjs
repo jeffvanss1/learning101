@@ -348,7 +348,9 @@ const El2 = class El {
     return c;
   }
   setAttribute() {}
-  addEventListener() {}
+  addEventListener(t, f) {
+    (this._h || (this._h = {}))[t] = f; // recorded so tests can fire real handlers
+  }
   removeEventListener() {}
   get offsetWidth() {
     return 0;
@@ -389,7 +391,9 @@ async function freshSubs() {
       return c;
     }
     setAttribute() {}
-    addEventListener() {}
+    addEventListener(t, f) {
+      (this._h || (this._h = {}))[t] = f; // recorded so tests can fire real handlers
+    }
     removeEventListener() {}
     get offsetWidth() {
       return 0;
@@ -489,6 +493,50 @@ test('one-press sync targets the NEXT upcoming line and re-snaps on repeat press
   Subs2.syncSnap();
   assert.equal(Subs2.__test.state().offset, 0, 'no cues -> no offset change');
   assert.ok(Subs2.__test.state().status.length > 0, 'tells the user why');
+});
+
+test('subtitle language crosses audio: defaults to geo locale, persists choice, live-reloads on switch', async () => {
+  // English audio + Indonesian subs is a first-class path: the selector
+  // defaults to the geo UI language (id for Indonesian users), the choice is
+  // remembered across videos, and switching reloads immediately.
+  const seenLangs = [];
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/subs/search')) {
+      const m = /[?&]lang=([^&]*)/.exec(u);
+      seenLangs.push(m ? decodeURIComponent(m[1]) : '(none)');
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          results: [{ fileId: 'ID1', release: 'Ganool.BluRay', lang: 'id', downloads: 4409, machineTranslated: false }],
+          best: { fileId: 'ID1', release: 'Ganool.BluRay', lang: 'id', downloads: 4409 },
+        }),
+      });
+    }
+    if (u.includes('fileId=ID1')) {
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:01,000 --> 00:00:02,000\nMark baru saja menemukan kotoran\n' });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+
+  const { Subs, store } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  Subs.__test.setLang('id'); // like the geo default for an Indonesian user
+  Subs.setVideo({ type: 'movie', id: '286217' }); // The Martian (English audio)
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(seenLangs, ['id'], 'searched INDONESIAN subs for the English movie');
+  assert.ok(Subs.__test.state().cues === 1, 'Indonesian cues loaded');
+
+  // Switch to English in the selector -> the REAL change handler fires:
+  // choice saved + immediate reload in the new language.
+  const sel = findClass(wrap, 'subs-panel__select');
+  assert.ok(sel && sel._h && sel._h.change, 'selector records a change handler');
+  Subs.__test.setLang('en');
+  sel._h.change();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(store['wp:subslang'], 'en', 'choice persisted');
+  assert.ok(seenLangs.indexOf('en') !== -1, 'reloaded in the new language: ' + seenLangs.join(','));
 });
 
 test('auto-load iterates candidates when the top one fails to download', async () => {

@@ -377,8 +377,22 @@
       opt.value = code;
       langSel.appendChild(opt);
     });
-    langSel.value = (WP.I18N && WP.I18N.language) || 'en';
+    // Cross-language by default: English audio + Indonesian subs is the
+    // NORM here. Priority: the user's saved choice > geo UI language > en.
+    try {
+      const saved = localStorage.getItem('wp:subslang');
+      langSel.value = saved || (WP.I18N && WP.I18N.language) || 'en';
+    } catch (_) {
+      langSel.value = (WP.I18N && WP.I18N.language) || 'en';
+    }
     row1.appendChild(langSel);
+    // Switching language = save the choice + reload subs immediately.
+    langSel.addEventListener('change', () => {
+      try {
+        localStorage.setItem('wp:subslang', langSel.value);
+      } catch (_) {}
+      if (video) void autoLoad(video); // instant reload in the new language
+    });
     const loadBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.load', 'Auto-load')));
     loadBtn.type = 'button';
     loadBtn.addEventListener('click', () => {
