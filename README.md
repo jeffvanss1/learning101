@@ -129,8 +129,10 @@ stored, so it can never be re-displayed or leaked from the database.
 - **Any device:** paste your access code ("Have an access code? Sign in
   instead" in the name dialog, or `POST /api/auth/claim`) and the profile is
   yours — that code *is* the password.
-- **Names are protected:** once an account has a code, the name alone can
-  never log anyone in (`POST /api/auth/session` returns 409).
+- **Signup can never be blocked by a name:** display names are not unique
+  (Steam-style). If a handle is taken, signup auto-suffixes it
+  (`alice` → `alice-1`, `-2`, …) while keeping your display name; the
+  original account stays protected and reachable only via its code.
 - **Rotation:** "Regenerate code" in the profile editor (`POST
   /api/auth/code`) retires the old code and issues a new one.
 - **Legacy accounts** (created before codes) upgrade transparently: the next

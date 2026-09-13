@@ -90,16 +90,9 @@ export async function handleSessionCreate(request: Request, env: Env): Promise<R
   const avatarUrl = String(body.avatarUrl ?? '').slice(0, 500);
   const now = Date.now();
 
+  // Legacy account (predates codes): upgrade in place, hand out a code.
   const existing = await selectByUsername(env, rawUsername);
-  if (existing) {
-    if (existing.code_hash) {
-      // Protected account: only its access code may claim it.
-      return errorJson(
-        409,
-        'That name is taken. Pick another, or sign in with your access code.'
-      );
-    }
-    // Legacy account (predates codes): upgrade in place, hand out a code.
+  if (existing && !existing.code_hash) {
     const accessCode = generateAccessCode();
     const codeHash = await hashCode(normalizeCode(accessCode), env);
     await env.DB.prepare(
@@ -116,33 +109,49 @@ export async function handleSessionCreate(request: Request, env: Env): Promise<R
     );
   }
 
-  // Fresh account.
-  const accessCode = generateAccessCode();
-  const codeHash = await hashCode(normalizeCode(accessCode), env);
-  const id = crypto.randomUUID();
-  try {
-    await env.DB.prepare(
-      `INSERT INTO users (id, username, display_name, avatar_url, avatar_frame_id, bio, created_at, last_seen_at, code_hash)
-       VALUES (?1, ?2, ?3, ?4, 'default', '', ?5, ?5, ?6)`
-    )
-      .bind(id, rawUsername, displayName, avatarUrl, now, codeHash)
-      .run();
-  } catch (e) {
-    // Lost a create race against the UNIQUE(username) constraint?
-    if (/UNIQUE/i.test(String(e))) {
-      return errorJson(
-        409,
-        'That name is taken. Pick another, or sign in with your access code.'
-      );
+  // Fresh account. Display names NEVER block signup (Steam-style): if the
+  // handle is taken — by a protected account or anyone else — we resolve the
+  // next free suffixed handle (alice -> alice-2 -> alice-3). The user keeps
+  // the display name they typed; only the URL handle differs.
+  const INSERT = `INSERT INTO users (id, username, display_name, avatar_url, avatar_frame_id, bio, created_at, last_seen_at, code_hash)
+    VALUES (?1, ?2, ?3, ?4, 'default', '', ?5, ?5, ?6)`;
+
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const candidate =
+      attempt === 0 && !existing ? rawUsername : `${rawUsername}-${attempt + 1}`;
+    if (RESERVED_USERNAMES.has(candidate)) continue;
+
+    const accessCode = generateAccessCode();
+    const codeHash = await hashCode(normalizeCode(accessCode), env);
+    const id = crypto.randomUUID();
+    try {
+      await env.DB.prepare(INSERT)
+        .bind(id, candidate, displayName, avatarUrl, now, codeHash)
+        .run();
+    } catch (e) {
+      if (/UNIQUE|constraint/i.test(String(e))) continue; // lost a race → next suffix
+      return errorJson(500, 'Could not create session', String(e));
     }
-    return errorJson(500, 'Could not create session', String(e));
+
+    const row = await selectByUsername(env, candidate);
+    if (!row) continue; // should not happen; try the next suffix
+    const token = await issueToken(env, { id: row.id, username: row.username });
+    // `accessCode` is returned exactly once — the server keeps only the hash.
+    return json(
+      {
+        token,
+        user: toPublicUser(row),
+        accessCode,
+        created: true,
+        // Tells the client the handle was suffixed (display name unchanged).
+        handleAdjusted: candidate !== rawUsername,
+      },
+      201
+    );
   }
 
-  const row = await selectByUsername(env, rawUsername);
-  if (!row) return errorJson(500, 'Session user not found after upsert');
-  const token = await issueToken(env, { id: row.id, username: row.username });
-  // `accessCode` is returned exactly once — the server keeps only the hash.
-  return json({ token, user: toPublicUser(row), accessCode, created: true }, 201);
+  // ~60 suffixed handles all taken — practically impossible.
+  return errorJson(500, 'Could not allocate a free handle. Try a different name.');
 }
 
 /**

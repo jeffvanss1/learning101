@@ -55,13 +55,23 @@
     return session;
   }
 
+  let storageWarned = false;
+
   /** @param {SessionState | null} s */
   function saveSession(s) {
     session = s;
     try {
       if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s));
       else localStorage.removeItem(SESSION_KEY);
-    } catch (_) {}
+    } catch (_) {
+      // Sandboxed iframe / blocked storage: the session still works for this
+      // page (in-memory) but dies on reload — SAY so instead of silently
+      // looping users back to "anonymous" after every refresh.
+      if (!storageWarned && s) {
+        storageWarned = true;
+        toast('This page can\u2019t save data locally (blocked storage) \u2014 your sign-in lasts until you reload. Save your access code!', true);
+      }
+    }
   }
 
   function getSession() {
@@ -135,6 +145,10 @@
       saveSession(fresh);
       // Let the friends rail (and anything else) react to sign-in.
       global.dispatchEvent(new CustomEvent('wp:friends-changed'));
+      // Handle was taken and auto-suffixed (alice -> alice-2) — surface it.
+      if (data.handleAdjusted) {
+        toast('Your display name stays “' + fresh.user.displayName + '” — your handle is @' + fresh.user.username + '.');
+      }
       // The access code is shown once — make sure the user sees it.
       if (data.accessCode) void showAccessCode(String(data.accessCode));
       return { ok: true, session: fresh };
