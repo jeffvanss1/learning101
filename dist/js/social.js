@@ -1369,8 +1369,12 @@
     } catch (_) {}
   }
 
-  /** @param {HTMLElement} container */
+  /**
+   * @param {HTMLElement | null} container no-ops when the rail markup is
+   * missing (e.g. a stale cached index.html paired with fresh scripts)
+   */
   function mountFriendsRail(container) {
+    if (!container) return null;
     if (railHandle) railHandle.destroy();
     railHandle = createFriendsRail(container);
     return railHandle;

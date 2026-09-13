@@ -307,6 +307,23 @@ invite link (or `/room/<id>`) in another tab to test sync + chat.
 > signaling and room persistence work offline. The Bingr catalog proxy requires
 > network egress, which Cloudflare Workers have in production.
 
+## Troubleshooting
+
+**"Catalog not showing" / the home library is empty**
+The browse feed is entirely TMDB-driven. Check, in order:
+
+1. **No TMDB key configured** — `/api/tmdb/*` answers
+   `503 {"error": "TMDB_API_KEY is not configured…"}`. Fix: put the key in
+   `.dev.vars` (local) or `wrangler secret put TMDB_API_KEY` (production).
+2. **No outbound internet** — sandboxed/air-gapped environments can't reach
+   `api.themoviedb.org` at all; the app correctly shows
+   "Could not load the library" while profiles/search/friends (D1 + KV, local
+   simulation) keep working.
+3. **Storage bindings missing** — profile routes answer 503 with setup
+   instructions, but the catalog keeps working: `npm run setup:remote`.
+4. **Stale browser cache** — a hard refresh (Cmd/Ctrl+Shift+R) re-fetches the
+   versioned scripts.
+
 ## Checks & tests
 
 ```bash

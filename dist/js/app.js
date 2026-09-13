@@ -76,45 +76,53 @@
         resolve(name);
       };
 
-      // Access-code sign-in view (profile travels between devices).
+      // Access-code sign-in view (profile travels between devices). All
+      // elements are optional — a stale cached page just loses the view.
       const nameForm = $('name-form');
       const codeForm = $('name-code-form');
       const codeInput = $('name-code-input');
       const codeErr = $('name-code-error');
+      const codeToggle = $('name-code-toggle');
+      const codeBack = $('name-code-back');
+      const altRow = $('name-modal-alt');
+      const hasCodeView = !!(nameForm && codeForm && codeInput && codeErr && codeToggle && codeBack);
       const showView = (/** @type {string} */ which) => {
+        if (!hasCodeView) return;
         nameForm.hidden = which !== 'name';
-        $('name-modal-alt').hidden = which !== 'name';
+        if (altRow) altRow.hidden = which !== 'name';
         codeForm.hidden = which !== 'code';
         if (which === 'code') codeInput.focus();
         else input.focus();
       };
-      $('name-code-toggle').onclick = () => showView('code');
-      $('name-code-back').onclick = () => {
-        codeErr.textContent = '';
-        showView('name');
-      };
+      if (hasCodeView) {
+        codeToggle.onclick = () => showView('code');
+        codeBack.onclick = () => {
+          codeErr.textContent = '';
+          showView('name');
+        };
 
-      codeForm.onsubmit = async (e) => {
-        e.preventDefault();
-        const raw = codeInput.value.trim();
-        if (!raw) {
-          codeErr.textContent = 'Enter your access code.';
-          return;
-        }
-        codeErr.textContent = '';
-        if (!WP.Social) return;
-        const res = await WP.Social.claimWithCode(raw);
-        if (!res.ok) {
-          codeErr.textContent = res.message || 'That code does not match any account.';
-          return;
-        }
-        state.name = res.session.user.displayName;
-        saveName(state.name);
-        WP.Social.startIdlePresence();
-        refreshProfileButton();
-        toast('Welcome back, ' + state.name + '!');
-        done(state.name);
-      };
+        codeForm.onsubmit = async (e) => {
+          e.preventDefault();
+          const raw = codeInput.value.trim();
+          if (!raw) {
+            codeErr.textContent = 'Enter your access code.';
+            return;
+          }
+          codeErr.textContent = '';
+          if (!WP.Social) return;
+          const res = await WP.Social.claimWithCode(raw);
+          if (!res.ok) {
+            codeErr.textContent = res.message || 'That code does not match any account.';
+            return;
+          }
+          state.name = res.session.user.displayName;
+          saveName(state.name);
+          WP.Social.startIdlePresence();
+          refreshProfileButton();
+          toast('Welcome back, ' + state.name + '!');
+          done(state.name);
+        };
+      }
 
       nameForm.onsubmit = (e) => {
         e.preventDefault();

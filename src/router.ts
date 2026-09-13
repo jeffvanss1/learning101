@@ -32,16 +32,24 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
   return me;
 }
 
+/** Routes that require the D1/KV bindings (the profile/presence surface). */
+const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;
+
 /** Returns a Response for any /api route this module owns, or null to fall through. */
 export async function routeApi(request: Request, env: Env, path: string): Promise<Response | null> {
   // Helpful 503 (not a raw 500) if the storage bindings are missing — e.g. a
   // deploy where D1/KV were never created. `npm run setup:remote` fixes it.
+  // Scoped STRICTLY to the profile routes: /api/tmdb/*, /api/rooms and
+  // /api/anilist/* must keep working even without these bindings.
   if (!env.DB || !env.PRESENCE_KV) {
-    return errorJson(
-      503,
-      'Profile/presence storage is not configured for this deployment.',
-      'Run `npm run setup:remote` (creates the D1 database + KV namespace and updates wrangler.toml), then `npm run db:migrate:remote` and redeploy. See README → Setup.'
-    );
+    if (STORAGE_ROUTES_RE.test(path)) {
+      return errorJson(
+        503,
+        'Profile/presence storage is not configured for this deployment.',
+        'Run `npm run setup:remote` (creates the D1 database + KV namespace and updates wrangler.toml), then `npm run db:migrate:remote` and redeploy. See README → Setup.'
+      );
+    }
+    return null;
   }
   const method = request.method;
 
