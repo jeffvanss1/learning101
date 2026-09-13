@@ -292,7 +292,11 @@ Sources:
   ?format=srt&encoding=UTF-8`, which serves the same file publicly (verified
   live 2026-09-14, en + id). Underivable gated URLs drop to the authenticated
   OpenSubtitles fallback. Files are fetched server-side behind an explicit
-  suffix allowlist and KV-cached as VTT. Per-record drop diagnostics
+  suffix allowlist and KV-cached as VTT. Search responses are KV-cached
+  15 min (shared across viewers); TV-only sources are skipped for movies;
+  upstream calls have hard timeouts; the file downloads exactly once; and
+  the panel auto-loads on every player open unless opted out via the CC
+  toggle. Per-record drop diagnostics
   (`empty:array |dropped:65(host:65@dl.opensubtitles.org)`) make any
   remaining mismatch a one-probe answer. The panel's `fileId`
   is an opaque base64url token of the file URL — `/api/subs/file` can never
@@ -502,14 +506,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.21",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.22",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.18` and
-   `[WatchParty] API build: api-2026-09-13.21`.
+   `[WatchParty] API build: api-2026-09-13.22`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
