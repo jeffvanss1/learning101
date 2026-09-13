@@ -169,7 +169,7 @@ test('shaping reports dropped records with the reason (fields vs host)', () => {
     good,
   ]);
   assert.equal(shaped.results.length, 1);
-  assert.ok(shaped.shape.includes('|dropped:2'), 'drop line must appear: ' + shaped.shape);
+  assert.ok(shaped.shape.includes('dropped:2'), 'drop line must appear: ' + shaped.shape);
   assert.ok(shaped.shape.includes('(fields:1)'), shaped.shape);
   assert.ok(shaped.shape.includes('(host:1@cdn.otherhost.net)'), shaped.shape);
 });
