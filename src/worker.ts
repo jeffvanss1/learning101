@@ -14,6 +14,7 @@ import { classifyIsAnime, matchAnilist } from './anilist.js';
 import { routeApi } from './router.js';
 import { injectGeoScript, resolveGeo } from './geo.js';
 import { buildSearchQuery, fetchSubtitleVtt, pickBest, shapeSearchResponse } from './subs.js';
+import { buildTmdbUrl, looksLikeToken } from './tmdburl.js';
 import type { Env } from './types.js';
 
 export { WatchRoom };
@@ -66,23 +67,18 @@ function json(data: unknown, status = 200, extra: Record<string, string> = {}): 
   });
 }
 
-// Looks like a TMDB v4 "API Read Access Token" (JWT)? Then use Bearer auth.
-function looksLikeToken(key: string): boolean {
-  return typeof key === 'string' && key.length > 60 && key.split('.').length === 3;
-}
-
 async function proxyTmdb(
   path: string,
   search: string,
   apiKey: string,
   language?: string
 ): Promise<Response> {
-  // Localized content: the locale is part of the URL (and therefore of the
-  // cache key) — TMDB returns localized titles/overviews per language.
-  const langPart = language
-    ? (search.includes('?') ? '&' : '?') + 'language=' + encodeURIComponent(language)
-    : '';
-  const target = TMDB_ORIGIN + path + search + langPart;
+  // Canonical URL: the query is re-parsed and re-serialized (buildTmdbUrl),
+  // so exactly one '?' ever reaches upstream — the geo feature regressed
+  // this into `?language=..?api_key=..` on parameter-less paths (details),
+  // which TMDB read as an invalid key. Localized content stays part of the
+  // URL (and therefore of the cache key).
+  const target = buildTmdbUrl(TMDB_ORIGIN, path, search, apiKey, language);
 
   const hit = catalogCache.get(target);
   if (hit && hit.expires > Date.now()) {
@@ -97,10 +93,8 @@ async function proxyTmdb(
   }
 
   const useBearer = looksLikeToken(apiKey);
-  const separator = search.includes('?') ? '&' : '?';
-  const url = useBearer ? target : target + separator + 'api_key=' + encodeURIComponent(apiKey);
 
-  const upstream = await fetch(url, {
+  const upstream = await fetch(target, {
     method: 'GET',
     headers: {
       Accept: 'application/json',

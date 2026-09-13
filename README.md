@@ -306,6 +306,13 @@ request at the edge. Two layers localize:
    come back localized for every mapped country — e.g. a German IP gets
    German titles even though the UI chrome has no German dictionary yet.
    The locale is part of the proxy cache key.
+> **Deploy note:** the geo feature initially broke detail clicks with
+> "Invalid API key" — appending `?language=..` before `api_key` corrupted
+> parameter-less URLs (`/movie/{id}`) into `..?language=..?api_key=..`.
+> TMDB URLs are now built exclusively by `buildTmdbUrl` (src/tmdburl.js),
+> which re-serializes the query (one `?` guaranteed) and is pinned by
+> `tests/tmdb-url.test.mjs`.
+
 2. **UI chrome** (`dist/js/i18n.js`): the worker injects `window.WP_GEO`
    into every HTML response and the page applies dictionaries to
    `[data-i18n]` / `[data-i18n-placeholder]` elements. Shipped UI languages:
@@ -453,14 +460,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.8",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.9",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.13` and
-   `[WatchParty] API build: api-2026-09-13.8`.
+   `[WatchParty] API build: api-2026-09-13.9`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
