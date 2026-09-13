@@ -283,10 +283,16 @@ Sources:
 - **Auto-load** (**Wyzie Subs primary** — free key at store.wyzie.io/redeem,
   1000 req/day, set via `wrangler secret put WYZIE_API_KEY`): the worker
   proxies sub.wyzie.io (search by TMDB id + season/episode, `format=srt`);
-  subtitle files are the SOURCE's direct URLs (live API: `dl.opensubtitles.org`
-  etc. — the docs' `sub.wyzie.io/c/...` examples lag behind), fetched
-  server-side behind an explicit suffix allowlist (`.wyzie.io`,
-  `.opensubtitles.org`) and KV-cached as VTT. Per-record drop diagnostics
+  the search fans out over exactly the source codes the key may use
+  (discovered live via `GET /sources`, KV-cached 24h; `WYZIE_SOURCES` env
+  overrides). The live API returns the SOURCE's raw download URLs — for the
+  free `charlie` source these are GATED (`dl.opensubtitles.org/.../
+  vrf-<hash>/file/<id>`, 401 unauthenticated) — and the shaper REWRITES them
+  to Wyzie's own documented proxy path `sub.wyzie.io/c/<hash>/id/<id>
+  ?format=srt&encoding=UTF-8`, which serves the same file publicly (verified
+  live 2026-09-14, en + id). Underivable gated URLs drop to the authenticated
+  OpenSubtitles fallback. Files are fetched server-side behind an explicit
+  suffix allowlist and KV-cached as VTT. Per-record drop diagnostics
   (`empty:array |dropped:65(host:65@dl.opensubtitles.org)`) make any
   remaining mismatch a one-probe answer. The panel's `fileId`
   is an opaque base64url token of the file URL — `/api/subs/file` can never
@@ -496,14 +502,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.20",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.21",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.18` and
-   `[WatchParty] API build: api-2026-09-13.20`.
+   `[WatchParty] API build: api-2026-09-13.21`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
