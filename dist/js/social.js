@@ -323,11 +323,22 @@
       },
     });
     let data = null;
+    let notJson = false;
     try {
       data = await res.json();
-    } catch (_) {}
+    } catch (_) {
+      notJson = true;
+    }
     if (!res.ok) {
       throw new Error((data && data.error) || 'Request failed (' + res.status + ')');
+    }
+    // A 2xx whose body isn't JSON means the worker answered with the SPA
+    // fallback (index.html): the deployed worker predates this API route.
+    // Say so loudly instead of silently returning null.
+    if (notJson || data === null) {
+      throw new Error(
+        'The server returned HTML instead of JSON — the deployed worker is out of date. Redeploy the worker (npm run deploy from the PR branch), then hard-refresh (Ctrl+Shift+R).'
+      );
     }
     return data;
   }
@@ -921,7 +932,10 @@
       if (!data) {
         container.innerHTML = '';
         const empty = h('div', 'profile__missing');
-        empty.appendChild(h('h2', 'profile__missing-title', 'Profile not found'));
+        const staleDeploy = /out of date/.test(errMsg);
+        empty.appendChild(
+          h('h2', 'profile__missing-title', staleDeploy ? 'Deployment out of date' : 'Profile not found')
+        );
         empty.appendChild(h('p', 'muted', errMsg || 'No user goes by @' + username + '.'));
         const back = /** @type {HTMLAnchorElement} */ (h('a', 'btn btn--ghost btn--sm', '← Back to browsing'));
         back.href = '/';
@@ -2037,7 +2051,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.6';
+  global.WP.build = 'ui-2026-09-13.7';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
