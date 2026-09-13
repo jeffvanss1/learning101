@@ -134,3 +134,70 @@ test('fresh pause broadcasts converge immediately (no 2.5s throttle delay)', asy
   sync.destroy();
   await tick(5);
 });
+
+test('AUDIT: the player\'s delayed echo of a remote apply is never mirrored (pause-loop fix)', async () => {
+  const { sync, fire } = await freshPlayer();
+  const events = [];
+  sync.on('control', (e) => events.push(e));
+  sync._iframeLoaded = true;
+  sync.isController = true;
+  sync._mirroredPlaying = false; // the room knows: PAUSED (a remote/granted pause landed)
+
+  sync.handleServerMessage({ type: 'pause', playback: { isPlaying: false, time: 50, timestamp: Date.now() } });
+  await tick(20);
+
+  // The player's status events lag: for ~750ms they STILL report playing.
+  // (This was the room-wide play/pause loop: the mirror broadcast the echo.)
+  fire(52, true);
+  await tick(150);
+  fire(52.5, true);
+  await tick(300);
+  fire(53, true);
+  await tick(300);
+  assert.equal(events.length, 0, 'delayed echo must not broadcast anything: ' + JSON.stringify(events));
+
+  // The echo settles — still nothing broadcast.
+  fire(53, false);
+  await tick(100);
+  assert.equal(events.length, 0);
+
+  // A GENUINE user play after the guard window IS mirrored (time-continuous,
+  // so the native-seek detector correctly sees no drag).
+  await tick(1600);
+  // Wall-clock-consistent resume: ~2s of real time passed while paused, so
+  // "now" in player time is ~55 (the engine correctly treats a frozen-time
+  // resume after a long wait as a jump otherwise).
+  fire(55, true);
+  await tick(450);
+  fire(55.5, true);
+  await tick(450);
+  const plays = events.filter((e) => e.action === 'play');
+  assert.equal(plays.length, 1, 'a real user play still mirrors: ' + JSON.stringify(events));
+  assert.equal(events.filter((e) => e.action === 'seek').length, 0, 'continuous playback is not a seek');
+  sync.destroy();
+  await tick(5);
+});
+
+test('AUDIT: a pause swallowed by a buffering player is re-asserted within ~1s', async () => {
+  const { sync, fire } = await freshPlayer();
+  const posts = [];
+  sync.iframe.contentWindow.postMessage = (d) => posts.push(d && d.command);
+  sync._iframeLoaded = true;
+  sync.isController = false; // guest: the room is authoritative
+
+  fire(100, true); // playing
+  await tick(10);
+
+  sync.handleServerMessage({ type: 'pause', playback: { isPlaying: false, time: 100, timestamp: Date.now() } });
+  assert.equal(posts[posts.length - 1], 'pause', 'paused immediately on the broadcast');
+
+  // The player was mid-buffer and "missed" it: the next status still says
+  // playing. The OLD code waited for the 2.5s-throttled poll — the video
+  // visibly kept running. The fresh window re-asserts right away.
+  fire(101, true);
+  await tick(10);
+  const pauses = posts.filter((c) => c === 'pause').length;
+  assert.ok(pauses >= 2, 'pause re-asserted past the throttle: ' + JSON.stringify(posts));
+  sync.destroy();
+  await tick(5);
+});

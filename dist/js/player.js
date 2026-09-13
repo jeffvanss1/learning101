@@ -53,6 +53,8 @@
   const NATIVE_SEEK_THRESHOLD = 1.2; // seconds of unexplained time jump = user dragged the native bar
   const CONTROL_DEBOUNCE_MS = 400; // in-player state must persist this long to mirror
   const CONTROL_SUPPRESS_MS = 1200; // ignore mirror right after our own command
+  const REMOTE_ECHO_GUARD_MS = 1500; // the player's DELAYED status echo must never be mirrored
+  const FRESH_ASSERT_MS = 1800; // window in which a fresh remote state may re-assert (dropped commands)
 
   class PlaybackSyncManager {
     constructor(iframeEl) {
@@ -73,6 +75,8 @@
       this._hasPlayed = false; // has the player actually played since load?
       this._suppressed = 0; // last time we sent a command (mirror suppression)
       this._doNotForceUntil = 0; // while set, don't force play/pause on a controller
+      this._remoteAppliedAt = 0; // last time we applied a REMOTE authoritative state
+      this._freshUntil = 0; // while set, remote states may re-assert past the throttle
       this._mirroredPlaying = null; // play/pause state the room already knows
       this._mirrorCandidate = { playing: null, since: 0 };
       this._lastStatus = { time: -1, at: 0 }; // native-seek detection baseline
@@ -269,10 +273,16 @@
       // against the current wall clock whenever we actually apply it — a
       // joiner's player can take seconds to load.
       this._lastMsg = msg;
+      this._remoteAppliedAt = Date.now();
+      this._freshUntil = Date.now() + FRESH_ASSERT_MS;
       // For a controller, whatever the room state is now becomes the mirror
       // baseline, so only a later in-player change gets broadcast.
       if (this.isController) this._mirroredPlaying = !!msg.isPlaying;
-      this._syncToTarget();
+      this._syncToTarget(true);
+      // Players mid-buffer can swallow the first command: re-assert shortly
+      // (freshUntil keeps the re-asserts throttle-exempt for a bounded time).
+      this._scheduleSync(700);
+      this._scheduleSync(1600);
     }
 
     // Converge the local player onto the room's authoritative target. Safe to
@@ -283,6 +293,7 @@
     _syncToTarget(fresh) {
       const msg = this._lastMsg;
       if (!msg || !this._iframeLoaded) return;
+      if (!fresh && Date.now() < this._freshUntil) fresh = true; // bounded re-assert window
       const target = this.estimate(msg);
       const absDrift = Math.abs(target.time - this.localTime);
 
@@ -306,7 +317,12 @@
             this._scheduleSync(600);
           }
         } else {
-          if (absDrift > SEEK_THRESHOLD && !this.isBuffering) {
+          // Position correction respects the don't-force window too: the
+          // user just acted in-player (mirror still undecided) — yanking
+          // them back to the room's position mid-decision is exactly the
+          // "it fights me and loops" feeling. `_maybeMirrorControl` runs
+          // BEFORE this in the status handler, so the window is already set.
+          if (absDrift > SEEK_THRESHOLD && !this.isBuffering && (!this.localPlaying || !noForce)) {
             this.seek(target.time);
             this._scheduleSync(600);
           }
@@ -350,11 +366,15 @@
       const playing = this.localPlaying;
       const time = this.localTime;
 
-      // Just sent a command (UI button / autoplay) — adopt whatever the
-      // player settles into as known, without broadcasting.
+      // Just sent a command (UI button / autoplay / a re-assert) — adopt
+      // whatever the player settles into as known, without broadcasting.
+      // ADOPT THE ROOM'S STATE, not the player's: the re-assert pause we
+      // just posted opens this window, and the player's DELAYED status
+      // (still "playing") must not poison the mirror baseline — that
+      // adopted-echo is what made the room play/pause loop.
       if (now - this._suppressed < CONTROL_SUPPRESS_MS) {
-        this._mirroredPlaying = playing;
-        this._mirrorCandidate = { playing, since: now };
+        this._mirroredPlaying = this._lastMsg ? !!this._lastMsg.isPlaying : playing;
+        this._mirrorCandidate = { playing: this._mirroredPlaying, since: now };
         return;
       }
 
@@ -372,6 +392,13 @@
       // forcing convergence so we don't fight the user's action.
       if (this._mirrorCandidate.playing !== playing) {
         this._mirrorCandidate = { playing, since: now };
+        // ECHO GUARD: right after a REMOTE apply, the player's delayed status
+        // still shows the OLD state. Mirroring it broadcast a stale PLAY/PAUSE
+        // and the whole room looped. Inside the guard window, a differing
+        // status is treated as echo: adopt quietly, never broadcast.
+        if (now - this._remoteAppliedAt < REMOTE_ECHO_GUARD_MS) {
+          return;
+        }
         this._doNotForceUntil = now + CONTROL_SUPPRESS_MS;
         this._scheduleMirrorCheck(CONTROL_DEBOUNCE_MS);
         return;
@@ -379,6 +406,14 @@
 
       // State has been stable long enough and differs from what the room knows.
       if (playing !== this._mirroredPlaying && now - this._mirrorCandidate.since >= CONTROL_DEBOUNCE_MS) {
+        // THE loop path: right after a remote apply the candidate still holds
+        // the OLD state, and the player's delayed echo is "stable" — without
+        // this guard it broadcast the stale state and the room play/pause
+        // looped. Inside the guard window: adopt quietly, never broadcast.
+        if (now - this._remoteAppliedAt < REMOTE_ECHO_GUARD_MS) {
+          this._mirrorCandidate = { playing, since: now };
+          return;
+        }
         this._mirroredPlaying = playing;
         this._doNotForceUntil = now + CONTROL_SUPPRESS_MS;
         this.emit('control', { action: playing ? 'play' : 'pause', time });

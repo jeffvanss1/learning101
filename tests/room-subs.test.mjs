@@ -117,3 +117,24 @@ test('host subtitle load: logged, broadcast, persisted; guests cannot set subs',
   assert.equal(off.length, 1, 'offset broadcast exactly once');
   assert.equal(off[0].by, 'p1', 'carries the sender id for client echo-guard');
 });
+
+test('presence TTL survives background-tab throttling (900s, not 180s)', async () => {
+  const mod = await import(pathToFileURL(join(ROOT, 'src/presence.ts')).href + '?v=' + Math.random());
+  assert.equal(mod.PRESENCE_TTL_S, 900, 'TTL raised: hidden-tab timers fire as rarely as 1/5min');
+  const puts = [];
+  const env = {
+    PRESENCE_KV: {
+      get: async () => null,
+      put: async (k, v, opts) => puts.push(opts),
+    },
+  };
+  await mod.setPresence(env, 'user-1', {
+    status: 'WATCHING_PARTY',
+    room_id: 'ROOM1',
+    media_title: 'The Martian',
+    media_id: '286217',
+    current_timestamp_seconds: 120,
+  });
+  assert.ok(puts.length === 1, 'one KV write');
+  assert.equal(puts[0].expirationTtl, 900, 'the write carries the raised TTL');
+});

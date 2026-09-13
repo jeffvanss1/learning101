@@ -326,7 +326,16 @@ Sources:
   clock yet or tapped after the final cue no longer writes a broken offset
   (it explained itself instead); panel Reset goes through the room-sync
   path (the host's reset now reaches guests); Align releases its pick so
-  the zoom window resumes following the playhead. The subtitle language
+  the zoom window resumes following the playhead. PRESENCE + PAUSE-LOOP
+  (api-2026-09-13.30): presence TTL raised 180s → 900s — background tabs
+  get timer-throttled to 1 beat/5min, so watching users showed OFFLINE
+  (the DO's disconnect-clear remains the primary expiry). The play/pause
+  LOOP: the controller's mirror adopted the embedded player's DELAYED
+  status echo of a remote apply and broadcast the stale state back to the
+  room — fixed with a remote-echo guard (1.5s adopt-quietly), fresh-window
+  re-asserts (a pause swallowed mid-buffer re-posts within ~1s instead of
+  the 2.5s throttle), room-state-trusted adoption, and no-force respected
+  for paused-room position seeks. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching

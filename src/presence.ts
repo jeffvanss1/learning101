@@ -15,11 +15,14 @@
 import type { Env, PresencePayload, PresenceStatus } from './types.js';
 import { formatClock } from './lib/format.js';
 
-// TTL is deliberately generous: heartbeats are 20s (room) / 60s (home), and
-// background tabs get timer-throttled, so a live user can easily miss a beat
+// Heartbeats are 20s (room) / 60s (home); background tabs get timer-throttled
 // or two. True exits still go OFFLINE instantly via disconnect clearing —
 // the TTL is only the safety net for vanished clients.
-export const PRESENCE_TTL_S = 180;
+// 15 minutes: the DO clears presence on socket CLOSE (the primary path);
+// the TTL is only the net for vanished clients (killed browser/process).
+// 180s expired for BACKGROUND tabs — Chrome's intensive throttling clamps
+// hidden-tab timers to 1/5min, so a watching user showed OFFLINE.
+export const PRESENCE_TTL_S = 900;
 
 /** A WATCHING_* payload younger than this cannot be downgraded to IDLE/OFFLINE
  * by the REST surface (another tab's room socket owns it and beats every 20s). */
