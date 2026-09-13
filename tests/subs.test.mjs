@@ -244,6 +244,49 @@ test('LIVE field report replay: 65 gated dl.opensubtitles.org records drop clean
   // ...which routes the title to the authenticated OpenSubtitles fallback.
 });
 
+test('LIVE 2026-09-14: gated charlie URLs rewrite to the Wyzie proxy and FETCH', async () => {
+  // Live probe (The Martian): the search returns raw dl.opensubtitles.org
+  // urls of the shape .../vrf-<hash>/file/<id> (gated 401), but Wyzie's own
+  // documented proxy path /c/<hash>/id/<id>?format=srt&encoding=UTF-8 serves
+  // the SAME file publicly. Verified by hand before coding this.
+  const recs = Array.from({ length: 20 }, (_, i) => ({
+    id: String(1955024019 - i),
+    url: 'https://dl.opensubtitles.org/en/download/subencoding-utf8/src-api/vrf-198e0c' + (40 + i) + '/file/' + (1955024019 - i),
+    format: 'srt',
+    encoding: 'UTF-8',
+    display: 'English',
+    language: 'en',
+    media: 'The Martian',
+    isHearingImpaired: false,
+    source: 'charlie',
+    release: 'The.Martian.2015.720p.BluRay.x264-SPARKS',
+    fileName: 'The.Martian.2015.720p.BluRay.x264-SPARKS.srt',
+    downloadCount: 1000000 - i,
+    ai: false,
+  }));
+  const { results, best, shape } = shapeWyzieResults(recs);
+  assert.equal(results.length, 12, 'rewritten records become candidates (cap 12)');
+  assert.equal(shape.includes('gated'), false, 'no gated drops anymore: ' + shape);
+  assert.ok(best, 'a best candidate exists');
+  const url = decodeWyzieToken(best.fileId);
+  assert.equal(
+    url,
+    'https://sub.wyzie.io/c/198e0c40/id/1955024019?format=srt&encoding=UTF-8',
+    'fileId decodes to the documented proxy path'
+  );
+  let hit = '';
+  globalThis.fetch = (u) => {
+    hit = String(u);
+    return Promise.resolve({
+      ok: true,
+      text: async () => '1\n00:00:00,000 --> 00:00:06,000\nMark just discovered dirt.\n',
+    });
+  };
+  const { vtt } = await fetchWyzieVtt(best.fileId, null);
+  assert.ok(hit.startsWith('https://sub.wyzie.io/c/198e0c40/id/1955024019'), 'worker fetches the PROXY url: ' + hit);
+  assert.ok(vtt.includes('Mark just discovered dirt'), 'converts to VTT end-to-end');
+});
+
 test('fetchable source hosts (Subf2M) shape into candidates and fetch', async () => {
   const recs = Array.from({ length: 70 }, (_, i) => ({
     id: String(i),

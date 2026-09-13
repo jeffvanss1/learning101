@@ -326,6 +326,21 @@ export function buildWyzieSearchUrl(v) {
 }
 
 /**
+ * Rewrite a RAW source download URL into Wyzie's own proxy file path — the
+ * format their docs show as the record's url. LIVE (2026-09-14): the search
+ * returns raw dl.opensubtitles.org/.../vrf-<hash>/file/<id> links, which are
+ * GATED (401 without OS credentials) — but sub.wyzie.io/c/<hash>/id/<id>
+ * serves the same file publicly (verified live: The Martian 1955024019).
+ * @param {string} rawUrl
+ * @returns {string | null} the proxy URL, or null when the raw URL isn't derivable
+ */
+export function wyzieProxyUrl(rawUrl) {
+  const m = /\/vrf-([0-9a-zA-Z]+)\/file\/(\d+)/.exec(String(rawUrl || ''));
+  if (!m) return null;
+  return WYZIE_ORIGIN + '/c/' + m[1] + '/id/' + m[2] + '?format=srt&encoding=UTF-8';
+}
+
+/**
  * Parse a /sources payload into the source-code list a key may query.
  * Prefers the key-scoped 'available' list, then the global free tier,
  * then the caller's fallback. Returns null when nothing usable remains.
@@ -528,7 +543,11 @@ export function shapeWyzieResults(payload) {
       missingFields++;
       continue;
     }
-    const policy = wyzieHostPolicy(r.url);
+    // Gated-source URLs (dl.opensubtitles.org/.../vrf-<hash>/file/<id>) are
+    // rewritten to Wyzie's documented proxy path, which serves the file
+    // publicly — verified live 2026-09-14. Underable gated URLs still drop.
+    const fetchUrl = wyzieProxyUrl(r.url) || r.url;
+    const policy = wyzieHostPolicy(fetchUrl);
     if (policy === 'gated') {
       gatedHost++;
       continue;
@@ -559,7 +578,7 @@ export function shapeWyzieResults(payload) {
   const out = [];
   for (const r of raw) {
     /** @type {any} */ const rec = {
-      fileId: encodeWyzieToken(String(r.url)),
+      fileId: encodeWyzieToken(String(wyzieProxyUrl(r.url) || r.url)),
       release: String(r.release || r.fileName || r.media || '').slice(0, 80),
       lang: String(r.language || '').slice(0, 3),
       display: String(r.display || ''),
