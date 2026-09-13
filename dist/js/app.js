@@ -150,8 +150,10 @@
               err.textContent =
                 'That name is protected by an access code. Pick another, or choose "Have an access code?".';
             } else {
-              // Offline / server trouble: keep the app usable anonymously.
+              // Offline / server trouble: keep the app usable anonymously,
+              // but SAY so — silent anonymity is what confused people.
               finish();
+              toast('Could not create your profile — you are browsing anonymously. Reload to retry.', true);
             }
           });
         } else {
@@ -192,17 +194,30 @@
       profileBtn.addEventListener('click', async () => {
         let s = WP.Social && WP.Social.getSession();
         if (!s) {
-          // promptName handles creation AND access-code sign-in; the session
-          // is saved by social.js inside those flows.
+          // promptName handles creation AND access-code sign-in — but it
+          // resolves instantly when a name is already saved, so make sure a
+          // missing session actually gets (re)created here instead of
+          // silently doing nothing.
           const n = await promptName();
           if (!n) return;
-          s = (WP.Social && WP.Social.getSession()) || null;
-          if (WP.Social) WP.Social.startIdlePresence();
-          refreshProfileButton();
+          if (WP.Social) {
+            const res = await WP.Social.ensureSession(n);
+            if (res && res.ok) {
+              s = res.session;
+              WP.Social.startIdlePresence();
+            } else if (res && res.reason === 'taken') {
+              toast('That name is protected — use "Have an access code?" to sign in.', true);
+            } else {
+              toast('Could not start a session — you are still anonymous.', true);
+            }
+            refreshProfileButton();
+          }
         }
         if (s) {
           history.pushState(null, '', '/user/' + encodeURIComponent(s.user.username));
           routeCurrent();
+        } else if (!$('profile').hidden) {
+          routeCurrent(); // drop out of a stale profile view
         }
       });
     }
@@ -275,13 +290,16 @@
       state.name = name;
       saveName(name);
       // Silent profile session (same as the name modal); the code-reveal
-      // modal is handled inside social.js. Failures stay non-blocking here —
-      // joining a room must never require a profile.
+      // modal is handled inside social.js. Joining a room never REQUIRES a
+      // profile, but failures are surfaced so anonymous state is never a
+      // surprise.
       if (WP.Social) {
         WP.Social.ensureSession(name).then((res) => {
           if (res && res.ok) {
             WP.Social.startIdlePresence();
             refreshProfileButton();
+          } else if (res && res.reason === 'taken') {
+            toast('“' + name + '” is protected by an access code — you are browsing anonymously. Use "Have an access code?" to sign in.', true);
           }
         });
       }
@@ -1474,13 +1492,18 @@
     // Restore the saved identity so we never ask for a name twice.
     state.name = savedName();
     // Resume the saved profile (token in localStorage) + IDLE heartbeat.
-    // Creation only happens through the name modal now, so a boot-time call
-    // never pops the access-code modal unexpectedly.
+    // Passing the saved name matters: users whose session creation once
+    // failed (or who predate sessions) have a name but no session — without
+    // the name this call could never (re)create it and they would browse
+    // anonymously forever with no prompt (promptName resolves instantly
+    // when a name is already saved).
     if (state.name && WP.Social) {
-      WP.Social.ensureSession().then((res) => {
+      WP.Social.ensureSession(state.name).then((res) => {
         if (res && res.ok) {
           WP.Social.startIdlePresence();
           refreshProfileButton();
+        } else if (res && res.reason === 'taken') {
+          toast('“' + state.name + '” is protected by an access code — use "Have an access code?" in the name dialog to sign in.', true);
         }
       });
     }

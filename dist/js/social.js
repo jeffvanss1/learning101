@@ -1558,7 +1558,7 @@
         h(
           'p',
           'friends-rail__empty-hint',
-          'Pick a name to get a profile, add friends, and show what you are watching.'
+          'Pick a name to get a profile (you get an access code for other devices), or use "Have an access code?" in the name dialog to sign in.'
         )
       );
       const btn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', 'Pick a name'));
