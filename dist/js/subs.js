@@ -193,42 +193,68 @@
     statusEl.className = 'subs-panel__status' + (isError ? ' subs-panel__status--err' : '');
   }
 
-  /**
-   * @param {{ type: string, id: string, season?: number, episode?: number }} v
-   */
-  async function autoLoad(v) {
-    if (!v || !v.id) return;
-    const lang = langSel ? langSel.value : 'en';
-    setStatus(tr('subs.loading', 'Finding subtitles…'));
+  /** @param {{ type: string, id: string, season?: number, episode?: number }} v @param {string} lang @returns {Promise<{ fileId: number, release: string, lang: string, downloads: number } | null>} */
+  async function searchBest(v, lang) {
     const qs = new URLSearchParams({
       type: v.type === 'movie' ? 'movie' : 'tv',
       tmdb: String(v.id),
     });
     if (v.type !== 'movie' && v.season != null) qs.set('season', String(v.season));
     if (v.type !== 'movie' && v.episode != null) qs.set('episode', String(v.episode));
-    qs.set('lang', lang);
+    if (lang) qs.set('lang', lang);
     const res = await fetch('/api/subs/search?' + qs.toString());
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       setStatus((data && data.error) || tr('subs.searchFailed', 'Subtitle search failed.'), true);
+      return null;
+    }
+    return data.best || null;
+  }
+
+  /**
+   * Language fallback chain: requested language -> English -> ANY language
+   * (no filter). Indonesian-dubbed titles usually have no Indonesian subs —
+   * "nothing found" must never be the end of the road when English ones exist.
+   * @param {{ type: string, id: string, season?: number, episode?: number }} v
+   */
+  async function autoLoad(v) {
+    if (!v || !v.id) return;
+    const primary = langSel ? langSel.value : 'en';
+    const chain = primary === 'en' ? ['en', ''] : [primary, 'en', ''];
+    /** @type {string[]} */
+    const tried = [];
+    for (const lang of chain) {
+      if (tried.indexOf(lang) !== -1) continue;
+      tried.push(lang);
+      setStatus(tr('subs.loading', 'Finding subtitles…'));
+      let best = null;
+      try {
+        best = await searchBest(v, lang);
+      } catch (e) {
+        setStatus(e instanceof Error ? e.message : tr('subs.searchFailed', 'Subtitle search failed.'), true);
+        return;
+      }
+      if (!best) continue;
+      const fileRes = await fetch('/api/subs/file?fileId=' + best.fileId);
+      if (!fileRes.ok) {
+        const err = await fileRes.json().catch(() => null);
+        setStatus((err && err.error) || tr('subs.loadFailed', 'Could not download the subtitle.'), true);
+        return;
+      }
+      loadCues(await fileRes.text());
+      const label = (LANGS.find((l) => l[0] === best.lang) || [best.lang, best.lang])[1];
+      const suffix =
+        lang !== primary
+          ? ' · ' + tr('subs.fallback', 'no {lang} subs — language fallback').replace('{lang}', primary.toUpperCase())
+          : '';
+      setStatus(
+        tr('subs.loaded', 'Loaded') +
+          ': ' + (best.release || 'subtitle') +
+          ' [' + label + ', ' + (best.downloads || 0) + '\u2193]' + suffix
+      );
       return;
     }
-    if (!data.best) {
-      setStatus(tr('subs.none', 'No subtitles found for this title.'), true);
-      return;
-    }
-    const fileRes = await fetch('/api/subs/file?fileId=' + data.best.fileId);
-    if (!fileRes.ok) {
-      const err = await fileRes.json().catch(() => null);
-      setStatus((err && err.error) || tr('subs.loadFailed', 'Could not download the subtitle.'), true);
-      return;
-    }
-    loadCues(await fileRes.text());
-    setStatus(
-      tr('subs.loaded', 'Loaded') +
-        ': ' + (data.best.release || 'subtitle') +
-        ' (' + (data.best.downloads || 0) + '↓)'
-    );
+    setStatus(tr('subs.noneAny', 'No subtitles found at all for this title.'), true);
   }
 
   /**
@@ -238,6 +264,7 @@
   function loadCues(raw) {
     cues = parseSubtitles(raw);
     cueIdx = 0;
+    cancelTapSync();
     if (cues.length && !enabled) setEnabled(true);
   }
 
@@ -259,11 +286,54 @@
 
   // ---- panel ----------------------------------------------------------------
 
-  function applyOffset(delta) {
-    offset = Math.round((offset + delta) * 100) / 100;
+  function applyOffsetValue(abs) {
+    offset = Math.round(abs * 100) / 100;
     saveOffset(offset);
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
     cueIdx = 0;
+  }
+
+  function applyOffset(delta) {
+    applyOffsetValue(offset + delta);
+  }
+
+  // ---- tap-sync ---------------------------------------------------------------
+  // One-press exact sync: we show the line that should be spoken, the user
+  // taps (or hits SPACE) the moment they HEAR it, and the offset is computed
+  // precisely from the player clock: playerTime(at tap) - cue.start.
+  let tapTarget = /** @type {number | null} */ (null);
+  /** @type {HTMLButtonElement | null} */
+  let tapBtn = null;
+
+  function armTapSync() {
+    if (!cues.length) {
+      setStatus(tr('subs.none', 'No subtitles loaded.'), true);
+      return;
+    }
+    const t = now();
+    const target = cues.find((c) => c.start >= t + 0.5) || cues[cues.length - 1];
+    tapTarget = target.start;
+    const line = String(target.text).split('\n')[0].slice(0, 60);
+    setStatus(tr('subs.tapListen', 'Listen for') + ': \u201C' + line + '\u201D \u2014 ' + tr('subs.tapWhen', 'tap when you hear it'));
+    if (tapBtn) tapBtn.textContent = tr('subs.tapNow', 'TAP NOW');
+  }
+
+  function tapSync() {
+    if (tapTarget == null) return;
+    const playerTime = now() + offset; // now() already subtracts the offset
+    const newOffset = playerTime - tapTarget;
+    tapTarget = null;
+    applyOffsetValue(newOffset);
+    if (tapBtn) tapBtn.textContent = tr('subs.tapSync', 'Tap-sync');
+    setStatus(
+      tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+        ' (' + tr('subs.offset', 'Offset') + ' ' + tr('subs.persisted', 'saved for this title') + ')'
+    );
+  }
+
+  function cancelTapSync() {
+    tapTarget = null;
+    if (tapBtn) tapBtn.textContent = tr('subs.tapSync', 'Tap-sync');
   }
 
   function buildPanel() {
@@ -340,6 +410,17 @@
     row3.appendChild(mk('+1s', 1, 'Advance subtitles'));
     panel.appendChild(row3);
 
+    const row3a = h('div', 'subs-panel__row');
+    tapBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.tapSync', 'Tap-sync')));
+    tapBtn.type = 'button';
+    tapBtn.title = tr('subs.tapWhen', 'tap when you hear it');
+    tapBtn.addEventListener('click', () => {
+      if (tapTarget == null) armTapSync();
+      else tapSync();
+    });
+    row3a.appendChild(tapBtn);
+    panel.appendChild(row3a);
+
     const row3b = h('div', 'subs-panel__row');
     const reset = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.reset', 'Reset offset')));
     reset.type = 'button';
@@ -413,6 +494,10 @@
       if (!panel || panel.hidden) return;
       if (ev.key === '[') applyOffset(-0.25);
       else if (ev.key === ']') applyOffset(0.25);
+      else if (ev.key === ' ' && tapTarget != null) {
+        ev.preventDefault(); // don't scroll the page mid-sync
+        tapSync();
+      }
     });
   }
 
@@ -424,6 +509,7 @@
     video = v && v.id ? v : null;
     cues = [];
     cueIdx = 0;
+    cancelTapSync();
     gotClock = false;
     offset = loadOffset();
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
@@ -438,6 +524,17 @@
     loadCues: loadCues,
     setEnabled: setEnabled,
     parseSubtitles: parseSubtitles,
+    armTapSync: armTapSync,
+    tapSync: tapSync,
+    // Internal hook for the runtime test-suite (not part of the UI contract).
+    __test: {
+      setLang(/** @type {string} */ l) {
+        if (langSel) langSel.value = l;
+      },
+      state() {
+        return { cues: cues.length, offset: offset, tapTarget: tapTarget, status: statusEl ? statusEl.textContent : '' };
+      },
+    },
   };
   global.WP = WP;
 })(window);

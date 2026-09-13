@@ -290,6 +290,13 @@ Sources:
   OPENSUBTITLES_API_KEY` — free key at api.opensubtitles.com).
 - **Upload**: any `.srt`/`.vtt` file, no key needed.
 
+**Tap-Sync** (the one-press exact sync): the panel shows the line that
+should be spoken; tap the button (or SPACE) the instant you hear it and
+the offset is computed precisely from the player clock
+(`playerTime(atTap) − cueStart`) and persisted. Language fallback chain:
+requested language → English → any (status shows which loaded) — "no
+subs" almost always meant a thin language catalog, not a missing title.
+
 The CC button in the room header toggles the panel. Caveats: custom subs
 follow the **main Bingr player** only (Server-2 fallback embeds don't
 report a clock — the panel says so); "auto-sync" here = exact-episode
@@ -466,7 +473,7 @@ Every build fingerprinted itself, so a stale deploy is visible in seconds:
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
-   `[WatchParty] UI build: ui-2026-09-13.13` and
+   `[WatchParty] UI build: ui-2026-09-13.14` and
    `[WatchParty] API build: api-2026-09-13.9`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the

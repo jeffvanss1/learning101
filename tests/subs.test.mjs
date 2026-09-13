@@ -89,6 +89,180 @@ test('shapeSearchResponse caps the candidate list and maps fields', () => {
 
 // ---- client bundle runtime smoke -------------------------------------------
 
+const El2 = class El {
+  constructor(tag) {
+    this.tagName = tag;
+    this.children = [];
+    this.style = {};
+    this.hidden = false;
+    this.textContent = '';
+    this.className = '';
+    this.classList = {
+      add: (c) => (this._cls || (this._cls = new Set())).add(c),
+      remove: (c) => this._cls && this._cls.delete(c),
+      contains: (c) => !!(this._cls && this._cls.has(c)),
+      toggle() {},
+    };
+  }
+  appendChild(c) {
+    this.children.push(c);
+    return c;
+  }
+  setAttribute() {}
+  addEventListener() {}
+  removeEventListener() {}
+  get offsetWidth() {
+    return 0;
+  }
+};
+
+function findClass(root, cls) {
+  if (root.className === cls) return root;
+  for (const c of root.children || []) {
+    const hit = findClass(c, cls);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * Fresh module + DOM stubs (a new import path gives a new module instance,
+ * so each runtime test starts from clean state).
+ */
+async function freshSubs() {
+  class El {
+    constructor(tag) {
+      this.tagName = tag;
+      this.children = [];
+      this.style = {};
+      this.hidden = false;
+      this.textContent = '';
+      this.className = '';
+      this.classList = {
+        add: (c) => (this._cls || (this._cls = new Set())).add(c),
+        remove: (c) => this._cls && this._cls.delete(c),
+        contains: (c) => !!(this._cls && this._cls.has(c)),
+        toggle() {},
+      };
+    }
+    appendChild(c) {
+      this.children.push(c);
+      return c;
+    }
+    setAttribute() {}
+    addEventListener() {}
+    removeEventListener() {}
+    get offsetWidth() {
+      return 0;
+    }
+  }
+
+  const store = {};
+  const listeners = {};
+  const rafQueue = [];
+  globalThis.window = {
+    WP: {},
+    addEventListener: (type, fn) => ((listeners[type] || (listeners[type] = [])).push(fn)),
+    removeEventListener() {},
+    dispatchEvent() {},
+    requestAnimationFrame: (cb) => (rafQueue.push(cb), rafQueue.length),
+    cancelAnimationFrame() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    localStorage: {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => (store[k] = String(v)),
+      removeItem: (k) => delete store[k],
+    },
+    __fire: (type, ev) => (listeners[type] || []).forEach((fn) => fn(ev)),
+  };
+  const doc = {
+    createElement: (t) => new El(t),
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    documentElement: new El('html'),
+    body: new El('body'),
+    addEventListener() {},
+    readyState: 'complete',
+    hidden: false,
+  };
+  globalThis.document = doc;
+  globalThis.location = { search: '' };
+  globalThis.localStorage = globalThis.window.localStorage;
+  Object.assign(globalThis.window, { document: doc, location: globalThis.location, localStorage: globalThis.localStorage });
+  const mod = await import(join(ROOT, 'dist/js/subs.js') + '?v=' + Math.random());
+  return { Subs: globalThis.window.WP.Subs, listeners, rafQueue, store, El };
+}
+
+const fireClock = (listeners, rafQueue, t, playing = true) => {
+  (listeners.message || []).forEach((fn) =>
+    fn({ source: {}, data: { type: 'PLAYER_EVENT', data: { event: 'playerstatus', currentTime: t, playing } } })
+  );
+  rafQueue.splice(0).forEach((cb) => cb());
+};
+
+test('tap-sync computes the offset from the player clock, exactly', async () => {
+  const { Subs, listeners, rafQueue, store } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  Subs.loadCues('1\n00:00:10,000 --> 00:00:12,000\nWhere are you?\n');
+
+  // Player reports 11.3s. The user taps the moment they hear "Where are you?"
+  // (cue starts at 10s) -> offset must be exactly +1.3s.
+  fireClock(listeners, rafQueue, 11.3);
+  Subs.armTapSync();
+  Subs.tapSync();
+  assert.equal(Subs.__test.state().offset, 1.3, 'offset = playerTime(atTap) - cueStart');
+
+  // The nudge must be persisted for the title.
+  // (loadCues without setVideo -> videoKey 'none' -> persisted under that key)
+  assert.ok(Object.keys(store).length >= 1, 'offset must be persisted to localStorage');
+
+  // With the offset applied, a clock of 11.4 displays as 10.1 -> cue visible.
+  fireClock(listeners, rafQueue, 11.4);
+  await new Promise((r) => setTimeout(r, 5));
+  rafQueue.splice(0).forEach((cb) => cb());
+  const overlay = findClass(wrap, 'subs-overlay');
+  assert.equal(overlay.children[0].textContent, 'Where are you?');
+});
+
+test('language fallback: id -> en -> any, and the status says what loaded', async () => {
+  const calls = [];
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    calls.push(u);
+    if (u.includes('/api/subs/search')) {
+      if (u.includes('lang=id')) {
+        return Promise.resolve({ ok: true, json: async () => ({ results: [], best: null }) });
+      }
+      if (u.includes('lang=en')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ results: [{ files: [{ file_id: 9 }] }], best: { fileId: 9, release: 'Rel.ENG', lang: 'en', downloads: 5000 } }),
+        });
+      }
+    }
+    if (u.includes('/api/subs/file')) {
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:10,000 --> 00:00:12,000\nFallback cue\n' });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  Subs.loadCues('1\n00:00:05,000 --> 00:00:06,000\nwarmup\n'); // enable subs (like a returning user)
+  Subs.__test.setLang('id');
+  Subs.setVideo({ type: 'movie', id: '42' }); // enabled -> next-episode auto-load fires
+  await new Promise((r) => setTimeout(r, 30)); // auto-load chain resolves
+
+  const searchCalls = calls.filter((u) => u.includes('/api/subs/search'));
+  assert.ok(searchCalls.some((u) => u.includes('lang=id')), 'must try the requested language first');
+  assert.ok(searchCalls.some((u) => u.includes('lang=en')), 'must fall back to English');
+  assert.equal(Subs.__test.state().cues, 1, 'English fallback subs must load');
+  assert.ok(Subs.__test.state().status.includes('Bahasa Indonesia') === false, 'loaded label reflects the actual language');
+  assert.ok(Subs.__test.state().status.toLowerCase().includes('rel.eng') || Subs.__test.state().status.includes('Rel.ENG'), 'status names the loaded release');
+});
+
 const FRESH_SRT = `1
 00:00:10,000 --> 00:00:12,000
 Auto-synced cue
