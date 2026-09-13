@@ -157,7 +157,12 @@
 }
 
 /* ---- People search results --------------------------------------------------- */
+/* width:100% is REQUIRED: this section is a flex child of .browse__rows
+   (column) and its auto side margins defeat align-items:stretch - without
+   an explicit width it shrank to fit-content (~1 card) and the grid
+   rendered as ONE narrow vertical column on desktop. */
 .people-results {
+  width: 100%;
   max-width: 1400px;
   margin: 4px auto 20px;
   padding: 0 16px;

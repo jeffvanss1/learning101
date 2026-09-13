@@ -117,3 +117,16 @@ test('people search: short-query gate + avatar size classes exist', async () => 
   assert.equal(/\.avatar--lg\s*{/.test(soc), true, 'avatar--lg is actually defined (was silently 40px)');
   assert.equal(/\.avatar--xl\s*{/.test(soc), true, 'avatar--xl is actually defined (profile hero was small too)');
 });
+
+test('people results section fills the browse row (horizontal grid on desktop)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const css = readFileSync(join(ROOT, 'dist/css/social.css'), 'utf8');
+  // .people-results is a flex child of .browse__rows (column flex); its auto
+  // margins defeat stretch, so it MUST carry an explicit width or the grid
+  // collapses to a single ~340px vertical column.
+  const block = css.slice(css.indexOf('.people-results {'), css.indexOf('.people-results__title'));
+  assert.equal(/width:\s*100%/.test(block), true, '.people-results must be width:100% inside the flex column');
+  const list = css.slice(css.indexOf('.people-results__list {'), css.indexOf('.people-results__hint'));
+  assert.equal(/repeat\(auto-fill,\s*minmax\(340px,\s*1fr\)\)/.test(list), true, 'grid columns must be auto-fill');
+});
