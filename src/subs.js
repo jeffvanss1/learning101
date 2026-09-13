@@ -265,7 +265,22 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
 // allowlist (sub.wyzie.io) — the endpoint can never be abused as a proxy.
 
 export const WYZIE_ORIGIN = 'https://sub.wyzie.io';
-export const WYZIE_ALLOWED_HOST = 'sub.wyzie.io';
+// Any *.wyzie.io host over https (their file/CDN host may differ from
+// sub.wyzie.io; the docs' examples lag behind the live API).
+export const WYZIE_ALLOWED_SUFFIX = '.wyzie.io';
+
+/** @param {string} url @returns {boolean} https + *.wyzie.io */
+export function isWyzieUrl(url) {
+  try {
+    const u = new URL(String(url));
+    return (
+      u.protocol === 'https:' &&
+      (u.hostname === WYZIE_ALLOWED_SUFFIX.slice(1) || u.hostname.endsWith(WYZIE_ALLOWED_SUFFIX))
+    );
+  } catch (_) {
+    return false;
+  }
+}
 
 /**
  * Build a Wyzie search URL. `key` is optional so tests and the response's
@@ -299,7 +314,7 @@ export function decodeWyzieToken(token) {
     let b64 = String(token).replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const url = atob(b64);
-    if (url.indexOf('https://' + WYZIE_ALLOWED_HOST + '/') !== 0) return null;
+    if (!isWyzieUrl(url)) return null;
     return url;
   } catch (_) {
     return null;
@@ -346,10 +361,39 @@ export function shapeWyzieResults(payload) {
   const extracted = wyzieExtractList(payload);
   // Score the RAW records first, shape in ranked order (the shaped record
   // renames ai -> machineTranslated, so shaping first would lose the flags).
-  const raw = extracted.list
-    .filter((r) => r && r.url && r.id)
-    .filter((r) => String(r.url).indexOf('https://' + WYZIE_ALLOWED_HOST + '/') === 0)
-    .sort((a, b) => wyzieScore(b) - wyzieScore(a));
+  // Dropped records are counted and classified so an empty result is
+  // explainable: 'dropped:N(fields)' / 'dropped:N(host)' / 'dropped:N(mixed)'.
+  const seen = extracted.list.length;
+  const usable = [];
+  let missingFields = 0;
+  let foreignHost = 0;
+  let foreignSample = '';
+  for (const r of extracted.list) {
+    if (!r || typeof r !== 'object' || !r.url || !r.id) {
+      missingFields++;
+      continue;
+    }
+    if (!isWyzieUrl(r.url)) {
+      foreignHost++;
+      if (!foreignSample) {
+        try {
+          foreignSample = new URL(String(r.url)).hostname;
+        } catch (_) {
+          foreignSample = 'unparseable';
+        }
+      }
+      continue;
+    }
+    usable.push(r);
+  }
+  usable.sort((a, b) => wyzieScore(b) - wyzieScore(a));
+  const raw = usable;
+  let dropped = '';
+  if (missingFields + foreignHost > 0) {
+    dropped =
+      ' dropped:' + (missingFields + foreignHost) + (missingFields ? '(fields:' + missingFields + ')' : '') +
+      (foreignHost ? '(host:' + foreignHost + (foreignSample ? '@' + foreignSample : '') + ')' : '');
+  }
   const out = [];
   for (const r of raw) {
     /** @type {any} */ const rec = {
@@ -366,7 +410,7 @@ export function shapeWyzieResults(payload) {
     if (out.length >= 12) break;
   }
   const best = out.length ? { ...out[0] } : null;
-  return { results: out, best: best, shape: extracted.shape };
+  return { results: out, best: best, shape: extracted.shape + (dropped ? ' |' + dropped : '') };
 }
 
 /**

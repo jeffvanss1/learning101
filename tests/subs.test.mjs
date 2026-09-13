@@ -13,6 +13,7 @@ import { ROOT } from './dompath.mjs';
 import {
   buildSearchQuery,
   buildWyzieSearchUrl,
+  isWyzieUrl,
   wyzieExtractList,
   decodeWyzieToken,
   encodeWyzieToken,
@@ -151,6 +152,28 @@ test('Wyzie search URL: TMDB id, season+episode, language, srt, all sources, key
   assert.equal(mv.searchParams.get('season'), null, 'movies carry no season/episode');
 });
 
+test('host matcher: any https *.wyzie.io passes; everything else fails', () => {
+  assert.ok(isWyzieUrl('https://sub.wyzie.io/c/x?format=srt'));
+  assert.ok(isWyzieUrl('https://dl.wyzie.io/files/a.srt'), 'file hosts may be subdomains');
+  assert.ok(!isWyzieUrl('http://sub.wyzie.io/a.srt'), 'https only');
+  assert.ok(!isWyzieUrl('https://evil.example/a.srt'));
+  assert.ok(!isWyzieUrl('https://evil.wyzie.io.evil.example/a.srt'), 'suffix tricks rejected');
+  assert.ok(!isWyzieUrl('not a url'));
+});
+
+test('shaping reports dropped records with the reason (fields vs host)', () => {
+  const good = { id: '1', url: 'https://sub.wyzie.io/c/a?format=srt', release: 'G', downloadCount: 5 };
+  const shaped = shapeWyzieResults([
+    { code: 401, message: 'x' }, // no url/id -> fields
+    { id: '2', url: 'https://cdn.otherhost.net/a.srt' }, // foreign host
+    good,
+  ]);
+  assert.equal(shaped.results.length, 1);
+  assert.ok(shaped.shape.includes('|dropped:2'), 'drop line must appear: ' + shaped.shape);
+  assert.ok(shaped.shape.includes('(fields:1)'), shaped.shape);
+  assert.ok(shaped.shape.includes('(host:1@cdn.otherhost.net)'), shaped.shape);
+});
+
 test('Wyzie wrapper tolerance: arrays, wrapped objects and error objects', () => {
   const rec = { id: '1', url: 'https://sub.wyzie.io/c/a?format=srt', release: 'R' };
   assert.equal(wyzieExtractList([rec]).shape, 'array');
@@ -174,6 +197,7 @@ test('Wyzie token round-trips; foreign hosts are rejected (no open proxy)', () =
   assert.equal(decodeWyzieToken(encodeWyzieToken('https://evil.example/x.srt')), null);
   assert.equal(decodeWyzieToken('http://sub.wyzie.io/a.srt'.slice(0, 0) + '!!!'), null);
   assert.equal(decodeWyzieToken(encodeWyzieToken('http://sub.wyzie.io/a.srt')), null, 'https only');
+  assert.ok(decodeWyzieToken(encodeWyzieToken('https://dl.wyzie.io/a.srt')), '*.wyzie.io file hosts decode');
 });
 
 test('Wyzie shaping ranks human > AI, clean > HI, then downloads; best carries an opaque token', () => {
