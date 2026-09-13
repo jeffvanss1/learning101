@@ -270,6 +270,9 @@ export default {
           const lang = url.searchParams.get('lang') || undefined;
 
           // PRIMARY: Wyzie Subs (key IS the query param; kept server-side).
+          // wyzieNote explains, in the final response, exactly what happened
+          // to the primary attempt ("not-configured" = the secret is unset).
+          let wyzieNote = 'not-configured';
           if (wyzieKey) {
             const wyzieUrl = buildWyzieSearchUrl({ tmdb, season, episode, lang, key: wyzieKey });
             const wz = await fetch(wyzieUrl, {
@@ -282,32 +285,34 @@ export default {
               return json({ error: 'Wyzie rejected the API key (' + wz.status + ') — check WYZIE_API_KEY (store.wyzie.io).' }, 502);
             }
             if (wz.ok) {
-              const list: any = await wz.json();
-              const shaped = shapeWyzieResults(list);
-              if (shaped.best) {
-                // Echo the query WITHOUT the key.
-                return json(
-                  { ...shaped, total: shaped.results.length, provider: 'wyzie', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
-                  200,
-                  { 'Cache-Control': 'public, max-age=60' }
-                );
+              let list: any = null;
+              try {
+                list = await wz.json();
+              } catch (_) {
+                wyzieNote = 'bad-json';
               }
-              // Wyzie empty AND OpenSubtitles configured -> fall through to it.
-              if (!osKey) {
-                return json(
-                  { results: [], best: null, total: 0, provider: 'wyzie', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
-                  200,
-                  { 'Cache-Control': 'public, max-age=60' }
-                );
+              if (list !== null) {
+                const shaped = shapeWyzieResults(list);
+                if (shaped.best) {
+                  // Echo the query WITHOUT the key.
+                  return json(
+                    { ...shaped, total: shaped.results.length, provider: 'wyzie', wyzieNote: 'ok', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
+                    200,
+                    { 'Cache-Control': 'public, max-age=60' }
+                  );
+                }
+                wyzieNote = 'empty';
               }
+            } else {
+              wyzieNote = 'http ' + wz.status;
             }
           }
 
           // FALLBACK: OpenSubtitles v3.
           if (!osKey) {
-            // Wyzie answered empty and no fallback configured.
+            // No fallback configured: report the primary's fate honestly.
             return json(
-              { results: [], best: null, total: 0, provider: 'wyzie', query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
+              { results: [], best: null, total: 0, provider: 'wyzie', wyzieNote: wyzieNote, query: buildWyzieSearchUrl({ tmdb, season, episode, lang }) },
               200,
               { 'Cache-Control': 'public, max-age=60' }
             );
@@ -343,6 +348,7 @@ export default {
               best: pickBest(payload && payload.data),
               total: payload && payload.total,
               provider: 'opensubtitles',
+              wyzieNote: wyzieNote,
               // The EXACT upstream query — makes any future "why empty" a glance.
               query: query,
             },
