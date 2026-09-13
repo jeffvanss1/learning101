@@ -335,7 +335,14 @@ Sources:
   room — fixed with a remote-echo guard (1.5s adopt-quietly), fresh-window
   re-asserts (a pause swallowed mid-buffer re-posts within ~1s instead of
   the 2.5s throttle), room-state-trusted adoption, and no-force respected
-  for paused-room position seeks. The subtitle language
+  for paused-room position seeks. STILL-OFFLINE FIX (api-2026-09-13.31):
+  the TTL raise alone couldn't help because presence was refreshed ONLY by
+  client timers (hidden tabs throttle to 1/5min) — the room Durable Object
+  now refreshes presence ITSELF via storage alarms (60s cadence, payloads
+  persisted on the session so hibernation is survived). Client throttling
+  can no longer expire a watching user, and home-surface IDLE beats are
+  always rejected by the ROOM_FRESH guard because the DO keeps
+  last_updated warm. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching

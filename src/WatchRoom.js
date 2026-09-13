@@ -26,6 +26,10 @@ import { setPresence, clearPresenceIfRoom } from './presence.js';
 // ---------------------------------------------------------------------------
 // Protocol constants
 // ---------------------------------------------------------------------------
+// Presence refresh cadence for the DO alarm (server-side, client-independent).
+// Keep below PRESENCE_TTL_S and above the heartbeat noise floor.
+export const PRESENCE_ALARM_MS = 60_000;
+
 export const MSG = {
   JOIN: 'join',
   STATE: 'state',
@@ -180,6 +184,17 @@ export class WatchRoom {
     this.requests = Array.isArray(requests) ? requests : [];
     // Host's last subtitle choice: replicated to joiners (fileId + label).
     this.subs = subs && typeof subs === 'object' ? subs : null;
+
+    // SERVER-SIDE presence refresh: client timers are throttled in hidden
+    // tabs (Chrome intensive throttling: 1 run / 5min), so presence beats
+    // stop and watching users showed OFFLINE. The DO keeps the sockets
+    // alive regardless — let IT refresh presence via alarms (60s cadence,
+    // persisted payloads survive hibernation).
+    if (this.sessions.some((s) => s.userId) && (await this.ctx.storage.getAlarm()) === null) {
+      try {
+        await this.ctx.storage.setAlarm(Date.now() + PRESENCE_ALARM_MS);
+      } catch (_) {}
+    }
   }
 
   async persist() {
@@ -307,6 +322,7 @@ export class WatchRoom {
       } catch (_) {}
       return;
     }
+    // splice also drops peer.presence: the alarm stops refreshing leavers.
     const [peer] = this.sessions.splice(idx, 1);
     try {
       ws.close(1000, 'bye');
@@ -686,6 +702,16 @@ export class WatchRoom {
     } catch (_) {}
 
     const watching = msg.status === 'WATCHING_PARTY' || msg.status === 'WATCHING_SOLO';
+    // Remember what the alarm must keep alive (persisted on the session:
+    // survives DO hibernation, unlike any in-memory map).
+    peer.presence = {
+      status: watching ? msg.status : 'IDLE',
+      room_id: watching ? this.meta.id : '',
+      media_title: watching ? msg.media_title : '',
+      media_id: watching ? msg.media_id : '',
+      current_timestamp_seconds: msg.current_timestamp_seconds,
+    };
+    await this.persist();
     await setPresence(this.env, userId, {
       // Connected but idle (e.g. tab hidden) keeps the socket, minus context.
       status: watching ? msg.status : 'IDLE',
@@ -696,6 +722,35 @@ export class WatchRoom {
       // The DO decides who hosts — never trust the client's flag.
       is_host: this.isOwner(peer),
     });
+  }
+
+  /**
+   * Server-side presence refresh (DO alarm): re-puts every identified
+   * session's presence so hidden-tab throttling can NEVER let a watching
+   * user expire. Runs regardless of what the clients' timers are doing.
+   */
+  async alarm() {
+    await this.ensureLoaded();
+    if (!this.env || !this.env.PRESENCE_KV) return;
+    const alive = this.sessions.filter((s) => s.userId && s.presence);
+    for (const s of alive) {
+      try {
+        await setPresence(this.env, s.userId, {
+          status: s.presence.status,
+          room_id: s.presence.room_id,
+          media_title: s.presence.media_title,
+          media_id: s.presence.media_id,
+          current_timestamp_seconds: s.presence.current_timestamp_seconds,
+          is_host: this.isOwner(s),
+        });
+      } catch (_) {}
+    }
+    // Keep the beat only while someone is here.
+    if (this.sessions.some((s) => s.userId && s.presence)) {
+      try {
+        await this.ctx.storage.setAlarm(Date.now() + PRESENCE_ALARM_MS);
+      } catch (_) {}
+    }
   }
 
   // ---- Ownership / permissions ---------------------------------------------

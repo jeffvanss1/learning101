@@ -37,6 +37,10 @@ async function freshRoom() {
     storage: {
       get: async (k) => store[k],
       put: async (obj) => Object.assign(store, obj),
+      getAlarm: async () => store.alarmAt || null,
+      setAlarm: async (ts) => {
+        store.alarmAt = ts;
+      },
     },
     acceptWebSocket() {},
   };
@@ -54,9 +58,16 @@ async function freshRoom() {
   Object.assign(store, storeInit);
   const wsHost = makeWs('p1');
   const wsGuest = makeWs('p2');
-  const room = new WatchRoom(ctx, {});
+  const kvPuts = [];
+  const env = {
+    PRESENCE_KV: {
+      get: async () => null,
+      put: async (k, v, opts) => kvPuts.push({ k, v: JSON.parse(v), opts }),
+    },
+  };
+  const room = new WatchRoom(ctx, env);
   await room.ensureLoaded();
-  return { room, store, wsHost, wsGuest };
+  return { room, store, wsHost, wsGuest, kvPuts };
 }
 
 test('host pause/resume lands in the chat history as system lines', async () => {
@@ -137,4 +148,45 @@ test('presence TTL survives background-tab throttling (900s, not 180s)', async (
   });
   assert.ok(puts.length === 1, 'one KV write');
   assert.equal(puts[0].expirationTtl, 900, 'the write carries the raised TTL');
+});
+
+test('presence is refreshed SERVER-SIDE by the DO alarm (hidden-tab proof)', async () => {
+  // Hidden tabs throttle client timers to 1/5min — the room DO must keep
+  // presence alive itself. Sessions carry persisted presence payloads.
+  const { room, store, kvPuts } = await freshRoom();
+  store.sessions[0].userId = 'user-1'; // identified via a previous presenceSync
+  store.sessions[0].presence = {
+    status: 'WATCHING_PARTY',
+    room_id: 'ROOM1',
+    media_title: 'The Martian',
+    media_id: '286217',
+    current_timestamp_seconds: 320,
+  };
+  store.sessions[1].userId = 'user-2';
+  store.sessions[1].presence = {
+    status: 'IDLE',
+    room_id: '',
+    media_title: '',
+    media_id: '',
+    current_timestamp_seconds: 0,
+  };
+  kvPuts.length = 0;
+  store.alarmAt = null;
+
+  await room.alarm();
+
+  const writes = kvPuts.map((p) => ({ status: p.v.status, ttl: p.opts && p.opts.expirationTtl }));
+  assert.ok(writes.some((x) => x.status === 'WATCHING_PARTY' && x.ttl === 900), 'watcher refreshed: ' + JSON.stringify(writes));
+  assert.ok(writes.some((x) => x.status === 'IDLE'), 'idle member refreshed too');
+  assert.ok(store.alarmAt > Date.now(), 'alarm rescheduled while sessions remain');
+
+  // A session WITHOUT identity/presence must never be written. Mutate the
+  // SAME array the room holds (this.sessions keeps the reference).
+  store.sessions.splice(1); // guest leaves
+  store.sessions[0].presence = null; // watching but never sent a beat
+  kvPuts.length = 0;
+  store.alarmAt = null;
+  await room.alarm();
+  assert.equal(kvPuts.length, 0, 'no identity/presence -> no write');
+  assert.equal(store.alarmAt, null, 'nobody to keep alive -> alarm not rescheduled');
 });
