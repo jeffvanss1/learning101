@@ -286,6 +286,7 @@ export default {
             }
             if (wz.ok) {
               let list: any = null;
+              let wyzieShape = 'unparseable';
               try {
                 list = await wz.json();
               } catch (_) {
@@ -293,6 +294,7 @@ export default {
               }
               if (list !== null) {
                 const shaped = shapeWyzieResults(list);
+                wyzieShape = shaped.shape;
                 if (shaped.best) {
                   // Echo the query WITHOUT the key.
                   return json(
@@ -301,7 +303,7 @@ export default {
                     { 'Cache-Control': 'public, max-age=60' }
                   );
                 }
-                wyzieNote = 'empty';
+                wyzieNote = 'empty:' + shaped.shape;
               }
             } else {
               wyzieNote = 'http ' + wz.status;

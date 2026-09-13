@@ -282,7 +282,8 @@ export function buildWyzieSearchUrl(v) {
   }
   if (v.lang) params.set('language', v.lang);
   params.set('format', 'srt'); // our converter's native input
-  params.set('source', 'all'); // every enabled source: opensubtitles, subf2m, ...
+  // NOTE: no `source` param — their documented default (opensubtitles) is
+  // what their own examples use; `source=all` behaved flaky in practice.
   if (v.key) params.set('key', v.key);
   return WYZIE_ORIGIN + '/search?' + params.toString();
 }
@@ -319,10 +320,33 @@ function wyzieScore(rec) {
  * @param {any} list
  * @returns {{ results: any[], best: any }}
  */
-export function shapeWyzieResults(list) {
+/**
+ * Extract the record list from a Wyzie payload. Their API returns a JSON
+ * ARRAY on success — but their ERROR responses are OBJECTS, so the success
+ * shape may be (or become) wrapped too. Tolerate the common wrappers and
+ * report what was seen so an 'empty' result is never a mystery.
+ * @param {any} payload
+ * @returns {{ list: any[], shape: string }}
+ */
+/** @param {any} payload */
+export function wyzieExtractList(payload) {
+  if (Array.isArray(payload)) return { list: payload, shape: 'array' };
+  if (payload && typeof payload === 'object') {
+    for (const key of ['results', 'subs', 'data', 'items', 'subtitles']) {
+      if (Array.isArray(payload[key])) return { list: payload[key], shape: 'object:' + key };
+    }
+    if (payload.code && payload.message) return { list: [], shape: 'error:' + payload.code };
+    return { list: [], shape: 'object:' + Object.keys(payload).slice(0, 4).join(',') };
+  }
+  return { list: [], shape: typeof payload };
+}
+
+/** @param {any} payload */
+export function shapeWyzieResults(payload) {
+  const extracted = wyzieExtractList(payload);
   // Score the RAW records first, shape in ranked order (the shaped record
   // renames ai -> machineTranslated, so shaping first would lose the flags).
-  const raw = (Array.isArray(list) ? list : [])
+  const raw = extracted.list
     .filter((r) => r && r.url && r.id)
     .filter((r) => String(r.url).indexOf('https://' + WYZIE_ALLOWED_HOST + '/') === 0)
     .sort((a, b) => wyzieScore(b) - wyzieScore(a));
@@ -342,7 +366,7 @@ export function shapeWyzieResults(list) {
     if (out.length >= 12) break;
   }
   const best = out.length ? { ...out[0] } : null;
-  return { results: out, best: best };
+  return { results: out, best: best, shape: extracted.shape };
 }
 
 /**

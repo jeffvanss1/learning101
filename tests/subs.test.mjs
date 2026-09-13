@@ -13,6 +13,7 @@ import { ROOT } from './dompath.mjs';
 import {
   buildSearchQuery,
   buildWyzieSearchUrl,
+  wyzieExtractList,
   decodeWyzieToken,
   encodeWyzieToken,
   fetchSubtitleVtt,
@@ -142,12 +143,29 @@ test('Wyzie search URL: TMDB id, season+episode, language, srt, all sources, key
   assert.equal(u.searchParams.get('episode'), '2');
   assert.equal(u.searchParams.get('language'), 'id');
   assert.equal(u.searchParams.get('format'), 'srt');
-  assert.equal(u.searchParams.get('source'), 'all');
+  assert.equal(u.searchParams.get('source'), null, 'source defaults to their curated set (source=all proved flaky)');
   assert.equal(u.searchParams.get('key'), 'K');
   const noKey = new URL(buildWyzieSearchUrl({ tmdb: '286217' }));
   assert.equal(noKey.searchParams.get('key'), null, 'the echo must never embed the key');
   const mv = new URL(buildWyzieSearchUrl({ tmdb: '420818' }));
   assert.equal(mv.searchParams.get('season'), null, 'movies carry no season/episode');
+});
+
+test('Wyzie wrapper tolerance: arrays, wrapped objects and error objects', () => {
+  const rec = { id: '1', url: 'https://sub.wyzie.io/c/a?format=srt', release: 'R' };
+  assert.equal(wyzieExtractList([rec]).shape, 'array');
+  assert.equal(wyzieExtractList([rec]).list.length, 1);
+  const wrapped = wyzieExtractList({ results: [rec] });
+  assert.equal(wrapped.shape, 'object:results');
+  assert.equal(wrapped.list.length, 1);
+  const err = wyzieExtractList({ code: 401, message: 'API key required' });
+  assert.equal(err.shape, 'error:401');
+  assert.equal(err.list.length, 0);
+  assert.equal(wyzieExtractList('nope').shape, 'string');
+  // and the shaper consumes a WRAPPED payload end-to-end:
+  const shaped = shapeWyzieResults({ results: [rec] });
+  assert.equal(shaped.results.length, 1);
+  assert.equal(shaped.best.release, 'R');
 });
 
 test('Wyzie token round-trips; foreign hosts are rejected (no open proxy)', () => {

@@ -492,14 +492,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.14",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.15",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.14` and
-   `[WatchParty] API build: api-2026-09-13.14`.
+   `[WatchParty] API build: api-2026-09-13.15`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
