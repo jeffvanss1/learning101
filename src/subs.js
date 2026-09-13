@@ -265,17 +265,19 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
 // allowlist (sub.wyzie.io) — the endpoint can never be abused as a proxy.
 
 export const WYZIE_ORIGIN = 'https://sub.wyzie.io';
-// Any *.wyzie.io host over https (their file/CDN host may differ from
-// sub.wyzie.io; the docs' examples lag behind the live API).
-export const WYZIE_ALLOWED_SUFFIX = '.wyzie.io';
+// Wyzie aggregates sources and returns the SOURCE's own file urls (live API:
+// dl.opensubtitles.org etc. — the docs' sub.wyzie.io/c/... examples lag
+// behind). The allowlist is explicit and suffix-checked so the /file
+// endpoint can never be steered to an arbitrary host.
+export const WYZIE_ALLOWED_SUFFIXES = ['.wyzie.io', '.opensubtitles.org'];
 
-/** @param {string} url @returns {boolean} https + *.wyzie.io */
+/** @param {string} url @returns {boolean} https + allowlisted host suffix */
 export function isWyzieUrl(url) {
   try {
     const u = new URL(String(url));
-    return (
-      u.protocol === 'https:' &&
-      (u.hostname === WYZIE_ALLOWED_SUFFIX.slice(1) || u.hostname.endsWith(WYZIE_ALLOWED_SUFFIX))
+    if (u.protocol !== 'https:') return false;
+    return WYZIE_ALLOWED_SUFFIXES.some(
+      (suffix) => u.hostname === suffix.slice(1) || u.hostname.endsWith(suffix)
     );
   } catch (_) {
     return false;

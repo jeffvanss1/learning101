@@ -152,12 +152,18 @@ test('Wyzie search URL: TMDB id, season+episode, language, srt, all sources, key
   assert.equal(mv.searchParams.get('season'), null, 'movies carry no season/episode');
 });
 
-test('host matcher: any https *.wyzie.io passes; everything else fails', () => {
-  assert.ok(isWyzieUrl('https://sub.wyzie.io/c/x?format=srt'));
-  assert.ok(isWyzieUrl('https://dl.wyzie.io/files/a.srt'), 'file hosts may be subdomains');
+test('host matcher: wyzie.io + opensubtitles.org (the LIVE file hosts), nothing else', () => {
+  assert.ok(isWyzieUrl('https://sub.wyzie.io/c/x?format=srt'), 'docs example host');
+  assert.ok(isWyzieUrl('https://dl.wyzie.io/files/a.srt'), 'wyzie subdomains');
+  assert.ok(
+    isWyzieUrl('https://dl.opensubtitles.org/a.srt'),
+    'the LIVE api returns dl.opensubtitles.org urls (observed 2026-09-13: dropped:65(host@dl.opensubtitles.org))'
+  );
   assert.ok(!isWyzieUrl('http://sub.wyzie.io/a.srt'), 'https only');
   assert.ok(!isWyzieUrl('https://evil.example/a.srt'));
   assert.ok(!isWyzieUrl('https://evil.wyzie.io.evil.example/a.srt'), 'suffix tricks rejected');
+  assert.ok(!isWyzieUrl('https://dl.opensubtitles.org.evil.example/a.srt'), 'suffix tricks rejected (os)');
+  assert.ok(!isWyzieUrl('https://github.com/opensubtitles.org'), 'suffix must match the HOST tail');
   assert.ok(!isWyzieUrl('not a url'));
 });
 
@@ -165,7 +171,7 @@ test('shaping reports dropped records with the reason (fields vs host)', () => {
   const good = { id: '1', url: 'https://sub.wyzie.io/c/a?format=srt', release: 'G', downloadCount: 5 };
   const shaped = shapeWyzieResults([
     { code: 401, message: 'x' }, // no url/id -> fields
-    { id: '2', url: 'https://cdn.otherhost.net/a.srt' }, // foreign host
+    { id: '2', url: 'https://cdn.otherhost.net/a.srt' }, // foreign host (not on the allowlist)
     good,
   ]);
   assert.equal(shaped.results.length, 1);
@@ -214,6 +220,30 @@ test('Wyzie shaping ranks human > AI, clean > HI, then downloads; best carries a
   assert.ok(!best._score, 'ranking bookkeeping must not leak into the response');
   // order: human-clean (3) first
   assert.equal(results[0].downloads, 4321);
+});
+
+test('LIVE host: dl.opensubtitles.org records shape into candidates and fetch', async () => {
+  const recs = Array.from({ length: 65 }, (_, i) => ({
+    id: String(i),
+    url: 'https://dl.opensubtitles.org/download/' + i + '?format=srt',
+    release: 'Rel.' + i,
+    language: 'en',
+    downloadCount: i,
+    ai: false,
+    isHearingImpaired: false,
+  }));
+  const { results, best } = shapeWyzieResults(recs);
+  assert.equal(results.length, 12, 'capped candidate list from the 65 live records');
+  assert.ok(best && best.release === 'Rel.64', 'highest-download record ranked first');
+  assert.ok(shapeWyzieResults(recs).shape.startsWith('array'), 'no drops on live hosts');
+
+  const SRT = '1\n00:00:01,000 --> 00:00:02,000\nLive host cue\n';
+  globalThis.fetch = (url) => {
+    assert.ok(String(url).startsWith('https://dl.opensubtitles.org/'));
+    return Promise.resolve({ ok: true, text: async () => SRT });
+  };
+  const { vtt } = await fetchWyzieVtt(best.fileId, null);
+  assert.ok(vtt.includes('Live host cue'));
 });
 
 test('fetchWyzieVtt converts the direct file to VTT and honors the allowlist', async () => {
