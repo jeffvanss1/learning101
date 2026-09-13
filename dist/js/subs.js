@@ -143,9 +143,9 @@
     if (!overlay || !enabled) return;
     const t = now();
     if (t >= 0) {
-      if (edPlay && cues.length) {
-        // Playhead pinned mid-strip; the WHOLE scale slides under it with
-        // one transform per frame (no DOM rebuilds, no window jumps).
+      if (cues.length) {
+        // Full-timeline mini-map: head position + thread offset repaint per
+        // frame with a single transform (no DOM rebuilds).
         paintEditorThread();
       }
       while (cueIdx < cues.length && cues[cueIdx].end <= t) cueIdx++;
@@ -277,13 +277,17 @@
   // ZOOM: the strip shows a 5-minute window around the playhead, not the
   // whole movie (a 2h film compressed into one bar is unreadable). The
   // window slides forward as playback approaches its right edge.
-  // 60-SECOND STRIP, PLAYHEAD PINNED MID-STRIP: the ticks sit on a fixed
-  // time scale (edPps px per second) and ONE transform per frame centers the
-  // playhead - the visible strip is always [t-30s .. t+30s], sliding under a
-  // stationary red line (Premiere-style: clip moves, head stays).
-  const EDITOR_WINDOW_S = 60;
-  /** px per second on the fixed mini-map scale (barWidth / 60s) */
+  // FULL-TIMELINE MINI-MAP: the strip spans the WHOLE subtitle file
+  // (first cue -> last cue), like a Premiere sequence bar. Ticks sit on
+  // absolute px (edPps = barWidth / total span), the red head travels the
+  // bar with the clock, and the drag slides the whole thread (offset).
+  const EDITOR_WINDOW_S = 60; // unused legacy const kept for reference
+  /** px per second on the full-timeline mini-map scale */
   let edPps = 10;
+  /** total timeline span in seconds (last cue end); 1 while empty */
+  function edSpan() {
+    return cues.length ? Math.max(1, cues[cues.length - 1].end || 1) : 1;
+  }
 
   /** @param {number} s @returns {string} h:mm:ss / m:ss */
   function fmtTS(s) {
@@ -305,12 +309,17 @@
       if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
       return;
     }
-    edPps = edBarWidth() / EDITOR_WINDOW_S; // fixed scale: 60s across the strip
-    const step = Math.max(1, Math.ceil(cues.length / EDITOR_MAX_TICKS));
+    edPps = edBarWidth() / edSpan(); // full timeline across the strip
+    // EVERY caption becomes a BLOCK whose length equals its timestamp span
+    // (left = start, width = duration on the px scale) - a Premiere-style
+    // sequence of caption clips, not thin ticks. Sample only absurd files.
+    const step = cues.length > EDITOR_MAX_TICKS ? Math.ceil(cues.length / EDITOR_MAX_TICKS) : 1;
     for (let ix = 0; ix < cues.length; ix += step) {
       const cue = cues[ix];
       const tick = h('div', 'subs-editor__tick' + (ix === edSelected ? ' subs-editor__tick--sel' : ''));
       tick.style.left = (cue.start * edPps).toFixed(1) + 'px'; // absolute time -> px
+      // BAR LENGTH = CAPTION LENGTH: width mirrors the cue's own duration.
+      tick.style.width = Math.max(2, (cue.end - cue.start) * edPps).toFixed(1) + 'px';
       tick.title = fmtTS(cue.start) + ' \u00b7 ' + String(cue.text).split('\n')[0].slice(0, 60);
       ((/** @type {number} */ idx, /** @type {any} */ c, /** @type {HTMLElement} */ el) => {
         el.addEventListener('click', () => {
@@ -328,10 +337,6 @@
       edTicks.appendChild(tick);
     }
     if (edInfo) edInfo.textContent = tr('subs.editorHint', 'Drag the strip to sync \u00b7 tap a line, then align it.');
-    if (edPlay) {
-      edPlay.style.left = '50%'; // PINNED: the head never moves
-      edPlay.style.display = 'block';
-    }
     paintEditorThread();
   }
 
@@ -559,11 +564,18 @@
   function paintEditorThread() {
     if (!edTicks) return;
     const t = now();
-    if (!(t >= 0) && t !== -1) return; // no clock yet: -1 is a valid no-op
-    // The tick for cue time c sits at c*edPps px; the playhead must sit at
-    // bar center => translate = center - t*pps + offset*pps (display time
-    // = c + offset, so the offset slides the whole thread with the drag).
-    const x = edBarWidth() / 2 - t * edPps + offset * edPps;
+    // Red head travels the FULL timeline with the clock (hidden until the
+    // player reports one - a garbage position here read as "not synced").
+    if (edPlay) {
+      if (t >= 0) {
+        edPlay.style.display = 'block';
+        edPlay.style.left = (Math.min(1, Math.max(0, t / edSpan())) * 100).toFixed(2) + '%';
+      } else {
+        edPlay.style.display = 'none';
+      }
+    }
+    // The thread's offset slides the whole track with the drag.
+    const x = offset * edPps;
     edTicks.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
   }
 

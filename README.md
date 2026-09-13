@@ -696,13 +696,14 @@ ALTER) is seeded idempotently by `ensureSchema` for username `jeff`.
   button, `force`) still win.
 - Per-step console logging: `[WatchParty] subs <lang>: N candidates…`.
 
-**Mini-map thread sync (subs v17):** the cue strip inside the subtitles
-panel IS the timeline — a FIXED 60-second scale with the playhead pinned
-dead-center. Grab the whole subtitle thread and slide it left/right like
-a clip in Premiere Pro: 1px = 1/10s (strip width/60), the offset updates
-live per frame (local only), and the host's drag replicates to the room
-ONCE on release. The centering is one transform per frame (no DOM
-rebuilds); the whole scale slides under the stationary red head as the
-movie plays. "Reset sync" returns to zero; a drag never mis-selects a
-tick. (A floating-pill slider and the old 5-min jump-window were both
-rejected and removed.)
+**Mini-map thread sync (subs v18, style v13):** the strip inside the
+subtitles panel spans the WHOLE subtitle timeline, and EVERY caption is
+a block whose LENGTH equals its own timestamp duration
+(`00:02:05,867 --> 00:02:08,221` = a 2.4s block) - a Premiere-style
+sequence of caption clips. The red head travels the strip with the video
+clock (hidden until the clock reports - never a garbage position). Grab
+anywhere and slide: the whole caption track shifts with the pointer
+(1px = 1px), the offset applies live (local) and replicates to the room
+ONCE on release. Tap a block + "Align to playhead" for exact matching;
+"Reset sync" returns to zero. (Floating-pill slider, 5-min window and
+60s centered variants were all rejected before this design.)
