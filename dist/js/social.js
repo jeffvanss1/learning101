@@ -1186,7 +1186,10 @@
     if (own) {
       friendsSection.appendChild(friendSearchBox());
     }
-    cols.appendChild(friendsSection);
+
+    // Right column holds friends + history stacked; the grid then has
+    // exactly two children (showcase | side column) at every width.
+    const sideCol = h('div', 'profile__side');
 
     const history = h('section', 'profile-history');
     history.appendChild(h('h2', 'section-title', 'Recently watched'));
@@ -1226,7 +1229,9 @@
       });
     }
     history.appendChild(list);
-    cols.appendChild(history);
+    sideCol.appendChild(friendsSection);
+    sideCol.appendChild(history);
+    cols.appendChild(sideCol);
 
     container.appendChild(cols);
 
@@ -1989,6 +1994,13 @@
   // ---------------------------------------------------------------------------
   // Export
   // ---------------------------------------------------------------------------
+  // Build marker: makes "which UI build am I running?" answerable at a
+  // glance (DevTools console / WP.build) instead of guesswork.
+  global.WP.build = 'ui-2026-09-13.4';
+  try {
+    console.info('[WatchParty] UI build:', global.WP.build);
+  } catch (_) {}
+
   global.WP.Social = {
     ensureSession,
     claimWithCode,
