@@ -502,11 +502,21 @@
   function startIdlePresence() {
     stopIdlePresence();
     if (!loadSession()) return;
+    let beatWarned = false;
     const beat = () => {
       // Skip while a room socket owns presence.
       if (document.body.classList.contains('in-room')) return;
       api('/api/presence', { method: 'PUT', body: JSON.stringify({ status: 'IDLE' }) }).catch(
-        () => {}
+        (/** @type {Error} */ e) => {
+          // Diagnosability: a silently-failing heartbeat looks EXACTLY like
+          // "the presence system is broken" from the outside. Say it once.
+          if (!beatWarned) {
+            beatWarned = true;
+            try {
+              console.warn('[WatchParty] presence heartbeat failing:', e && e.message);
+            } catch (_) {}
+          }
+        }
       );
     };
     beat();
@@ -525,6 +535,11 @@
       window.addEventListener('pagehide', () => {
         const s = loadSession();
         if (!s) return;
+        // In-room: NEVER clear here. pagehide also fires for bfcache entries
+        // and mobile backgrounding — clearing un-marked a WATCHING user the
+        // moment their phone screen locked (real exits are handled by the
+        // room socket's close path server-side).
+        if (document.body.classList.contains('in-room')) return;
         try {
           navigator.sendBeacon(
             '/api/presence',
@@ -2088,7 +2103,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.22';
+  global.WP.build = 'ui-2026-09-13.23';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

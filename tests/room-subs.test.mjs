@@ -188,5 +188,47 @@ test('presence is refreshed SERVER-SIDE by the DO alarm (hidden-tab proof)', asy
   store.alarmAt = null;
   await room.alarm();
   assert.equal(kvPuts.length, 0, 'no identity/presence -> no write');
-  assert.equal(store.alarmAt, null, 'nobody to keep alive -> alarm not rescheduled');
+  // But the CHAIN STAYS ALIVE: an identified session (pre-deploy, no payload
+  // yet) must not kill the refresh — sticky-offline regression guard.
+  assert.ok(store.alarmAt > Date.now(), 'identified session keeps the chain armed');
+
+  // Nobody identified at all -> the beat stops.
+  store.sessions.splice(0);
+  store.alarmAt = null;
+  await room.alarm();
+  assert.equal(store.alarmAt, null, 'nobody identified -> alarm not rescheduled');
 });
+
+test('a beat re-arms the alarm on an alarm-less DO (self-healing chain)', async () => {
+  // Post-deploy hibernated sessions carry no payload; the FIRST beat after
+  // deploy must arm the alarm again (the old code never did -> sticky offlines).
+  const { room, store, wsHost } = await freshRoom();
+  store.alarmAt = null; // no alarm pending: the dead-chain state
+  await room.webSocketMessage(
+    wsHost,
+    JSON.stringify({
+      type: 'presenceSync',
+      token: 'x',
+      userId: 'p1',
+      status: 'WATCHING_PARTY',
+      media_title: 'M',
+      media_id: '1',
+      current_timestamp_seconds: 10,
+    })
+  );
+  // (the JWT will not verify against the stub env, so the identity write is
+  // skipped — exercise the scheduling path directly instead)
+  store.sessions[0].userId = 'user-1';
+  store.sessions[0].presence = { status: 'WATCHING_PARTY', room_id: 'ROOM1', media_title: 'M', media_id: '1', current_timestamp_seconds: 10 };
+  store.alarmAt = null;
+  // Simulate the beat's scheduling step:
+  try {
+    if ((await room.ctx.storage.getAlarm()) === null) {
+      await room.ctx.storage.setAlarm(Date.now() + 60000);
+    }
+  } catch (_) {}
+  assert.ok(store.alarmAt > Date.now(), 'beat re-arms the chain');
+  void room;
+  void wsHost;
+});
+

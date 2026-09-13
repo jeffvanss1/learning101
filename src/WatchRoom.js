@@ -712,6 +712,13 @@ export class WatchRoom {
       current_timestamp_seconds: msg.current_timestamp_seconds,
     };
     await this.persist();
+    // Self-healing chain: a beat arriving on an alarm-less DO (post-deploy
+    // hibernated sessions carried no payload) must (re)arm the refresh.
+    try {
+      if ((await this.ctx.storage.getAlarm()) === null) {
+        await this.ctx.storage.setAlarm(Date.now() + PRESENCE_ALARM_MS);
+      }
+    } catch (_) {}
     await setPresence(this.env, userId, {
       // Connected but idle (e.g. tab hidden) keeps the socket, minus context.
       status: watching ? msg.status : 'IDLE',
@@ -745,8 +752,10 @@ export class WatchRoom {
         });
       } catch (_) {}
     }
-    // Keep the beat only while someone is here.
-    if (this.sessions.some((s) => s.userId && s.presence)) {
+    // Keep the beat while ANY identified session remains — sessions from
+    // before the payload field existed have no `presence` yet; killing the
+    // chain here made offline state STICKY until the next deploy.
+    if (this.sessions.some((s) => s.userId)) {
       try {
         await this.ctx.storage.setAlarm(Date.now() + PRESENCE_ALARM_MS);
       } catch (_) {}
