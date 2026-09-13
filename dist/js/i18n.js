@@ -78,6 +78,7 @@
       'subs.tapWhen': 'tap when you hear it',
       'subs.tapDone': 'Synced',
       'subs.persisted': 'saved for this title',
+      'subs.noneDownloadable': 'Subtitles exist but none are downloadable with this API key/plan.',
     },
     id: {
       'nav.home': 'Beranda',
@@ -130,6 +131,7 @@
       'subs.tapWhen': 'tekan saat kamu mendengarnya',
       'subs.tapDone': 'Sinkron',
       'subs.persisted': 'tersimpan untuk judul ini',
+      'subs.noneDownloadable': 'Ada subtitle tetapi tidak ada yang bisa diunduh dengan key/paket API ini.',
     },
     es: {
       'nav.home': 'Inicio',
@@ -182,6 +184,7 @@
       'subs.tapWhen': 'toca cuando lo oigas',
       'subs.tapDone': 'Sincronizado',
       'subs.persisted': 'guardado para este título',
+      'subs.noneDownloadable': 'Hay subtítulos pero ninguno se puede descargar con esta clave/plan.',
     },
     fr: {
       'nav.home': 'Accueil',
@@ -234,6 +237,7 @@
       'subs.tapWhen': 'tapez quand vous l’entendez',
       'subs.tapDone': 'Synchronisé',
       'subs.persisted': 'enregistré pour ce titre',
+      'subs.noneDownloadable': 'Des sous-titres existent mais aucun n’est téléchargeable avec cette clé/ce plan.',
     },
     pt: {
       'nav.home': 'In\u00edcio',
@@ -286,6 +290,7 @@
       'subs.tapWhen': 'toque quando ouvir',
       'subs.tapDone': 'Sincronizada',
       'subs.persisted': 'salvo para este título',
+      'subs.noneDownloadable': 'Existem legendas, mas nenhuma pode ser baixada com esta chave/plano.',
     },
     ar: {
       'nav.home': '\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629',
@@ -338,6 +343,7 @@
       'subs.tapWhen': 'اضغط عندما تسمعها',
       'subs.tapDone': 'تمت المزامنة',
       'subs.persisted': 'محفوظ لهذا العنوان',
+      'subs.noneDownloadable': 'توجد ترجمات لكن لا يمكن تنزيل أي منها بهذا المفتاح/الخطة.',
     },
   };
 

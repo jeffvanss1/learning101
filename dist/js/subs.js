@@ -208,7 +208,15 @@
       setStatus((data && data.error) || tr('subs.searchFailed', 'Subtitle search failed.'), true);
       return null;
     }
-    return data.best || null;
+    // Diagnosability: the exact upstream query + result count, in DevTools.
+    try {
+      console.info('[WatchParty] subs search:', data.query, '-> total', data.total, 'best', !!data.best);
+    } catch (_) {}
+    if (data.best) return data.best;
+    if (data.total > 0) {
+      setStatus(tr('subs.noneDownloadable', 'Subtitles exist but none are downloadable with this API key/plan.'), true);
+    }
+    return null;
   }
 
   /**

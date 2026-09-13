@@ -375,7 +375,7 @@ mirrored back to the room (that caused the host to pause itself), so guests
 can never desync the room by clicking inside their own player.
 
 **Controllers can use either seek bar.** The player's own play/pause is
-mirrored for the controller (debounced), and since ui-2026-09-13.15 a seek
+mirrored for the controller (debounced), and since ui-2026-09-13.16 a seek
 performed on the player's OWN seek bar is detected (an unexplained jump
 beyond 1.2s of playback progress) and mirrored to the room as a normal
 seek — no more snap-back, no need to scroll down to the in-app progress
@@ -483,14 +483,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.11",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.12",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.14` and
-   `[WatchParty] API build: api-2026-09-13.11`.
+   `[WatchParty] API build: api-2026-09-13.12`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.

@@ -264,7 +264,7 @@ export default {
           });
           const res = await fetch(
             'https://api.opensubtitles.com/api/v1/subtitles?' + query,
-            { headers: { 'Api-Key': key, Accept: 'application/json', 'User-Agent': 'WatchParty v1.0' } }
+            { headers: { 'Api-Key': key, Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } }
           );
           if (res.status === 429) {
             return json({ error: 'Subtitle search is rate-limited right now — retry in a moment.' }, 429);
@@ -281,7 +281,13 @@ export default {
           if (!res.ok) return json({ error: 'OpenSubtitles ' + res.status }, 502);
           const payload: any = await res.json();
           return json(
-            { results: shapeSearchResponse(payload), best: pickBest(payload && payload.data), total: payload && payload.total },
+            {
+              results: shapeSearchResponse(payload),
+              best: pickBest(payload && payload.data),
+              total: payload && payload.total,
+              // The EXACT upstream query — makes any future "why empty" a glance.
+              query: query,
+            },
             200,
             { 'Cache-Control': 'public, max-age=60' }
           );

@@ -215,7 +215,7 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
   const headers = {
     'Api-Key': apiKey,
     Accept: 'application/json',
-    'User-Agent': 'WatchParty v1.0',
+    'User-Agent': 'WatchParty v1.0.0',
   };
   const dlRes = await fetch(OPENSUBTITLES_ORIGIN + '/api/v1/download?file_id=' + encodeURIComponent(String(fileId)), {
     headers,
@@ -236,7 +236,7 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
   if (!dl || !dl.link) throw new Error('OpenSubtitles download returned no link');
 
   const fileRes = await fetch(dl.link, {
-    headers: { Accept: '*/*', 'User-Agent': 'WatchParty v1.0' },
+    headers: { Accept: '*/*', 'User-Agent': 'WatchParty v1.0.0' },
     signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
   });
   if (!fileRes.ok) throw new Error('subtitle file fetch ' + fileRes.status);
