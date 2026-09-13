@@ -5,7 +5,7 @@
 // existing app.
 
 import type { Env, AuthedUser } from './types.js';
-import { errorJson } from './http.js';
+import { errorJson, json } from './http.js';
 import { sessionUser } from './auth.js';
 import { ensureSchema } from './schema.js';
 import { handleSessionCreate, handleMe, handleClaim, handleRotateCode } from './routes/auth.js';
@@ -32,6 +32,9 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
   if (!me) return errorJson(401, 'Sign in to do that.');
   return me;
 }
+
+/** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
+export const WORKER_BUILD = 'api-2026-09-13.6';
 
 /** Routes that require the D1/KV bindings (the profile/presence surface). */
 const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;
@@ -67,6 +70,19 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
   await ensureSchema(env);
 
   const method = request.method;
+
+  // ---- Health / build fingerprint -------------------------------------------
+  // One URL that answers "which build is deployed?" without any cache
+  // ambiguity: if this returns JSON, the worker is current; if it returns
+  // HTML, the deployment is stale (SPA fallback = route missing).
+  if (path === '/api/health' && method === 'GET') {
+    return json({
+      ok: true,
+      build: WORKER_BUILD,
+      routes: ['auth', 'user', 'search', 'friends', 'presence', 'rooms', 'tmdb'],
+      storage: { db: !!env.DB, presenceKv: !!env.PRESENCE_KV },
+    }, 200, { 'Cache-Control': 'no-store' });
+  }
 
   // ---- Auth -----------------------------------------------------------------
   if (path === '/api/auth/session' && method === 'POST') {

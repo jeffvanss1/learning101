@@ -2034,11 +2034,24 @@
   // ---------------------------------------------------------------------------
   // Export
   // ---------------------------------------------------------------------------
-  // Build marker: makes "which UI build am I running?" answerable at a
-  // glance (DevTools console / WP.build) instead of guesswork.
+  // Build marker: makes "which build am I running?" answerable at a glance
+  // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
+  // UI stamp and API stamp disagree, the deployment is split — redeploy.
   global.WP.build = 'ui-2026-09-13.6';
+  global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
+    fetch('/api/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((h) => {
+        global.WP.apiBuild = h && h.build ? h.build : null;
+        if (global.WP.apiBuild) {
+          console.info('[WatchParty] API build:', global.WP.apiBuild);
+        } else {
+          console.warn('[WatchParty] API build: UNKNOWN — /api/health did not return JSON. The deployed worker is stale (hard refresh / redeploy).');
+        }
+      })
+      .catch(() => console.warn('[WatchParty] API unreachable'));
   } catch (_) {}
 
   global.WP.Social = {
