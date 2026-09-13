@@ -384,8 +384,18 @@
     );
   }
 
-  async function autoLoad(v) {
+  /** @type {string} identity of the auto-load currently running/finished */
+  let autoKey = '';
+
+  async function autoLoad(v, opts) {
     if (!v || !v.id) return;
+    // ONE AUTO-LOAD PER VIDEO+LANGUAGE: manual triggers (language switch,
+    // Auto-load button) pass {force:true}; automatic calls dedupe here so a
+    // burst of setVideo calls can never stack parallel searches whose last
+    // finisher overrides the room's subtitle language.
+    const key = videoIdentity(v) + '|' + (langSel ? langSel.value : 'en');
+    if (!(opts && opts.force) && key === autoKey) return;
+    autoKey = key;
     lastGatedSeen = '';
     const primary = langSel ? langSel.value : 'en';
     const chain = primary === 'en' ? ['en', ''] : [primary, 'en', ''];
@@ -556,7 +566,7 @@
       try {
         localStorage.setItem('wp:subslang', langSel.value);
       } catch (_) {}
-      if (video) void autoLoad(video); // instant reload in the new language
+      if (video) void autoLoad(video, { force: true }); // instant reload in the new language
     });
     const loadBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.load', 'Auto-load')));
     loadBtn.type = 'button';
@@ -565,7 +575,7 @@
         setStatus(tr('subs.noVideo', 'Start a video first.'), true);
         return;
       }
-      void autoLoad(video);
+      void autoLoad(video, { force: true });
     });
     row1.appendChild(loadBtn);
     panel.appendChild(row1);
@@ -748,14 +758,43 @@
    * Track the room's current video (drives auto-load + offset persistence).
    * @param {{ type: string, id: string, season?: number, episode?: number } | null} v
    */
+  /** @type {string} video identity of the last setVideo call (same-video guard) */
+  let lastVideoKey = '';
+  /** DISTINCT from the no-arg videoKey() (offset persistence key) — this
+   * identifies a video for the same-video guard only.
+   * @param {{ type?: string, id?: string|number, season?: number|null, episode?: number|null } | null} v */
+  function videoIdentity(v) {
+    if (!v || !v.id) return '';
+    return [v.type || 'movie', v.id, v.season == null ? '' : v.season, v.episode == null ? '' : v.episode].join(':');
+  }
+
   function setVideo(v) {
-    video = v && v.id ? v : null;
+    const next = v && v.id ? v : null;
+    const nextKey = videoIdentity(next);
+    // SAME-VIDEO GUARD: setVideo fires on EVERY room-state message (join
+    // echo, host video syncs, UI updates). Re-wiping cues and re-running the
+    // auto-load search each time duplicated loads and — when one re-run's
+    // search flaked and fell back to English — silently switched the whole
+    // room's language. Unchanged video -> keep the loaded cues untouched.
+    if (nextKey && nextKey === lastVideoKey) {
+      // Same video: refresh the persisted offset (cheap, local) but NEVER
+      // wipe cues or re-run the auto-load search — the burst of setVideo
+      // calls from room-state messages must not re-search (and a flaky
+      // re-search falling back to English must not flip the room's
+      // subtitle language).
+      offset = loadOffset();
+      if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
+      return;
+    }
+    lastVideoKey = nextKey;
+    video = next;
     cues = [];
     cueIdx = 0;
     gotClock = false;
     offset = loadOffset();
     if (offsetVal) offsetVal.textContent = (offset > 0 ? '+' : '') + offset.toFixed(2) + 's';
     if (statusEl) statusEl.textContent = '';
+    autoKey = ''; // new video -> auto-load runs again
     // AUTO-LOAD ON OPEN: every video gets subtitles automatically unless the
     // user explicitly turned them off (the CC toggle remembers the choice).
     if (video) {

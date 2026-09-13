@@ -314,3 +314,38 @@ test('WRITE BUDGET: 20s socket beats do NOT write KV per beat (free tier = 1000/
   assert.equal(kvPuts.filter((p) => p.k === 'presence:user:user-1').length, 2, 'status change -> new write');
   assert.equal(store.sessions[0].presence.status, 'IDLE', 'session payload follows the beat');
 });
+
+test('SUBS duplicate-load guard: same fileId twice = ONE broadcast/log, language cannot flip', async () => {
+  const { room, store, wsHost, wsGuest } = await freshRoom();
+  const load = (fileId, label) =>
+    room.webSocketMessage(wsHost, JSON.stringify({ type: 'subs', action: 'load', fileId, label }));
+
+  // Room scenario from the bug report: Indonesian track loads, an auto-load
+  // re-run loads it AGAIN, then a third run lands a DIFFERENT (English) file.
+  await load('file-id-1', 'Bleach.S01E11... [Bahasa Indonesia]');
+  await load('file-id-1', 'Bleach.S01E11... [Bahasa Indonesia]'); // duplicate auto-load
+  const subsLogs = store.chat.filter((c) => c.type === 'system' && /loaded subtitles/.test(c.text));
+  assert.equal(subsLogs.length, 1, 'duplicate fileId is not re-logged/re-broadcast');
+  const guestLoads = wsGuest._sent.filter((m) => m.type === 'subs' && m.action === 'load');
+  assert.equal(guestLoads.length, 1, 'guest received the load exactly once');
+  assert.equal(room.subs.fileId, 'file-id-1');
+
+  // A genuinely DIFFERENT file is still a real user action: it goes through.
+  await load('file-en-1', 'Bleach.S01E11... [English]');
+  assert.equal(room.subs.fileId, 'file-en-1');
+  assert.equal(store.chat.filter((c) => c.type === 'system' && /loaded subtitles/.test(c.text)).length, 2);
+});
+
+test('subs auto-load: same-video guard + force flag + room dedup wired', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const subs = readFileSync(join(ROOT, 'dist/js/subs.js'), 'utf8');
+  // setVideo: unchanged video keeps cues (no wipe, no re-search).
+  assert.match(subs, /function videoIdentity\(/, 'video identity helper exists (distinct from the offset videoKey())');
+  assert.match(subs, /nextKey === lastVideoKey\) \{[\s\S]{0,400}?offset = loadOffset\(\);/, 'same-video: refresh offset, never re-search');
+  // autoLoad: dedupe key + force option (manual language switch/button).
+  assert.match(subs, /async function autoLoad\(v, opts\)/, 'autoLoad takes opts');
+  assert.match(subs, /\(opts && opts\.force\) && key === autoKey/, 'auto-load dedupes unless forced');
+  assert.equal(/autoLoad\(video, \{ force: true \}\)/.test(subs), true, 'manual paths force-reload');
+  assert.match(subs, /if \(pref !== 'off'\) void autoLoad\(video\);/, 'setVideo auto-load stays on the dedupe path');
+});

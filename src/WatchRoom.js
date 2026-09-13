@@ -503,6 +503,14 @@ export class WatchRoom {
         if (msg.action === 'load') {
           const label = sanitizeText(msg.label || '').slice(0, 140);
           const fileId = sanitizeText(msg.fileId || '').slice(0, 300);
+          // DUPLICATE LOAD GUARD: two controllers auto-loading (or one
+          // re-running) used to broadcast twice-plus; the LAST broadcast
+          // won and could flip the room's language (id -> en). Same file
+          // again = nothing new: refresh the timestamp only.
+          if (this.subs && this.subs.fileId && this.subs.fileId === fileId) {
+            this.subs.ts = now();
+            break;
+          }
           this.subs = { fileId: fileId, label: label, ts: now() };
           this.logSystem(
             '\ud83c\udf9f\ufe0f ' + (peer.name || 'Host') + ' loaded subtitles' + (label ? ': ' + label : '')
