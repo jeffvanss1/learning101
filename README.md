@@ -117,10 +117,28 @@ Endpoints used: `/trending/all/week`, `/movie/popular`, `/tv/popular`,
 
 ## Profiles, global search & real-time presence
 
-Every visitor who picks a name silently gets a **profile** (demo-grade auth:
-no passwords — `POST /api/auth/session` issues an HMAC-signed bearer token
-kept in `localStorage`; swap `src/auth.ts` for real auth later without
-touching the route handlers). Profiles power three features:
+### Accounts: no passwords — unique access codes
+
+Picking a display name **creates your profile instantly** (no registration
+form). At that moment the server generates a unique **access code** (e.g.
+`K7MF-9Q2X-P4TD-J8WE`, unambiguous alphabet, ~10^24 keyspace) and shows it
+**exactly once** with a "save this" screen. Only its peppered SHA-256 hash is
+stored, so it can never be re-displayed or leaked from the database.
+
+- **Same browser:** the session token in `localStorage` resumes silently.
+- **Any device:** paste your access code ("Have an access code? Sign in
+  instead" in the name dialog, or `POST /api/auth/claim`) and the profile is
+  yours — that code *is* the password.
+- **Names are protected:** once an account has a code, the name alone can
+  never log anyone in (`POST /api/auth/session` returns 409).
+- **Rotation:** "Regenerate code" in the profile editor (`POST
+  /api/auth/code`) retires the old code and issues a new one.
+- **Legacy accounts** (created before codes) upgrade transparently: the next
+  username login generates their code — one transitional login is the only
+  window where a legacy name could be claimed.
+
+Tokens are HMAC-signed (`src/auth.ts`); swap that one file for real auth
+later without touching the route handlers. Profiles power three features:
 
 ### Global people search (`/api/search/users?q=`)
 
@@ -317,8 +335,10 @@ compiles `src/worker.ts` with its built-in esbuild; no separate build step).
 | GET    | `/api/room/:id`            | Look up a room's current state                     |
 | GET    | `/api/tmdb/*`              | Proxy to the TMDB catalog API                      |
 | GET    | `/room/:id/health`         | Durable Object health (peers, playback)            |
-| POST   | `/api/auth/session`        | Create-or-login (demo auth) → `{ token, user }`    |
+| POST   | `/api/auth/session`        | Create profile → `{ token, user, accessCode }`     |
 | GET    | `/api/auth/me`             | Current session user or `null`                     |
+| POST   | `/api/auth/claim`          | Sign in with an access code → `{ token, user }`    |
+| POST   | `/api/auth/code`           | Rotate your access code (auth) → `{ accessCode }`  |
 | GET    | `/api/search/users?q=`     | Fuzzy user search + live presence                  |
 | GET    | `/api/user/:username`      | Public profile (pins, last 5 watched, presence)    |
 | PUT    | `/api/user/profile`        | Update bio / display name / frame / pins (auth)    |

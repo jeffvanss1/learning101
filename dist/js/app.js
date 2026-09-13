@@ -76,7 +76,47 @@
         resolve(name);
       };
 
-      $('name-form').onsubmit = (e) => {
+      // Access-code sign-in view (profile travels between devices).
+      const nameForm = $('name-form');
+      const codeForm = $('name-code-form');
+      const codeInput = $('name-code-input');
+      const codeErr = $('name-code-error');
+      const showView = (/** @type {string} */ which) => {
+        nameForm.hidden = which !== 'name';
+        $('name-modal-alt').hidden = which !== 'name';
+        codeForm.hidden = which !== 'code';
+        if (which === 'code') codeInput.focus();
+        else input.focus();
+      };
+      $('name-code-toggle').onclick = () => showView('code');
+      $('name-code-back').onclick = () => {
+        codeErr.textContent = '';
+        showView('name');
+      };
+
+      codeForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const raw = codeInput.value.trim();
+        if (!raw) {
+          codeErr.textContent = 'Enter your access code.';
+          return;
+        }
+        codeErr.textContent = '';
+        if (!WP.Social) return;
+        const res = await WP.Social.claimWithCode(raw);
+        if (!res.ok) {
+          codeErr.textContent = res.message || 'That code does not match any account.';
+          return;
+        }
+        state.name = res.session.user.displayName;
+        saveName(state.name);
+        WP.Social.startIdlePresence();
+        refreshProfileButton();
+        toast('Welcome back, ' + state.name + '!');
+        done(state.name);
+      };
+
+      nameForm.onsubmit = (e) => {
         e.preventDefault();
         const n = input.value.trim();
         if (!n) {
@@ -85,15 +125,30 @@
         }
         err.textContent = '';
         saveName(n);
-        // Silent profile session — makes the user searchable + presence-aware
-        // without any extra auth step. Fire-and-forget; failure is harmless.
-        if (WP.Social) {
-          WP.Social.ensureSession(n).then(() => {
+        // Create the profile (if needed); the access-code reveal modal is
+        // shown by social.js on first creation.
+        const finish = () => {
+          if (WP.Social) {
             WP.Social.startIdlePresence();
             refreshProfileButton();
+          }
+          done(n);
+        };
+        if (WP.Social) {
+          WP.Social.ensureSession(n).then((res) => {
+            if (res && res.ok) {
+              finish();
+            } else if (res && res.reason === 'taken') {
+              err.textContent =
+                'That name is protected by an access code. Pick another, or choose "Have an access code?".';
+            } else {
+              // Offline / server trouble: keep the app usable anonymously.
+              finish();
+            }
           });
+        } else {
+          finish();
         }
-        done(n);
       };
       modal.addEventListener('click', (e) => {
         if (e.target === modal) done(null);
@@ -129,9 +184,11 @@
       profileBtn.addEventListener('click', async () => {
         let s = WP.Social && WP.Social.getSession();
         if (!s) {
+          // promptName handles creation AND access-code sign-in; the session
+          // is saved by social.js inside those flows.
           const n = await promptName();
           if (!n) return;
-          s = await WP.Social.ensureSession(n);
+          s = (WP.Social && WP.Social.getSession()) || null;
           if (WP.Social) WP.Social.startIdlePresence();
           refreshProfileButton();
         }
@@ -145,10 +202,9 @@
     // social.js asks us to run the sign-in flow (e.g. "Add friend" while
     // anonymous).
     window.addEventListener('wp:need-signin', async () => {
-      toast('Pick a name first — that becomes your profile.');
+      toast('Pick a name — or sign in with your access code.');
       const n = await promptName();
       if (n && WP.Social) {
-        await WP.Social.ensureSession(n);
         WP.Social.startIdlePresence();
         refreshProfileButton();
       }
@@ -210,11 +266,15 @@
       }
       state.name = name;
       saveName(name);
-      // Silent profile session (same as the name modal).
+      // Silent profile session (same as the name modal); the code-reveal
+      // modal is handled inside social.js. Failures stay non-blocking here —
+      // joining a room must never require a profile.
       if (WP.Social) {
-        WP.Social.ensureSession(name).then(() => {
-          WP.Social.startIdlePresence();
-          refreshProfileButton();
+        WP.Social.ensureSession(name).then((res) => {
+          if (res && res.ok) {
+            WP.Social.startIdlePresence();
+            refreshProfileButton();
+          }
         });
       }
       $('join-error').textContent = '';
@@ -1405,11 +1465,15 @@
     setupChrome();
     // Restore the saved identity so we never ask for a name twice.
     state.name = savedName();
-    // Silent profile session + IDLE presence heartbeat (home surface).
+    // Resume the saved profile (token in localStorage) + IDLE heartbeat.
+    // Creation only happens through the name modal now, so a boot-time call
+    // never pops the access-code modal unexpectedly.
     if (state.name && WP.Social) {
-      WP.Social.ensureSession(state.name).then(() => {
-        WP.Social.startIdlePresence();
-        refreshProfileButton();
+      WP.Social.ensureSession().then((res) => {
+        if (res && res.ok) {
+          WP.Social.startIdlePresence();
+          refreshProfileButton();
+        }
       });
     }
     refreshProfileButton();

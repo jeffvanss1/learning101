@@ -7,7 +7,7 @@
 import type { Env, AuthedUser } from './types.js';
 import { errorJson } from './http.js';
 import { sessionUser } from './auth.js';
-import { handleSessionCreate, handleMe } from './routes/auth.js';
+import { handleSessionCreate, handleMe, handleClaim, handleRotateCode } from './routes/auth.js';
 import { handleUserSearch } from './routes/search.js';
 import {
   handleGetProfile,
@@ -51,6 +51,12 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
   }
   if (path === '/api/auth/me' && method === 'GET') {
     return handleMe(request, env);
+  }
+  if (path === '/api/auth/claim' && method === 'POST') {
+    return handleClaim(request, env);
+  }
+  if (path === '/api/auth/code' && method === 'POST') {
+    return handleRotateCode(request, env);
   }
 
   // ---- Global user search ----------------------------------------------------

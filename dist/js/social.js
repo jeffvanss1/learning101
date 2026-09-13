@@ -80,14 +80,22 @@
   }
 
   /**
-   * Create-or-login silently (demo auth — no passwords; see README).
-   * Never throws: a failed session just means anonymous browsing.
-   * @param {string} displayName
-   * @returns {Promise<SessionState | null>}
+   * Resume an existing session (token in localStorage) or create the account.
+   * On creation the server returns the unique ACCESS CODE exactly once —
+   * this module shows the "save your code" modal before it resolves.
+   *
+   * Never throws. Result tells the caller what happened:
+   *   { ok: true, session }                    — signed in
+   *   { ok: false, reason: 'taken' }           — name protected by a code
+   *   { ok: false, reason: 'error', message? } — network/server trouble
+   *
+   * @param {string} [displayName] required only when creating
+   * @returns {Promise<{ok: boolean, reason?: string, message?: string, session?: SessionState}>}
    */
   async function ensureSession(displayName) {
     const existing = loadSession();
-    if (existing && existing.user.displayName === displayName) return existing;
+    if (existing) return { ok: true, session: existing };
+    if (!displayName) return { ok: false, reason: 'error', message: 'No name given.' };
     try {
       const res = await fetch('/api/auth/session', {
         method: 'POST',
@@ -99,14 +107,126 @@
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.token) return existing;
-      saveSession(/** @type {SessionState} */ (data));
+      if (res.status === 409) {
+        return { ok: false, reason: 'taken', message: data && data.error };
+      }
+      if (!res.ok || !data.token) {
+        return { ok: false, reason: 'error', message: (data && data.error) || '' };
+      }
+      const fresh = /** @type {SessionState} */ (data);
+      saveSession(fresh);
       // Let the friends rail (and anything else) react to sign-in.
       global.dispatchEvent(new CustomEvent('wp:friends-changed'));
-      return session;
-    } catch (_) {
-      return existing;
+      // The access code is shown once — make sure the user sees it.
+      if (data.accessCode) void showAccessCode(String(data.accessCode));
+      return { ok: true, session: fresh };
+    } catch (e) {
+      return { ok: false, reason: 'error', message: e instanceof Error ? e.message : '' };
     }
+  }
+
+  /**
+   * Sign in from any device with an access code (the signup seed).
+   * @param {string} code
+   * @returns {Promise<{ok: boolean, message?: string, session?: SessionState}>}
+   */
+  async function claimWithCode(code) {
+    try {
+      const res = await fetch('/api/auth/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token) {
+        return { ok: false, message: (data && data.error) || 'Could not sign in.' };
+      }
+      const fresh = /** @type {SessionState} */ (data);
+      saveSession(fresh);
+      global.dispatchEvent(new CustomEvent('wp:friends-changed'));
+      return { ok: true, session: fresh };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'Could not sign in.' };
+    }
+  }
+
+  /**
+   * Rotate the access code (auth): old code dies, new one is shown once.
+   * @returns {Promise<{ok: boolean, message?: string}>}
+   */
+  async function rotateAccessCode() {
+    try {
+      const data = await api('/api/auth/code', { method: 'POST' });
+      if (data && data.accessCode) {
+        await showAccessCode(String(data.accessCode));
+        return { ok: true };
+      }
+      return { ok: false, message: 'No code returned.' };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'Could not rotate code.' };
+    }
+  }
+
+  /**
+   * "Save your access code" screen — the ONLY time the code is ever shown
+   * (the server stores just a hash). Resolves once acknowledged.
+   * @param {string} code
+   * @returns {Promise<boolean>} true when the user acknowledged
+   */
+  function showAccessCode(code) {
+    return new Promise((resolve) => {
+      const modal = /** @type {HTMLElement} */ ($('code-modal'));
+      const card = /** @type {HTMLElement} */ (modal.querySelector('.modal__card'));
+      card.innerHTML = '';
+
+      const head = h('div', 'modal__head');
+      head.appendChild(h('h2', 'modal__title', '🔑 Your access code'));
+      card.appendChild(head);
+
+      card.appendChild(
+        h(
+          'p',
+          'code-modal__lead',
+          'This is the only way to sign in on another device or recover this profile — there are no passwords. Save it somewhere safe.'
+        )
+      );
+
+      const display = h('div', 'code-modal__display');
+      String(code)
+        .split('-')
+        .forEach((chunk) => display.appendChild(h('span', 'code-modal__chunk', chunk)));
+      card.appendChild(display);
+
+      const row = h('div', 'code-modal__actions-row');
+      const copy = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', 'Copy code'));
+      copy.type = 'button';
+      copy.addEventListener('click', async () => {
+        try {
+          await WP.copyText(String(code).replace(/-/g, ''));
+          copy.textContent = 'Copied ✓';
+          setTimeout(() => (copy.textContent = 'Copy code'), 1600);
+        } catch (_) {
+          toast('Copy failed — write it down instead', true);
+        }
+      });
+      row.appendChild(copy);
+      card.appendChild(row);
+
+      const warn = h('p', 'code-modal__warn', '⚠️ We cannot show this again. Lost code = lost profile.');
+      card.appendChild(warn);
+
+      const ack = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--block', "I've saved it — continue"));
+      ack.type = 'button';
+      ack.addEventListener('click', () => {
+        modal.hidden = true;
+        card.innerHTML = '';
+        resolve(true);
+      });
+      card.appendChild(ack);
+
+      modal.hidden = false;
+      ack.focus();
+    });
   }
 
   function signOut() {
@@ -1142,6 +1262,34 @@
       setTimeout(() => favField.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
     }
 
+    // Access code (rotate only — the current code can never be re-shown)
+    const codeField = h('div', 'field');
+    codeField.appendChild(h('span', 'field__label', 'Access code'));
+    codeField.appendChild(
+      h(
+        'span',
+        'field__hint',
+        'Your code is shown once when created — we store only a hash. Rotating gives you a new code and instantly retires the old one.'
+      )
+    );
+    const rotate = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', '↻ Regenerate code'));
+    rotate.type = 'button';
+    rotate.addEventListener('click', async () => {
+      rotate.disabled = true;
+      rotate.textContent = 'Generating…';
+      const res = await rotateAccessCode();
+      if (!res.ok) {
+        toast(res.message || 'Could not rotate code.', true);
+        rotate.disabled = false;
+        rotate.textContent = '↻ Regenerate code';
+        return;
+      }
+      rotate.textContent = '↻ Regenerate code';
+      rotate.disabled = false;
+    });
+    codeField.appendChild(rotate);
+    form.appendChild(codeField);
+
     // Error + save
     const err = h('div', 'field__error');
     form.appendChild(err);
@@ -1592,6 +1740,8 @@
   // ---------------------------------------------------------------------------
   global.WP.Social = {
     ensureSession,
+    claimWithCode,
+    rotateAccessCode,
     getSession,
     signOut,
     searchUsers,

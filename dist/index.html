@@ -11,7 +11,7 @@
        Roboto elsewhere) — no web font download, so it matches apple.com. -->
   <link rel="stylesheet" href="/css/style.css?v=9" />
   <link rel="stylesheet" href="/css/catalog.css?v=6" />
-  <link rel="stylesheet" href="/css/social.css?v=2" />
+  <link rel="stylesheet" href="/css/social.css?v=3" />
 </head>
 <body>
   <!-- Toast / notification surface -->
@@ -309,7 +309,26 @@
         </label>
         <button class="btn btn--primary btn--block" type="submit">Continue</button>
       </form>
+      <div class="name-modal__alt" id="name-modal-alt">
+        <button type="button" id="name-code-toggle" class="btn-link">Have an access code? Sign in instead</button>
+      </div>
+      <form id="name-code-form" hidden autocomplete="off">
+        <label class="field">
+          <span class="field__label">Access code</span>
+          <input id="name-code-input" class="field__input code-input" type="text" maxlength="25"
+                 placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
+          <span class="field__hint">The code you saved when your profile was created.</span>
+          <span class="field__error" id="name-code-error"></span>
+        </label>
+        <button class="btn btn--primary btn--block" type="submit">Sign in</button>
+        <button type="button" id="name-code-back" class="btn btn--ghost btn--block">Use a new name instead</button>
+      </form>
     </div>
+  </div>
+
+  <!-- Access-code reveal modal (signup / rotation — the only time it is shown) -->
+  <div class="modal" id="code-modal" hidden>
+    <div class="modal__card modal__card--code"></div>
   </div>
 
   <!-- Join modal -->
@@ -363,7 +382,7 @@
   <script src="/js/api.js?v=5"></script>
   <script src="/js/player.js?v=6"></script>
   <script src="/js/catalog.js?v=8"></script>
-  <script src="/js/social.js?v=2"></script>
-  <script src="/js/app.js?v=11"></script>
+  <script src="/js/social.js?v=3"></script>
+  <script src="/js/app.js?v=12"></script>
 </body>
 </html>

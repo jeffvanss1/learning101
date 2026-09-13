@@ -829,6 +829,81 @@
   color: var(--text-dim);
 }
 
+/* ---- Access codes (signup reveal + sign-in input) -------------------------------- */
+.name-modal__alt {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--blue);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  text-align: center;
+  letter-spacing: 0.14em;
+  font-size: 16px;
+}
+
+.code-input::placeholder {
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.modal__card--code {
+  width: min(430px, 94vw);
+}
+
+.code-modal__lead {
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin: 4px 0 16px;
+}
+
+.code-modal__display {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 16px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.code-modal__chunk {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #7ee08a;
+}
+
+.code-modal__actions-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.code-modal__warn {
+  color: #e8c35a;
+  font-size: 12.5px;
+  text-align: center;
+  margin: 14px 0;
+}
+
 /* ---- Friends rail (right side of home) ------------------------------------------- */
 /*
  * Narrow screens: off-canvas drawer (transform), opened via the side-nav
