@@ -608,11 +608,10 @@ test('AUDIT: Reset routes through the room-sync path (guests learn about it)', a
   assert.ok(offsets.indexOf(0) !== -1, 'reset FIRED the room hook (host reset now reaches guests): ' + JSON.stringify(offsets));
 });
 
-test('AUDIT: Align releases its pick so the editor window follows again', async () => {
+test('AUDIT: Align releases its pick and the scale keeps following the clock', async () => {
   const { Subs, listeners, rafQueue } = await freshSubs();
   const wrap = new El2();
   Subs.mount(wrap);
-  // Long enough timeline that the 5-min window can actually slide past cue #1.
   Subs.loadCues(
     '1\n00:00:10,000 --> 00:00:11,000\nEarly line\n\n' +
       '2\n00:06:00,000 --> 00:06:01,000\nLater line\n'
@@ -637,20 +636,19 @@ test('AUDIT: Align releases its pick so the editor window follows again', async 
   assert.equal(Math.abs(Subs.__test.state().offset - 0.5) < 0.6, true, 'aligned');
   assert.equal(alignBtn.disabled, true, 'selection RELEASED after align');
 
-  // Window resumes following: by t=400s (6:40) the 5-min window has slid past
-  // the 0:10 line (it only slides when nothing is picked — the old code kept
-  // the selection pinned at the matched spot forever).
+  // The scale ALWAYS follows the clock now (playhead pinned mid-strip): by
+  // t=400s the transform must sit near center(300) - 400*10 + offset*10.
   fireClock(listeners, rafQueue, 400);
   for (let i = 0; i < 3 && rafQueue.length; i++) {
     rafQueue.splice(0).forEach((cb) => cb());
     await new Promise((r) => setTimeout(r, 2));
   }
-  const titles = Array.from(ticksWrap.children).map((/** @type {any} */ x) => x.title).join(' | ');
-  assert.ok(!/Early line/.test(titles), 'early line left the slid window: ' + titles);
-  assert.ok(/Later line/.test(titles), 'upcoming line visible: ' + titles);
+  const x = parseFloat(String(ticksWrap.style.transform).replace(/[^-0-9.]/g, ''));
+  const expected = 300 - 400 * 10 + Subs.__test.state().offset * 10;
+  assert.ok(Math.abs(x - expected) < 60, 'scale followed the clock to ~400s: x=' + x + ' expected~' + expected);
 });
 
-test('editor zoom: the strip is a 5-minute window that follows the playhead', async () => {
+test('editor zoom: 60-second strip with the playhead pinned mid-strip', async () => {
   const { Subs, listeners, rafQueue } = await freshSubs();
   const wrap = new El2();
   Subs.mount(wrap);
@@ -669,35 +667,36 @@ test('editor zoom: the strip is a 5-minute window that follows the playhead', as
     return null;
   };
   const row = findBy(wrap, 'subs-editor');
-  const ticksWrap = row.children[0].children[0];
+  const bar = row.children[0];
+  const ticksWrap = bar.children[0];
 
-  // At t=0 the window is [0, 5min] -> only the early line is on the strip.
-  assert.equal(ticksWrap.children.length, 1, 'window shows only nearby cues');
-  assert.ok(/0:10/.test(ticksWrap.children[0].title), 'early tick: ' + ticksWrap.children[0].title);
+  // Fixed scale: both cues got ticks (virtualized visually, not by DOM).
+  assert.equal(ticksWrap.children.length, 2, 'both cues drawn on the fixed scale');
+  const pps = 600 / 60; // stub width 600px over a 60s window = 10 px/s
+  assert.equal(parseFloat(ticksWrap.children[0].style.left), 10 * pps, 'early tick at 10s on the px scale');
+  assert.equal(parseFloat(ticksWrap.children[1].style.left), 2400 * pps, 'far tick at 40:00 on the px scale');
 
-  // Jump to 39:50 -> the window slides; the 40:00 line is now on the strip.
-  fireClock(listeners, rafQueue, 2390); // dispatches the clock + drains queued rafs
+  // The playhead is PINNED at the strip center.
+  const play = bar.children[1];
+  assert.equal(play.style.left, '50%', 'playhead pinned mid-strip');
+  assert.equal(play.style.display, 'block', 'playhead visible');
+
+  // Jump to 39:50 -> one transform centers the scale; no DOM churn.
+  fireClock(listeners, rafQueue, 2390);
   for (let i = 0; i < 4 && rafQueue.length; i++) {
     rafQueue.splice(0).forEach((cb) => cb());
     await new Promise((r) => setTimeout(r, 2));
   }
-  const titles = Array.from(ticksWrap.children).map((/** @type {any} */ x) => x.title).join(' | ');
-  assert.ok(/40:00/.test(titles), 'slid window reveals the far line: ' + titles);
-  assert.ok(!/Early line/.test(titles), 'the early line left the window: ' + titles);
-  assert.equal(ticksWrap.children.length, 1, 'window keeps the strip sparse');
+  const x = parseFloat(String(ticksWrap.style.transform).replace(/[^-0-9.]/g, ''));
+  const expected = 300 - 2390 * pps;
+  assert.ok(Math.abs(x - expected) < 80, 'scale centered on the playhead: x=' + x + ' expected~' + expected);
+  assert.equal(play.style.left, '50%', 'playhead STILL pinned after the jump');
 
-  // The playhead rides inside the window (39:50 in a [39:05..40:05]-ish window).
-  const play = row.children[0].children[1];
-  assert.ok(play.style.display !== 'none', 'playhead visible');
-  const pct = parseFloat(play.style.left);
-  assert.ok(pct > 0 && pct < 100, 'playhead inside the window: ' + play.style.left);
-
-  // Manual match still exact within the zoomed view.
+  // Manual match stays exact within the zoomed view.
   fireClock(listeners, rafQueue, 2389);
   rafQueue.splice(0).forEach((cb) => cb());
-  ticksWrap.children[0]._h.click(); // the 40:00 line
+  ticksWrap.children[1]._h.click(); // the 40:00 line
   row.children[2]._h.click(); // Align to playhead
-  // now() ~= 2389 (+ real-clock drift from the drain loop) -> offset ~= -11.
   const off = Subs.__test.state().offset;
   assert.ok(Math.abs(off + 11) < 0.5, 'align snapped the 40:00 line to the playhead: ' + off);
 });
@@ -1273,27 +1272,27 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   let roomOffsets = [];
   Subs.onOffset((v) => roomOffsets.push(v));
 
-  // Drag the thread +60px. Stub width 600px covers a 300s window => 0.5s/px
-  // => +30s. The strip translates visually while dragging.
+  // Fixed scale: 600px stub / 60s = 10 px/s => dragging +60px = +6s.
+  const xBefore = parseFloat(String(ticks.style.transform).replace(/[^-0-9.]/g, '')) || 0;
   fire(bar, 'pointerdown', pd(100));
   fire(bar, 'pointermove', pd(130));
   fire(bar, 'pointermove', pd(160));
-  // FRESH_SRT spans 12s -> the editor window is 12s over the 600px stub
-  // strip => 0.02s/px => +60px = +1.2s; px translate = (1.2/12)*600 = 60px.
-  assert.equal(ticks.style.transform, 'translateX(60.0px)', 'thread slides visually with the drag');
+  const xDuring = parseFloat(String(ticks.style.transform).replace(/[^-0-9.]/g, ''));
+  assert.equal(String(ticks.style.transform).indexOf('translateX(') === 0, true, 'thread slides via transform');
+  assert.equal(Math.round(xDuring - xBefore), 60, '60px drag slides the thread 60px (10 px/s = +6s)');
   assert.equal(roomOffsets.length, 0, 'dragging does NOT spam the room per frame');
 
   const rows = panel.children.filter((c) => String(c.className).indexOf('subs-panel__row') === 0);
   const offEl = rows.map((r) => r.children.find((c) => c.className === 'subs-panel__offset')).find(Boolean);
   assert.ok(offEl, 'offset readout exists');
-  assert.equal(offEl.textContent, '+1.20s', 'offset follows the thread drag (window-scaled)');
+  assert.equal(offEl.textContent, '+6.00s', 'offset follows the thread drag (10 px/s)');
 
   fire(bar, 'pointerup', pd(160));
   assert.equal(roomOffsets.length, 1, 'release replicates the offset to the room EXACTLY once');
-  assert.equal(roomOffsets[0], 1.2);
+  assert.equal(roomOffsets[0], 6);
 
   // Reset control returns to zero.
   fire(resetBtn, 'click', {});
   assert.equal(offEl.textContent, '0.00s', 'reset returns to zero');
-  assert.equal(ticks.style.transform, 'translateX(0.0px)', 'thread snaps back visually');
+  assert.equal(Math.round(parseFloat(String(ticks.style.transform).replace(/[^-0-9.]/g, '')) - xBefore), 0, 'thread snaps back to the pre-drag position');
 });

@@ -143,23 +143,10 @@
     if (!overlay || !enabled) return;
     const t = now();
     if (t >= 0) {
-      if (edPlay && edWinEnd > edWinStart) {
-        if (t >= edWinStart && t <= edWinEnd) {
-          edPlay.style.display = 'block';
-          edPlay.style.left = ((t - edWinStart) / (edWinEnd - edWinStart)) * 100 + '%';
-        } else {
-          edPlay.style.display = 'none';
-        }
-        // Slide the 5-min window: forward when the playhead nears the right
-        // edge (keep upcoming lines visible), or back on a rewind/seek —
-        // unless the user is mid-match (a picked line pins the view). Only
-        // rebuild when the window would actually MOVE (no end-of-movie
-        // rebuild churn).
-        if (edSelected == null && (t > edWinEnd - 30 || t < edWinStart)) {
-          const win = editorWindowFor(t);
-          if (win.s !== edWinStart || win.e !== edWinEnd) buildEditorTicks();
-        }
-        paintEditorThread(); // window slid -> the px scale changed
+      if (edPlay && cues.length) {
+        // Playhead pinned mid-strip; the WHOLE scale slides under it with
+        // one transform per frame (no DOM rebuilds, no window jumps).
+        paintEditorThread();
       }
       while (cueIdx < cues.length && cues[cueIdx].end <= t) cueIdx++;
       const cue = cues[cueIdx];
@@ -290,9 +277,13 @@
   // ZOOM: the strip shows a 5-minute window around the playhead, not the
   // whole movie (a 2h film compressed into one bar is unreadable). The
   // window slides forward as playback approaches its right edge.
-  const EDITOR_WINDOW_S = 300;
-  let edWinStart = 0;
-  let edWinEnd = 0;
+  // 60-SECOND STRIP, PLAYHEAD PINNED MID-STRIP: the ticks sit on a fixed
+  // time scale (edPps px per second) and ONE transform per frame centers the
+  // playhead - the visible strip is always [t-30s .. t+30s], sliding under a
+  // stationary red line (Premiere-style: clip moves, head stays).
+  const EDITOR_WINDOW_S = 60;
+  /** px per second on the fixed mini-map scale (barWidth / 60s) */
+  let edPps = 10;
 
   /** @param {number} s @returns {string} h:mm:ss / m:ss */
   function fmtTS(s) {
@@ -305,39 +296,21 @@
     return (h ? h + ':' : '') + mm + ':' + ss;
   }
 
-  /** 5-min window centered on the playhead, clamped to the subtitle span. */
-  function editorWindowFor(t) {
-    const span = cues.length ? cues[cues.length - 1].end || 1 : 1;
-    const w = Math.min(EDITOR_WINDOW_S, Math.max(1, span));
-    let s = 0;
-    if (t >= 0) s = Math.min(Math.max(0, t - w / 2), Math.max(0, span - w));
-    return { s: s, e: s + w };
-  }
-
   function buildEditorTicks() {
     if (!edTicks) return;
     while (edTicks.firstChild) edTicks.removeChild(edTicks.firstChild);
     if (edAlign) edAlign.disabled = edSelected == null; // keep a picked line armed across slides
-    const t = now();
-    const win = editorWindowFor(t);
-    edWinStart = win.s;
-    edWinEnd = win.e;
     if (!cues.length) {
       if (edPlay) edPlay.style.display = 'none';
       if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
       return;
     }
-    /** @type {number[]} */ const inWin = [];
-    for (let i = 0; i < cues.length; i++) {
-      const c = cues[i];
-      if (c.start >= edWinStart && c.start < edWinEnd) inWin.push(i);
-    }
-    const step = Math.max(1, Math.ceil(inWin.length / EDITOR_MAX_TICKS));
-    for (let k = 0; k < inWin.length; k += step) {
-      const ix = inWin[k];
+    edPps = edBarWidth() / EDITOR_WINDOW_S; // fixed scale: 60s across the strip
+    const step = Math.max(1, Math.ceil(cues.length / EDITOR_MAX_TICKS));
+    for (let ix = 0; ix < cues.length; ix += step) {
       const cue = cues[ix];
       const tick = h('div', 'subs-editor__tick' + (ix === edSelected ? ' subs-editor__tick--sel' : ''));
-      tick.style.left = ((cue.start - edWinStart) / (edWinEnd - edWinStart)) * 100 + '%';
+      tick.style.left = (cue.start * edPps).toFixed(1) + 'px'; // absolute time -> px
       tick.title = fmtTS(cue.start) + ' \u00b7 ' + String(cue.text).split('\n')[0].slice(0, 60);
       ((/** @type {number} */ idx, /** @type {any} */ c, /** @type {HTMLElement} */ el) => {
         el.addEventListener('click', () => {
@@ -354,8 +327,11 @@
       })(ix, cue, tick);
       edTicks.appendChild(tick);
     }
-    if (edInfo) edInfo.textContent = tr('subs.editorHint', 'Tap a line, then align it to where you are.');
-    if (edPlay) edPlay.style.display = 'block';
+    if (edInfo) edInfo.textContent = tr('subs.editorHint', 'Drag the strip to sync \u00b7 tap a line, then align it.');
+    if (edPlay) {
+      edPlay.style.left = '50%'; // PINNED: the head never moves
+      edPlay.style.display = 'block';
+    }
     paintEditorThread();
   }
 
@@ -563,7 +539,7 @@
   // (locally per frame, replicated to the room ONCE on release).
   // ---------------------------------------------------------------------------
   const THREAD_MAX_S = 60; // sane drag ceiling (panel buttons go further)
-  /** @type {{ startX: number, startOffset: number, widthPx: number, moved: boolean } | null} */
+  /** @type {{ startX: number, startOffset: number, pps: number, moved: boolean } | null} */
   let threadDrag = null;
   let threadDragGuardUntil = 0; // a drag must not also select the tick under the pointer
 
@@ -582,16 +558,19 @@
   /** Slide the whole thread visually by the current offset (cheap transform). */
   function paintEditorThread() {
     if (!edTicks) return;
-    const span = edWinEnd - edWinStart;
-    if (!(span > 0)) return;
-    const px = (offset / span) * edBarWidth();
-    edTicks.style.transform = 'translateX(' + px.toFixed(1) + 'px)';
+    const t = now();
+    if (!(t >= 0) && t !== -1) return; // no clock yet: -1 is a valid no-op
+    // The tick for cue time c sits at c*edPps px; the playhead must sit at
+    // bar center => translate = center - t*pps + offset*pps (display time
+    // = c + offset, so the offset slides the whole thread with the drag).
+    const x = edBarWidth() / 2 - t * edPps + offset * edPps;
+    edTicks.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
   }
 
   /** @param {any} e */
   function onThreadPointerDown(e) {
     if (!edTicks) return;
-    threadDrag = { startX: e.clientX, startOffset: offset, widthPx: edBarWidth(), moved: false };
+    threadDrag = { startX: e.clientX, startOffset: offset, pps: edPps || 10, moved: false };
     if (e.currentTarget && e.currentTarget.setPointerCapture) {
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
     }
@@ -603,9 +582,9 @@
     if (!threadDrag) return;
     const dx = e.clientX - threadDrag.startX;
     if (Math.abs(dx) > 4) threadDrag.moved = true;
-    const span = edWinEnd - edWinStart;
-    if (!(span > 0) || !(threadDrag.widthPx > 0)) return;
-    const next = threadDrag.startOffset + (dx / threadDrag.widthPx) * span;
+    if (!(threadDrag.pps > 0)) return;
+    // 1:1 spatial: dragging the thread 10px at 10px/s shifts timing 1s.
+    const next = threadDrag.startOffset + dx / threadDrag.pps;
     // {remote:true} = local-only while dragging (no per-frame room spam);
     // the final offset replicates once on pointerup.
     applyOffsetValue(Math.max(-THREAD_MAX_S, Math.min(THREAD_MAX_S, Math.round(next * 100) / 100)), { remote: true });
@@ -616,7 +595,7 @@
     if (!threadDrag) return;
     const moved = threadDrag.moved;
     threadDrag = null;
-    buildEditorTicks(); // snap the ticks to exact percent positions
+    buildEditorTicks(); // snap the ticks to exact px positions
     paintEditorThread();
     if (moved && onOffsetCb) {
       try { onOffsetCb(offset); } catch (_) {} // ONE room replication per drag

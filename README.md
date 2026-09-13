@@ -696,11 +696,13 @@ ALTER) is seeded idempotently by `ensureSchema` for username `jeff`.
   button, `force`) still win.
 - Per-step console logging: `[WatchParty] subs <lang>: N candidates…`.
 
-**Mini-map thread sync (style v12, subs v16):** the cue strip inside the
-subtitles panel IS the timeline — grab the whole subtitle thread and
-slide it left/right like a clip in Premiere Pro. The playhead stays
-fixed, the track slides with the pointer, the offset updates live
-(window-scaled: s per px = window span / strip width, ±60 s cap), and
-the host's drag replicates to the room ONCE on release (no per-frame
-spam). "Reset sync" returns to zero; a drag never mis-selects a tick.
-(An earlier floating-pill slider was rejected and removed.)
+**Mini-map thread sync (subs v17):** the cue strip inside the subtitles
+panel IS the timeline — a FIXED 60-second scale with the playhead pinned
+dead-center. Grab the whole subtitle thread and slide it left/right like
+a clip in Premiere Pro: 1px = 1/10s (strip width/60), the offset updates
+live per frame (local only), and the host's drag replicates to the room
+ONCE on release. The centering is one transform per frame (no DOM
+rebuilds); the whole scale slides under the stationary red head as the
+movie plays. "Reset sync" returns to zero; a drag never mis-selects a
+tick. (A floating-pill slider and the old 5-min jump-window were both
+rejected and removed.)
