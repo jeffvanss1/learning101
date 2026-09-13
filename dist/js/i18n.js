@@ -89,6 +89,8 @@
       'subs.byHost': 'loaded by host',
       'subs.byHostMatch': 'matched by host',
       'subs.now': 'now',
+      'subs.snapNoClock': 'Start playback first, then sync.',
+      'subs.snapAtEnd': 'No more lines ahead — rewind a little to sync.',
     },
     id: {
       'nav.home': 'Beranda',
@@ -152,6 +154,8 @@
       'subs.byHost': 'dimuat oleh host',
       'subs.byHostMatch': 'disesuaikan oleh host',
       'subs.now': 'sekarang',
+      'subs.snapNoClock': 'Putar videonya dulu, lalu sinkronkan.',
+      'subs.snapAtEnd': 'Tidak ada baris lagi di depan — mundurkan sedikit untuk sinkron.',
     },
     es: {
       'nav.home': 'Inicio',
@@ -215,6 +219,8 @@
       'subs.byHost': 'cargado por el anfitrión',
       'subs.byHostMatch': 'ajustado por el anfitrión',
       'subs.now': 'ahora',
+      'subs.snapNoClock': 'Reproduce el vídeo primero y luego sincroniza.',
+      'subs.snapAtEnd': 'No quedan líneas por delante: rebobina un poco para sincronizar.',
     },
     fr: {
       'nav.home': 'Accueil',
@@ -278,6 +284,8 @@
       'subs.byHost': 'chargé par l’hôte',
       'subs.byHostMatch': 'calé par l’hôte',
       'subs.now': 'maintenant',
+      'subs.snapNoClock': 'Lance d’abord la lecture, puis synchronisez.',
+      'subs.snapAtEnd': 'Plus de ligne à venir — rembobinez un peu pour synchroniser.',
     },
     pt: {
       'nav.home': 'In\u00edcio',
@@ -341,6 +349,8 @@
       'subs.byHost': 'carregado pelo anfitrião',
       'subs.byHostMatch': 'ajustado pelo anfitrião',
       'subs.now': 'agora',
+      'subs.snapNoClock': 'Dê play primeiro, depois sincronize.',
+      'subs.snapAtEnd': 'Não há mais linhas à frente — volte um pouco para sincronizar.',
     },
     ar: {
       'nav.home': '\u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629',
@@ -404,6 +414,8 @@
       'subs.byHost': 'حمّلها المضيف',
       'subs.byHostMatch': 'ضبطها المضيف',
       'subs.now': 'الآن',
+      'subs.snapNoClock': 'شغّل الفيديو أولاً ثم زامن.',
+      'subs.snapAtEnd': 'لا مزيد من الأسطر القادمة — أرجِع قليلاً للمزامنة.',
     },
   };
 

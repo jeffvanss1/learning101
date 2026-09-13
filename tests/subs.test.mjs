@@ -555,6 +555,101 @@ test('subtitle language crosses audio: defaults to geo locale, persists choice, 
   assert.ok(seenLangs.indexOf('en') !== -1, 'reloaded in the new language: ' + seenLangs.join(','));
 });
 
+test('AUDIT: syncSnap refuses garbage — no clock yet, or tapped after the last cue', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  Subs.mount(new El2());
+  Subs.loadCues('1\n00:00:10,000 --> 00:00:12,000\nOnly line\n');
+
+  // No PLAYER_EVENT yet: now() is -1 -> a snap must NOT write a garbage offset.
+  Subs.syncSnap();
+  assert.equal(Subs.__test.state().offset, 0, 'no clock -> offset untouched');
+  assert.ok(Subs.__test.state().status.length > 0, 'tells the user why');
+
+  // Playback running, but the tap lands AFTER the final cue ended (credits):
+  // the old code snapped the last line to now (+minutes) and every cue
+  // vanished into the past. Offset must stay put with a clear message.
+  fireClock(listeners, rafQueue, 5000); // 83 minutes in; the cue ended long ago
+  Subs.syncSnap();
+  assert.equal(Subs.__test.state().offset, 0, 'post-credits tap -> offset untouched');
+
+  // A normal in-range tap still works.
+  fireClock(listeners, rafQueue, 11.5);
+  Subs.syncSnap();
+  assert.equal(Subs.__test.state().offset, 1.5, 'in-range snap unchanged by the guards');
+});
+
+test('AUDIT: Reset routes through the room-sync path (guests learn about it)', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  const offsets = [];
+  Subs.onOffset((v) => offsets.push(v));
+  Subs.loadCues('1\n00:00:10,000 --> 00:00:12,000\nLine\n');
+
+  fireClock(listeners, rafQueue, 11.0);
+  Subs.syncSnap();
+  assert.equal(Subs.__test.state().offset, 1, 'synced +1 first');
+
+  // Find the panel's Reset button (exact label text, per tr fallback).
+  const findByText = (root, txt) => {
+    if ((root.textContent || '') === txt) return root;
+    for (const c of root.children || []) {
+      const hit = findByText(c, txt);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const panel = findClass(wrap, 'subs-panel');
+  assert.ok(panel, 'panel rendered');
+  const resetBtn = findByText(panel, 'Reset offset');
+  assert.ok(resetBtn && resetBtn._h && resetBtn._h.click, 'reset button present with a handler');
+  resetBtn._h.click();
+  assert.equal(Subs.__test.state().offset, 0, 'offset zeroed');
+  assert.ok(offsets.indexOf(0) !== -1, 'reset FIRED the room hook (host reset now reaches guests): ' + JSON.stringify(offsets));
+});
+
+test('AUDIT: Align releases its pick so the editor window follows again', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  // Long enough timeline that the 5-min window can actually slide past cue #1.
+  Subs.loadCues(
+    '1\n00:00:10,000 --> 00:00:11,000\nEarly line\n\n' +
+      '2\n00:06:00,000 --> 00:06:01,000\nLater line\n'
+  );
+
+  const findBy = (root, cls) => {
+    if (String(root.className || '').split(/\s+/).indexOf(cls) !== -1) return root;
+    for (const c of root.children || []) {
+      const hit = findBy(c, cls);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const row = findBy(wrap, 'subs-editor');
+  const ticksWrap = row.children[0].children[0];
+  const alignBtn = row.children[2];
+
+  fireClock(listeners, rafQueue, 10.5);
+  ticksWrap.children[0]._h.click();
+  assert.equal(alignBtn.disabled, false, 'picked -> Align armed');
+  alignBtn._h.click();
+  assert.equal(Math.abs(Subs.__test.state().offset - 0.5) < 0.6, true, 'aligned');
+  assert.equal(alignBtn.disabled, true, 'selection RELEASED after align');
+
+  // Window resumes following: by t=400s (6:40) the 5-min window has slid past
+  // the 0:10 line (it only slides when nothing is picked — the old code kept
+  // the selection pinned at the matched spot forever).
+  fireClock(listeners, rafQueue, 400);
+  for (let i = 0; i < 3 && rafQueue.length; i++) {
+    rafQueue.splice(0).forEach((cb) => cb());
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  const titles = Array.from(ticksWrap.children).map((/** @type {any} */ x) => x.title).join(' | ');
+  assert.ok(!/Early line/.test(titles), 'early line left the slid window: ' + titles);
+  assert.ok(/Later line/.test(titles), 'upcoming line visible: ' + titles);
+});
+
 test('editor zoom: the strip is a 5-minute window that follows the playhead', async () => {
   const { Subs, listeners, rafQueue } = await freshSubs();
   const wrap = new El2();

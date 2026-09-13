@@ -322,7 +322,11 @@ Sources:
   `{anime:false}` instead of a 502. Catalog titles/overviews pinned to
   English (en-US): geo locales made TMDB fall back to native script, so
   anime rendered as ジョジョの奇妙な冒険 instead of JoJo's Bizarre
-  Adventure. The subtitle language
+  Adventure. LOGIC AUDIT (api-2026-09-13.29): sync refuses garbage — no
+  clock yet or tapped after the final cue no longer writes a broken offset
+  (it explained itself instead); panel Reset goes through the room-sync
+  path (the host's reset now reaches guests); Align releases its pick so
+  the zoom window resumes following the playhead. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching

@@ -499,7 +499,21 @@
       return;
     }
     const t = now(); // adjusted clock (offset already applied)
-    const target = cues.find((c) => c.start >= t) || cues[cues.length - 1];
+    // Guard: before the first PLAYER_EVENT there is no clock — snapping
+    // would compute a garbage offset from t = -1 and kill all cues.
+    if (t < 0) {
+      setStatus(tr('subs.snapNoClock', 'Start playback first, then sync.'), true);
+      return;
+    }
+    const last = cues[cues.length - 1];
+    // Guard: tapping after the FINAL cue ended (credits) must not snap the
+    // last line to now — that pushed a +minutes offset in and every other
+    // cue landed in the past (subs silently vanished).
+    if (t > last.end) {
+      setStatus(tr('subs.snapAtEnd', 'No more lines ahead — rewind a little to sync.'), true);
+      return;
+    }
+    const target = cues.find((c) => c.start >= t) || last;
     const playerTime = t + offset; // true player time at the tap
     applyOffsetValue(playerTime - target.start);
     setStatus(
@@ -633,11 +647,16 @@
       if (edSelected == null || !cues[edSelected]) return;
       const t = now();
       if (t < 0) return;
-      applyOffsetValue(t - cues[edSelected].start);
+      const matched = cues[edSelected];
+      applyOffsetValue(t - matched.start);
       setStatus(
         '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
-          ' (' + fmtTS(cues[edSelected].start) + ' \u2192 ' + tr('subs.now', 'now') + ')'
+          ' (' + fmtTS(matched.start) + ' \u2192 ' + tr('subs.now', 'now') + ')'
       );
+      // Release the pick: the window resumes following the playhead.
+      edSelected = null;
+      edAlign.disabled = true;
+      buildEditorTicks();
     });
     rowEd.appendChild(edAlign);
     panel.appendChild(rowEd);
@@ -646,9 +665,7 @@
     const reset = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.reset', 'Reset offset')));
     reset.type = 'button';
     reset.addEventListener('click', () => {
-      offset = 0;
-      saveOffset(0);
-      if (offsetVal) offsetVal.textContent = '0.00s';
+      applyOffsetValue(0); // single source of truth: persists + resets cueIdx + tells the room
     });
     row3b.appendChild(reset);
     const sizeBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.size', 'Size')));
