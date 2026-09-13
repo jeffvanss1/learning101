@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { ROOT } from './dompath.mjs';
 import {
   buildSearchQuery,
+  fetchSubtitleVtt,
   parseTimestamp,
   formatVttTimestamp,
   toVtt,
@@ -53,13 +54,20 @@ test('timestamp round-trip', () => {
   assert.equal(parseTimestamp('nope'), null);
 });
 
-test('search query: episode-precise for series, none for movies', () => {
+test('search query: PARENT tmdb id for series (docs), own id for movies', () => {
+  // OpenSubtitles docs: season_number/episode_number pair with
+  // parent_tmdb_id — tmdb_id + season/episode returns wrong/empty results.
   const tv = new URLSearchParams(buildSearchQuery({ type: 'tv', tmdb: '94605', season: 3, episode: 7, lang: 'id' }));
-  assert.equal(tv.get('tmdb_id'), '94605');
+  assert.equal(tv.get('parent_tmdb_id'), '94605', 'series must search by parent_tmdb_id');
+  assert.equal(tv.get('tmdb_id'), null, 'tmdb_id must NOT be sent for series');
   assert.equal(tv.get('season_number'), '3');
   assert.equal(tv.get('episode_number'), '7');
   assert.equal(tv.get('languages'), 'id');
+  const an = new URLSearchParams(buildSearchQuery({ type: 'anime', tmdb: '123', season: 1, episode: 1 }));
+  assert.equal(an.get('parent_tmdb_id'), '123', 'anime follows the series rules');
   const mv = new URLSearchParams(buildSearchQuery({ type: 'movie', tmdb: '420818' }));
+  assert.equal(mv.get('tmdb_id'), '420818', 'movies keep their own tmdb_id');
+  assert.equal(mv.get('parent_tmdb_id'), null, 'movies must not carry a parent id');
   assert.equal(mv.get('season_number'), null, 'movies must not carry season/episode params');
 });
 
@@ -85,6 +93,19 @@ test('shapeSearchResponse caps the candidate list and maps fields', () => {
   assert.equal(shaped.length, 12, 'candidate list must be capped');
   assert.equal(shaped[0].fileId, 1);
   assert.equal(shaped[0].lang, 'en');
+});
+
+test('download quota exhaustion surfaces a plain-language error', async () => {
+  globalThis.fetch = () =>
+    Promise.resolve({ ok: false, status: 406, json: async () => ({}) });
+  let message = '';
+  try {
+    await fetchSubtitleVtt(1, 'key', null);
+  } catch (e) {
+    message = e instanceof Error ? e.message : String(e);
+  }
+  assert.ok(message.includes('daily download limit'), 'quota errors must be plain-language: ' + message);
+  assert.ok(message.includes('cached'), 'the error must mention cached subs keep working');
 });
 
 // ---- client bundle runtime smoke -------------------------------------------

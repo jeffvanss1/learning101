@@ -31,9 +31,14 @@ const DOWNLOAD_TIMEOUT_MS = 12_000;
  */
 export function buildSearchQuery(v) {
   const params = new URLSearchParams();
-  params.set('tmdb_id', String(v.tmdb));
-  if (v.type !== 'movie') {
-    // Series/anime: episode-precise subtitles only.
+  if (v.type === 'movie') {
+    // Movies: the movie's own TMDB id.
+    params.set('tmdb_id', String(v.tmdb));
+  } else {
+    // Series/anime (docs): the SHOW's TMDB id goes in parent_tmdb_id,
+    // together with season_number + episode_number. tmdb_id + season/
+    // episode is an invalid combination and returns wrong/empty results.
+    params.set('parent_tmdb_id', String(v.tmdb));
     if (v.season != null) params.set('season_number', String(v.season));
     if (v.episode != null) params.set('episode_number', String(v.episode));
   }
@@ -212,7 +217,17 @@ export async function fetchSubtitleVtt(fileId, apiKey, kv) {
     headers,
     signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
   });
-  if (!dlRes.ok) throw new Error('OpenSubtitles download ' + dlRes.status);
+  if (!dlRes.ok) {
+    // Free tier download quota is tiny (~10/day) — say so plainly when it
+    // bites (406 DownloadLimitExceeded / 429 throttled). KV-cached subs
+    // keep working regardless.
+    if (dlRes.status === 406 || dlRes.status === 429) {
+      throw new Error(
+        'OpenSubtitles daily download limit reached — resets daily. Already-cached subtitles keep working.'
+      );
+    }
+    throw new Error('OpenSubtitles download ' + dlRes.status);
+  }
   const dl = /** @type {any} */ (await dlRes.json());
   if (!dl || !dl.link) throw new Error('OpenSubtitles download returned no link');
 

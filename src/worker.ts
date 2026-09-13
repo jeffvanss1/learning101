@@ -266,6 +266,18 @@ export default {
             'https://api.opensubtitles.com/api/v1/subtitles?' + query,
             { headers: { 'Api-Key': key, Accept: 'application/json', 'User-Agent': 'WatchParty v1.0' } }
           );
+          if (res.status === 429) {
+            return json({ error: 'Subtitle search is rate-limited right now — retry in a moment.' }, 429);
+          }
+          if (res.status === 401 || res.status === 403) {
+            return json(
+              {
+                error:
+                  'OpenSubtitles rejected the API key (' + res.status + ') — check OPENSUBTITLES_API_KEY and that the key is approved on api.opensubtitles.com.',
+              },
+              502
+            );
+          }
           if (!res.ok) return json({ error: 'OpenSubtitles ' + res.status }, 502);
           const payload: any = await res.json();
           return json(
@@ -289,7 +301,8 @@ export default {
           });
         }
       } catch (e) {
-        return json({ error: 'subtitle lookup failed', detail: String(e) }, 502);
+        const msg = e instanceof Error ? e.message : String(e);
+        return json({ error: msg, detail: String(e) }, 502);
       }
     }
 

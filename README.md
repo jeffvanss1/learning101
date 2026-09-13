@@ -281,13 +281,18 @@ offset you can nudge (±¼s / ±1s buttons or `[` / `]` keys) — the offset is
 
 Sources:
 - **Auto-load** (OpenSubtitles v3 via the worker): `GET /api/subs/search`
-  finds subtitles for the exact TMDB id + season/episode (best candidate
-  auto-picked: real dialogue > machine-translated, popular releases,
-  23.976/24 fps); `GET /api/subs/file?fileId=` downloads and converts
+  finds subtitles per the official API contract — `tmdb_id` for movies,
+  **`parent_tmdb_id` + `season_number` + `episode_number` for series/anime**
+  (tmdb_id + season/episode is an invalid combination there and returns
+  empty/wrong results); best candidate auto-picked: real dialogue >
+  machine-translated, popular releases, 23.976/24 fps; `GET /api/subs/file?fileId=` downloads and converts
   SRT → WebVTT, cached in KV for 7 days (`subs:vtt:*`) so the API's tight
   daily download quota is amortized across all users. Needs the
   `OPENSUBTITLES_API_KEY` secret (`wrangler secret put
-  OPENSUBTITLES_API_KEY` — free key at api.opensubtitles.com).
+  OPENSUBTITLES_API_KEY` — free key at api.opensubtitles.com). The free
+  tier's download quota is tiny (~10/day) — the KV cache converts that
+  into "one download per subtitle, ever"; quota/key errors surface in
+  plain language in the panel (406/429 quota, 401/403 key rejected).
 - **Upload**: any `.srt`/`.vtt` file, no key needed.
 
 **Tap-Sync** (the one-press exact sync): the panel shows the line that
@@ -467,14 +472,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.9",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.10",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.14` and
-   `[WatchParty] API build: api-2026-09-13.9`.
+   `[WatchParty] API build: api-2026-09-13.10`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
