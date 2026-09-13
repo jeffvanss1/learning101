@@ -850,6 +850,7 @@
     container.innerHTML = '';
     container.hidden = false;
     container.className = 'profile';
+    container.scrollTop = 0; // open at the hero, never a stale offset
     container.appendChild(profileSkeleton());
 
     /** @type {(() => void)[]} */
@@ -1022,7 +1023,9 @@
   }
 
   function profileSkeleton() {
-    const skel = h('div', 'profile profile--loading');
+    // NOTE: deliberately NOT classed '.profile' — that would nest a second
+    // scroll/padding surface inside the profile scroller.
+    const skel = h('div', 'profile--loading');
     const bar = h('div', 'profile-skel');
     for (let i = 0; i < 3; i++) bar.appendChild(h('div', 'profile-skel__row'));
     skel.appendChild(bar);
@@ -1996,7 +1999,7 @@
   // ---------------------------------------------------------------------------
   // Build marker: makes "which UI build am I running?" answerable at a
   // glance (DevTools console / WP.build) instead of guesswork.
-  global.WP.build = 'ui-2026-09-13.4';
+  global.WP.build = 'ui-2026-09-13.5';
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
   } catch (_) {}

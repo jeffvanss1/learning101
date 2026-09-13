@@ -282,11 +282,19 @@
 }
 
 /* ---- Profile page --------------------------------------------------------------- */
+/* #profile is a flex child of .app-shell__main (fixed-height column).
+   WITHOUT flex/overflow rules it shrank and clipped — the page opened
+   mid-content and the hero sat above the viewport. It must be its own
+   scroll surface, exactly like .home. */
 .profile {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 20px 16px 60px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   width: 100%;
+  /* Center the 1080px content column without putting max-width on the
+     scroller itself (keeps the scrollbar at the viewport edge like .home). */
+  padding: 20px max(16px, calc((100% - 1080px) / 2)) 60px;
 }
 
 .profile__missing {
