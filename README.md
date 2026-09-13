@@ -304,8 +304,8 @@ Sources:
   every cue is a tick on a strip — click one to see its timestamp, hit
   `Align to playhead` to make that line start NOW (manual match, no mic).
   The strip is ZOOMED to a 5-minute window that follows the playhead
-  (api-2026-09-13.27). Uploads now actually load the cues (they only
-  counted before). PLAYBACK CONVERGENCE (api-2026-09-13.27): play/pause/
+  (api-2026-09-13.28). Uploads now actually load the cues (they only
+  counted before). PLAYBACK CONVERGENCE (api-2026-09-13.28): play/pause/
   seek broadcasts converge IMMEDIATELY (message-driven) instead of on the
   2.5s throttled poll — the pause/resume delay that read as play-pause
   looping is gone. ANIME: the AniList matcher is unicode-aware (native
@@ -314,7 +314,15 @@ Sources:
   searches AniList with the ORIGINAL title and pins en-US for the TMDB
   name, and the client cache prefix was bumped to v2 (old nulls poisoned).
   Anime/TV subtitle searches ALWAYS carry season+episode (S1 default;
-  Wyzie requires them together, lima 400s without). The subtitle language
+  Wyzie requires them together, lima 400s without). ANIME CACHE-BUST
+  (api-2026-09-13.28): pre-fix null AniList lookups were edge-cached for 7
+  days (Cache-Control 604800) — the endpoint is now versioned
+  (`/api/anilist/<id>?v=2`, client cache prefix v3) and unresolved lookups
+  carry a 5-minute edge TTL (resolved: 1 day). TMDB 404 degrades to
+  `{anime:false}` instead of a 502. Catalog titles/overviews pinned to
+  English (en-US): geo locales made TMDB fall back to native script, so
+  anime rendered as ジョジョの奇妙な冒険 instead of JoJo's Bizarre
+  Adventure. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching
@@ -531,14 +539,14 @@ assets updated but the worker script didn't (or the browser cached old JS).
 Every build fingerprinted itself, so a stale deploy is visible in seconds:
 
 1. `GET /api/health` must return JSON:
-   `{"ok":true,"build":"api-2026-09-13.27",...}`. If it returns the home page
+   `{"ok":true,"build":"api-2026-09-13.28",...}`. If it returns the home page
    HTML, the deployed worker predates the API routes — run `npm run deploy`
    from the branch that has the change (fixes land on the PR branch, not
    `main`) and read its output for errors.
 2. DevTools console must show both stamps after a hard refresh
    (Ctrl+Shift+R):
    `[WatchParty] UI build: ui-2026-09-13.21` and
-   `[WatchParty] API build: api-2026-09-13.27`.
+   `[WatchParty] API build: api-2026-09-13.28`.
 3. If any API surface ever answers HTML instead of JSON, the UI now says so
    explicitly (profile pages show **"Deployment out of date"** with the
    redeploy instructions) instead of failing silently.
