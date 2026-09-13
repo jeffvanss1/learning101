@@ -1,0 +1,15 @@
+# Static-asset cache policy (Pages-style _headers, honored by Workers
+# Static Assets). HTML must always revalidate — a stale index.html pairing
+# old markup with new scripts caused several "still broken" reports.
+/index.html
+  Cache-Control: no-store
+
+/sw.js
+  Cache-Control: no-store
+
+# Versioned assets (?v=N in the HTML) are safe to cache hard.
+/css/*
+  Cache-Control: public, max-age=86400
+
+/js/*
+  Cache-Control: public, max-age=86400

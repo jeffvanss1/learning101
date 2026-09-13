@@ -149,8 +149,18 @@
       if (data.handleAdjusted) {
         toast('Your display name stays “' + fresh.user.displayName + '” — your handle is @' + fresh.user.username + '.');
       }
-      // The access code is shown once — make sure the user sees it.
-      if (data.accessCode) void showAccessCode(String(data.accessCode));
+      // The access code is shown once — make sure the user sees it. Runs in
+      // its own microtask: a display failure here must NEVER flip the
+      // already-committed signup into a reported error.
+      if (data.accessCode) {
+        const code = String(data.accessCode);
+        Promise.resolve()
+          .then(() => showAccessCode(code))
+          .catch((e) => {
+            console.error('code reveal failed', e);
+            toast('SIGNUP OK — but the code popup failed. Your access code: ' + code, true);
+          });
+      }
       return { ok: true, session: fresh };
     } catch (e) {
       return { ok: false, reason: 'error', message: e instanceof Error ? e.message : '' };
@@ -207,8 +217,20 @@
    */
   function showAccessCode(code) {
     return new Promise((resolve) => {
-      const modal = /** @type {HTMLElement} */ ($('code-modal'));
-      const card = /** @type {HTMLElement} */ (modal.querySelector('.modal__card'));
+      // The modal markup can be missing on a stale cached page — inject a
+      // stand-in rather than throwing: the one-time code must ALWAYS be
+      // showable (a throw here used to flip an already-successful signup
+      // into a reported failure).
+      let modal = /** @type {HTMLElement | null} */ ($('code-modal'));
+      if (!modal) {
+        modal = h('div', 'modal');
+        modal.id = 'code-modal';
+        modal.appendChild(h('div', 'modal__card modal__card--code'));
+        document.body.appendChild(modal);
+      }
+      const card = /** @type {HTMLElement} */ (
+        modal.querySelector('.modal__card') || modal.appendChild(h('div', 'modal__card modal__card--code'))
+      );
       card.innerHTML = '';
 
       const head = h('div', 'modal__head');
