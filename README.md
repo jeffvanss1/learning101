@@ -360,7 +360,15 @@ Sources:
   the presence-refresh alarm then renewed that ghost's WATCHING status
   forever (the TTL could never expire it). Every alarm tick now checks
   the runtime's LIVE socket list: sessions without a live socket are
-  pruned and their presence cleared within one minute of death. The subtitle language
+  pruned and their presence cleared within one minute of death. KV WRITE
+  BUDGET (api-2026-09-13.37): the free tier allows 1,000 KV writes/DAY and
+  per-beat presence writes burnt that before noon — all writes then failed
+  (silent plaintext 500s) and everyone showed OFFLINE. Now: socket beats
+  update only the DO session; KV is written on join/status-change or at
+  most every 4 min; the DO alarm refreshes every 5 min; home beats every
+  10 min; presence TTLs are 1h; and the room DO writes as the
+  authoritative writer (bypasses the second-tab downgrade guard). Budget:
+  ~12-20 writes/day/user instead of ~4,000. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching

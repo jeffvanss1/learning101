@@ -140,9 +140,10 @@ test('host subtitle load: logged, broadcast, persisted; guests cannot set subs',
   assert.equal(off[0].by, 'p1', 'carries the sender id for client echo-guard');
 });
 
-test('presence TTL survives background-tab throttling (900s, not 180s)', async () => {
+test('presence TTLs match the KV write budget (1h, refreshed server-side)', async () => {
   const mod = await import(pathToFileURL(join(ROOT, 'src/presence.ts')).href + '?v=' + Math.random());
-  assert.equal(mod.PRESENCE_TTL_S, 900, 'TTL raised: hidden-tab timers fire as rarely as 1/5min');
+  assert.equal(mod.PRESENCE_TTL_S, 3600, 'watching TTL 1h (KV free tier: 1000 writes/day - freshness comes from the DO alarm)');
+  assert.equal(mod.IDLE_PRESENCE_TTL_S, 3600, 'idle TTL 1h');
   const puts = [];
   const env = {
     PRESENCE_KV: {
@@ -158,7 +159,7 @@ test('presence TTL survives background-tab throttling (900s, not 180s)', async (
     current_timestamp_seconds: 120,
   });
   assert.ok(puts.length === 1, 'one KV write');
-  assert.equal(puts[0].expirationTtl, 900, 'watching: 15min (server-refreshed by the room DO)');
+  assert.equal(puts[0].expirationTtl, 3600, 'watching: 1h (refreshed 5-min by the room DO - write budget)');
 
   // IDLE carries no live data and has NO server-side refresher on the home
   // surface — an hour so background-throttled clients cannot go stale.
@@ -193,7 +194,7 @@ test('presence is refreshed SERVER-SIDE by the DO alarm (hidden-tab proof)', asy
   await room.alarm();
 
   const writes = kvPuts.map((p) => ({ status: p.v.status, ttl: p.opts && p.opts.expirationTtl }));
-  assert.ok(writes.some((x) => x.status === 'WATCHING_PARTY' && x.ttl === 900), 'watcher refreshed: ' + JSON.stringify(writes));
+  assert.ok(writes.some((x) => x.status === 'WATCHING_PARTY' && x.ttl === 3600), 'watcher refreshed: ' + JSON.stringify(writes));
   assert.ok(writes.some((x) => x.status === 'IDLE'), 'idle member refreshed too');
   assert.ok(store.alarmAt > Date.now(), 'alarm rescheduled while sessions remain');
 
@@ -281,4 +282,35 @@ test('ghost sessions (socket died without a close) are pruned and their WATCHING
   await room.alarm();
   assert.equal(store.sessions.length, 0, 'all ghosts pruned');
   assert.equal(store.alarmAt, null, 'nobody left -> beat stops');
+});
+
+test('WRITE BUDGET: 20s socket beats do NOT write KV per beat (free tier = 1000/day)', async () => {
+  const { register } = await import('node:module');
+  register(new URL('./tsresolve.mjs', import.meta.url));
+  const auth = await import(pathToFileURL(join(ROOT, 'src/auth.ts')).href + '?v=' + Math.random());
+  const { room, store, wsHost, kvPuts } = await freshRoom();
+  store.sessions[0].userId = 'user-1';
+  // Sign with the same secret the room's env verifies (harness env omits
+  // SESSION_SECRET -> auth falls back to the dev secret on both sides).
+  const token = await auth.issueToken({}, { id: 'user-1', username: 'jeff' });
+
+  const beat = (ts) =>
+    room.webSocketMessage(
+      wsHost,
+      JSON.stringify({ type: 'presenceSync', token, userId: 'user-1', status: 'WATCHING_PARTY', media_title: 'M', media_id: '1', current_timestamp_seconds: ts })
+    );
+  await beat(1);
+  await beat(21);
+  await beat(41);
+  await beat(61);
+  const writesForUser = kvPuts.filter((p) => p.k === 'presence:user:user-1').length;
+  assert.equal(writesForUser, 1, 'four beats -> ONE kv write (join only): ' + writesForUser);
+
+  // A status CHANGE writes immediately.
+  await room.webSocketMessage(
+    wsHost,
+    JSON.stringify({ type: 'presenceSync', token, userId: 'user-1', status: 'IDLE', current_timestamp_seconds: 0 })
+  );
+  assert.equal(kvPuts.filter((p) => p.k === 'presence:user:user-1').length, 2, 'status change -> new write');
+  assert.equal(store.sessions[0].presence.status, 'IDLE', 'session payload follows the beat');
 });

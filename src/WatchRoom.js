@@ -27,8 +27,12 @@ import { setPresence, clearPresenceIfRoom } from './presence.js';
 // Protocol constants
 // ---------------------------------------------------------------------------
 // Presence refresh cadence for the DO alarm (server-side, client-independent).
-// Keep below PRESENCE_TTL_S and above the heartbeat noise floor.
-export const PRESENCE_ALARM_MS = 60_000;
+// 5 min: with the 1h TTL this is 12 writes/day/user — KV free tier is
+// 1,000 writes/DAY TOTAL, so per-beat writes were never survivable.
+export const PRESENCE_ALARM_MS = 5 * 60_000;
+// The 20s socket beat updates the DO session (free), NOT KV. KV is written
+// on join/status-change, or at most this often per session otherwise:
+const PRESENCE_KV_MIN_GAP_MS = 4 * 60_000;
 
 export const MSG = {
   JOIN: 'join',
@@ -702,6 +706,9 @@ export class WatchRoom {
     } catch (_) {}
 
     const watching = msg.status === 'WATCHING_PARTY' || msg.status === 'WATCHING_SOLO';
+    // Capture BEFORE overwriting: the KV budget check below compares the new
+    // beat against the previous payload (join/status-change = write, else skip).
+    const prevPresence = peer.presence;
     // Remember what the alarm must keep alive (persisted on the session:
     // survives DO hibernation, unlike any in-memory map).
     peer.presence = {
@@ -719,16 +726,36 @@ export class WatchRoom {
         await this.ctx.storage.setAlarm(Date.now() + PRESENCE_ALARM_MS);
       }
     } catch (_) {}
-    await setPresence(this.env, userId, {
-      // Connected but idle (e.g. tab hidden) keeps the socket, minus context.
+    // KV WRITE BUDGET: socket beats are 20s and KV free tier is 1,000
+    // writes/DAY — per-beat writes burnt the quota before noon. Write KV
+    // only on JOIN (first beat) or a STATUS/MEDIA change; the alarm keeps
+    // it fresh (5-min cadence) otherwise.
+    const nextPresence = {
       status: watching ? msg.status : 'IDLE',
       room_id: watching ? this.meta.id : '',
       media_title: watching ? msg.media_title : '',
       media_id: watching ? msg.media_id : '',
       current_timestamp_seconds: msg.current_timestamp_seconds,
-      // The DO decides who hosts — never trust the client's flag.
-      is_host: this.isOwner(peer),
-    });
+    };
+    const fieldsChanged =
+      !prevPresence ||
+      prevPresence.status !== nextPresence.status ||
+      prevPresence.media_id !== nextPresence.media_id ||
+      prevPresence.room_id !== nextPresence.room_id;
+    const nowMs = Date.now();
+    if (fieldsChanged || !peer._kvWroteAt || nowMs - peer._kvWroteAt > PRESENCE_KV_MIN_GAP_MS) {
+      peer._kvWroteAt = nowMs;
+      await setPresence(
+        this.env,
+        userId,
+        {
+          ...nextPresence,
+          // The DO decides who hosts — never trust the client's flag.
+          is_host: this.isOwner(peer),
+        },
+        { authoritativeRoom: true }
+      );
+    }
   }
 
   /**
@@ -770,14 +797,19 @@ export class WatchRoom {
     const alive = this.sessions.filter((s) => s.userId && s.presence);
     for (const s of alive) {
       try {
-        await setPresence(this.env, s.userId, {
-          status: s.presence.status,
-          room_id: s.presence.room_id,
-          media_title: s.presence.media_title,
-          media_id: s.presence.media_id,
-          current_timestamp_seconds: s.presence.current_timestamp_seconds,
-          is_host: this.isOwner(s),
-        });
+        await setPresence(
+          this.env,
+          s.userId,
+          {
+            status: s.presence.status,
+            room_id: s.presence.room_id,
+            media_title: s.presence.media_title,
+            media_id: s.presence.media_id,
+            current_timestamp_seconds: s.presence.current_timestamp_seconds,
+            is_host: this.isOwner(s),
+          },
+          { authoritativeRoom: true }
+        );
       } catch (_) {}
     }
     // Keep the beat while ANY identified session remains — sessions from

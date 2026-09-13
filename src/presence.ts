@@ -18,18 +18,19 @@ import { formatClock } from './lib/format.js';
 // Heartbeats are 20s (room) / 60s (home); background tabs get timer-throttled
 // or two. True exits still go OFFLINE instantly via disconnect clearing —
 // the TTL is only the safety net for vanished clients.
-// 15 minutes for WATCHING_* (the room DO refreshes server-side via alarms,
-// so the TTL is only the net for vanished clients). IDLE gets a full HOUR:
-// the home surface has NO server-side refresher (its beats are client
-// timers, which hidden tabs run as rarely as 1/5min — and mobile pagehide
-// storms cleared them constantly). An hour of idleness ≈ a genuinely closed
-// app, which is exactly when "offline" is the truth.
-export const PRESENCE_TTL_S = 900;
+// WRITE-BUDGET REALITY (KV free tier = 1,000 writes/DAY, and presence
+// heartbeats burnt that before noon: 20s room beats = 4,320/day/user).
+// Both statuses now carry a 1h TTL; freshness is maintained by the room DO
+// alarm (every 5 min = 12 writes/day/user) and a 10-min home beat (6/day/h).
+// The TTL is the vanished-client net; liveness comes from the writers.
+export const PRESENCE_TTL_S = 3600;
 export const IDLE_PRESENCE_TTL_S = 3600;
 
 /** A WATCHING_* payload younger than this cannot be downgraded to IDLE/OFFLINE
- * by the REST surface (another tab's room socket owns it and beats every 20s). */
-export const ROOM_FRESH_MS = 60_000;
+ * by the REST surface (another tab's home beat). Must exceed the room's KV
+ * write cadence (the DO alarm refreshes every 5 min), or a live watcher's
+ * record looks stale between writes and gets downgraded. */
+export const ROOM_FRESH_MS = 5 * 60_000;
 const VALID_STATUSES: PresenceStatus[] = [
   'WATCHING_PARTY',
   'WATCHING_SOLO',
@@ -68,7 +69,8 @@ export function sanitizePresenceInput(
 export async function setPresence(
   env: Env,
   userId: string,
-  input: unknown
+  input: unknown,
+  opts?: { authoritativeRoom?: boolean }
 ): Promise<PresencePayload> {
   const patch = sanitizePresenceInput(input);
   const previous = await getRawPresence(env, userId);
@@ -81,7 +83,16 @@ export async function setPresence(
   const prevWatching =
     previous && (previous.status === 'WATCHING_PARTY' || previous.status === 'WATCHING_SOLO');
   const downgrading = patch.status === 'IDLE' || patch.status === 'OFFLINE';
-  if (prevWatching && downgrading && previous.last_updated > Date.now() - ROOM_FRESH_MS) {
+  // The room DO is the AUTHORITATIVE writer: its own status changes (e.g. a
+  // member closing the video -> IDLE) must land immediately. The guard only
+  // exists to stop the HOME REST surface (a second tab) downgrading a room
+  // it knows nothing about.
+  if (
+    !(opts && opts.authoritativeRoom) &&
+    prevWatching &&
+    downgrading &&
+    previous.last_updated > Date.now() - ROOM_FRESH_MS
+  ) {
     return previous; // keep the live room state untouched
   }
 

@@ -32,7 +32,7 @@
   };
 
   const SESSION_KEY = 'wp:session';
-  const IDLE_HEARTBEAT_MS = 60_000;
+  const IDLE_HEARTBEAT_MS = 600_000; // 10 min: KV free tier is 1,000 writes/day; the 1h TTL gives 6x slack
   const ROOM_SYNC_MS = 20_000;
   const PROFILE_REFRESH_MS = 30_000;
   const PIN_LIMIT = 4;
@@ -2118,7 +2118,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.27';
+  global.WP.build = 'ui-2026-09-13.28';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
