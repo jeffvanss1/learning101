@@ -58,3 +58,13 @@ test('anime fix wiring: versioned endpoint (edge-bust), v3 cache, English catalo
   assert.ok(worker.includes("proxyTmdb(rest, url.search, apiKey, 'en-US')"), 'catalog titles pinned to English');
   assert.ok(worker.includes("public, max-age=300"), 'unresolved lookups get a SHORT edge TTL (fixes propagate)');
 });
+
+test('presence wiring: no pagehide DELETE beacon (mobile backgrounding erased users)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const soc = readFileSync(join(ROOT, 'dist/js/social.js'), 'utf8');
+  assert.equal(/addEventListener\('pagehide'/.test(soc), false, 'pagehide beacon removed');
+  assert.equal(/pageshow/.test(soc), true, 'pageshow re-beat kept (bfcache restores re-appear online)');
+  const presence = readFileSync(join(ROOT, 'src/presence.ts'), 'utf8');
+  assert.equal(/IDLE_PRESENCE_TTL_S = 3600/.test(presence), true, 'idle TTL 1h');
+});

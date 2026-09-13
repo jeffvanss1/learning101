@@ -18,11 +18,14 @@ import { formatClock } from './lib/format.js';
 // Heartbeats are 20s (room) / 60s (home); background tabs get timer-throttled
 // or two. True exits still go OFFLINE instantly via disconnect clearing —
 // the TTL is only the safety net for vanished clients.
-// 15 minutes: the DO clears presence on socket CLOSE (the primary path);
-// the TTL is only the net for vanished clients (killed browser/process).
-// 180s expired for BACKGROUND tabs — Chrome's intensive throttling clamps
-// hidden-tab timers to 1/5min, so a watching user showed OFFLINE.
+// 15 minutes for WATCHING_* (the room DO refreshes server-side via alarms,
+// so the TTL is only the net for vanished clients). IDLE gets a full HOUR:
+// the home surface has NO server-side refresher (its beats are client
+// timers, which hidden tabs run as rarely as 1/5min — and mobile pagehide
+// storms cleared them constantly). An hour of idleness ≈ a genuinely closed
+// app, which is exactly when "offline" is the truth.
 export const PRESENCE_TTL_S = 900;
+export const IDLE_PRESENCE_TTL_S = 3600;
 
 /** A WATCHING_* payload younger than this cannot be downgraded to IDLE/OFFLINE
  * by the REST surface (another tab's room socket owns it and beats every 20s). */
@@ -96,7 +99,10 @@ export async function setPresence(
     last_updated: Date.now(),
   };
   await env.PRESENCE_KV.put(presenceKey(userId), JSON.stringify(payload), {
-    expirationTtl: PRESENCE_TTL_S,
+    expirationTtl:
+      payload.status === 'WATCHING_PARTY' || payload.status === 'WATCHING_SOLO'
+        ? PRESENCE_TTL_S
+        : IDLE_PRESENCE_TTL_S,
   });
   return payload;
 }

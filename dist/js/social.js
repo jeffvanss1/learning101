@@ -523,29 +523,18 @@
     idleTimer = setInterval(beat, IDLE_HEARTBEAT_MS);
     if (!WP.Social._pagehideWired) {
       WP.Social._pagehideWired = true;
-      // iOS/bfcache can fire pagehide without a real exit; on return the
-      // presence used to stay cleared until the next beat. Heal immediately.
+      // NO pagehide beacon at all: pagehide fires on mobile backgrounding
+      // and bfcache entry too, so locking a phone erased the user's presence
+      // ("works in a room, offline when idle"). True exits now expire via
+      // the presence TTL (IDLE: 1h, WATCHING: 15min + the room socket's
+      // server-side close clear), and `pageshow` immediately re-beats on
+      // bfcache restores — nobody who merely backgrounded shows offline.
       window.addEventListener('pageshow', () => {
         if (document.body.classList.contains('in-room')) {
           global.dispatchEvent(new CustomEvent('wp:presence-nudge'));
         } else if (loadSession()) {
           beat();
         }
-      });
-      window.addEventListener('pagehide', () => {
-        const s = loadSession();
-        if (!s) return;
-        // In-room: NEVER clear here. pagehide also fires for bfcache entries
-        // and mobile backgrounding — clearing un-marked a WATCHING user the
-        // moment their phone screen locked (real exits are handled by the
-        // room socket's close path server-side).
-        if (document.body.classList.contains('in-room')) return;
-        try {
-          navigator.sendBeacon(
-            '/api/presence',
-            new Blob([JSON.stringify({ token: s.token })], { type: 'application/json' })
-          );
-        } catch (_) {}
       });
     }
   }
@@ -2103,7 +2092,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.23';
+  global.WP.build = 'ui-2026-09-13.24';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

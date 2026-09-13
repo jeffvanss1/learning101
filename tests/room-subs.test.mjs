@@ -147,7 +147,13 @@ test('presence TTL survives background-tab throttling (900s, not 180s)', async (
     current_timestamp_seconds: 120,
   });
   assert.ok(puts.length === 1, 'one KV write');
-  assert.equal(puts[0].expirationTtl, 900, 'the write carries the raised TTL');
+  assert.equal(puts[0].expirationTtl, 900, 'watching: 15min (server-refreshed by the room DO)');
+
+  // IDLE carries no live data and has NO server-side refresher on the home
+  // surface — an hour so background-throttled clients cannot go stale.
+  puts.length = 0;
+  await mod.setPresence(env, 'user-1', { status: 'IDLE' });
+  assert.equal(puts[0].expirationTtl, 3600, 'idle: 1h (no server refresher on home)');
 });
 
 test('presence is refreshed SERVER-SIDE by the DO alarm (hidden-tab proof)', async () => {

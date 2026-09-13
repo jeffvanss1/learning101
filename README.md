@@ -335,21 +335,26 @@ Sources:
   room — fixed with a remote-echo guard (1.5s adopt-quietly), fresh-window
   re-asserts (a pause swallowed mid-buffer re-posts within ~1s instead of
   the 2.5s throttle), room-state-trusted adoption, and no-force respected
-  for paused-room position seeks. STILL-OFFLINE FIX (api-2026-09-13.32):
+  for paused-room position seeks. STILL-OFFLINE FIX (api-2026-09-13.33):
   the TTL raise alone couldn't help because presence was refreshed ONLY by
   client timers (hidden tabs throttle to 1/5min) — the room Durable Object
   now refreshes presence ITSELF via storage alarms (60s cadence, payloads
   persisted on the session so hibernation is survived). Client throttling
   can no longer expire a watching user, and home-surface IDLE beats are
   always rejected by the ROOM_FRESH guard because the DO keeps
-  last_updated warm. STICKY-OFFLINE FIXES (api-2026-09-13.32): the alarm
+  last_updated warm. STICKY-OFFLINE FIXES (api-2026-09-13.33): the alarm
   chain could die silently (sessions persisted before the payload field
   existed made `alarm()` find nobody and NOT reschedule — offline stuck
   until redeploy); the chain now re-arms on every beat and stays alive
   while any identified session remains. The pagehide beacon no longer
   clears presence for in-room users (mobile backgrounding / bfcache fired
   it and un-marked WATCHING users); the home heartbeat logs its first
-  failure instead of swallowing it. The subtitle language
+  failure instead of swallowing it. IDLE SURFACE (api-2026-09-13.33):
+  the home surface has no server-side refresher, so its TTL is 1h (watching
+  stays 15min + DO alarms) and the pagehide DELETE beacon is GONE — mobile
+  backgrounding/bfcache fired it constantly and erased idle users ("works
+  in a room, offline when idle"). True exits expire via TTL; bfcache
+  restores re-beat instantly via pageshow. The subtitle language
   is decoupled from the audio language by
   design (English audio + Indonesian subs is the norm): the selector defaults
   to the geo UI language, the choice persists (`wp:subslang`), and switching
