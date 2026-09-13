@@ -23,6 +23,7 @@ const DDL = [
     bio TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     last_seen_at INTEGER NOT NULL DEFAULT 0,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     code_hash TEXT
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
@@ -66,6 +67,16 @@ const DDL = [
     PRIMARY KEY (user_id, friend_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_friendships_friend ON friendships (friend_id, status)`,
+  // Admin monitoring: one row per room minted via POST /api/rooms. Rooms
+  // themselves live in Durable Objects (not enumerable) — this registry is
+  // the only server-side "who created what, when" record.
+  `CREATE TABLE IF NOT EXISTS rooms_created (
+    room_id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL DEFAULT '',
+    owner_username TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_rooms_created_time ON rooms_created (created_at DESC)`,
 ];
 
 /**
@@ -80,9 +91,11 @@ export async function ensureSchema(env: Env): Promise<void> {
     // include it when the column is missing — fresh databases get it from
     // the CREATE TABLE above, old ones from this ALTER.
     let needsCodeColumn = false;
+    let needsAdminColumn = false;
     try {
       const info = await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>();
       needsCodeColumn = !info.results.some((c) => c.name === 'code_hash');
+      needsAdminColumn = !info.results.some((c) => c.name === 'is_admin');
     } catch {
       // Table missing entirely → the CREATE TABLE in the batch covers it.
     }
@@ -90,6 +103,9 @@ export async function ensureSchema(env: Env): Promise<void> {
     const statements = DDL.map((sql) => env.DB.prepare(sql));
     if (needsCodeColumn) {
       statements.push(env.DB.prepare('ALTER TABLE users ADD COLUMN code_hash TEXT'));
+    }
+    if (needsAdminColumn) {
+      statements.push(env.DB.prepare('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0'));
     }
     // D1 batches run inside an implicit transaction and reject DDL there, so
     // each statement runs individually (all idempotent — safe to retry).
@@ -103,7 +119,16 @@ export async function ensureSchema(env: Env): Promise<void> {
         failures++;
       }
     }
-    if (!failures) schemaReady = true;
+    if (!failures) {
+      schemaReady = true;
+      // Seed the first admin (idempotent — matches 0 rows once set). The
+      // account is keyed by username; the owner of this deployment is @jeff.
+      try {
+        await env.DB.prepare("UPDATE users SET is_admin = 1 WHERE username = 'jeff' AND is_admin = 0").run();
+      } catch {
+        // Best-effort: a missing table here is covered by the retry path.
+      }
+    }
   } catch {
     // Leave schemaReady false — retried on the next request.
   }

@@ -12,6 +12,7 @@
 import { WatchRoom } from './WatchRoom.js';
 import { classifyIsAnime, matchAnilist } from './anilist.js';
 import { routeApi } from './router.js';
+import { sessionUser } from './auth.js';
 import { injectGeoScript, resolveGeo } from './geo.js';
 import {
   buildSearchQuery,
@@ -519,6 +520,22 @@ export default {
       if (path === '/api/rooms') {
         try {
           const id = env.WATCH_ROOM.newUniqueId();
+          // Admin room registry (best-effort — a registry failure must NEVER
+          // block room creation): who minted this room, and when.
+          try {
+            if (env.DB) {
+              const creator = await sessionUser(request, env);
+              if (creator) {
+                await env.DB.prepare(
+                  'INSERT OR IGNORE INTO rooms_created (room_id, owner_id, owner_username, created_at) VALUES (?1, ?2, ?3, ?4)'
+                )
+                  .bind(id.toString(), creator.id, creator.username, Date.now())
+                  .run();
+              }
+            }
+          } catch {
+            // Registry is monitoring-only; ignore failures.
+          }
           return json({
             id: id.toString(),
             url: `${url.origin}/room/${id.toString()}`,

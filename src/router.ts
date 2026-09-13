@@ -10,6 +10,7 @@ import { sessionUser } from './auth.js';
 import { ensureSchema } from './schema.js';
 import { handleSessionCreate, handleMe, handleClaim, handleRotateCode } from './routes/auth.js';
 import { handleUserSearch } from './routes/search.js';
+import { handleAdminOverview } from './routes/admin.js';
 import {
   handleGetProfile,
   handleUpdateProfile,
@@ -35,7 +36,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-13.38';
+export const WORKER_BUILD = 'api-2026-09-13.39';
 
 /** Routes that require the D1/KV bindings (the profile/presence surface). */
 const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;
@@ -80,7 +81,7 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
     return json({
       ok: true,
       build: WORKER_BUILD,
-      routes: ['auth', 'geo', 'subs', 'user', 'search', 'friends', 'presence', 'rooms', 'tmdb'],
+      routes: ['auth', 'geo', 'subs', 'user', 'search', 'friends', 'presence', 'rooms', 'admin', 'tmdb'],
       storage: { db: !!env.DB, presenceKv: !!env.PRESENCE_KV },
     }, 200, { 'Cache-Control': 'no-store' });
   }
@@ -97,6 +98,11 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
   }
   if (path === '/api/auth/code' && method === 'POST') {
     return handleRotateCode(request, env);
+  }
+
+  // ---- Admin (deployment-owner monitoring) -----------------------------------
+  if (path === '/api/admin/overview' && method === 'GET') {
+    return handleAdminOverview(request, env);
   }
 
   // ---- Global user search ----------------------------------------------------

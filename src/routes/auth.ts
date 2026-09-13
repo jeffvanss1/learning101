@@ -200,8 +200,11 @@ export async function handleRotateCode(request: Request, env: Env): Promise<Resp
 export async function handleMe(request: Request, env: Env): Promise<Response> {
   const auth = await sessionUser(request, env);
   if (!auth) return json({ user: null }, 200);
-  const row = await env.DB.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?1`)
+  const row = await env.DB.prepare(`SELECT ${USER_COLS}, is_admin FROM users WHERE id = ?1`)
     .bind(auth.id)
-    .first<UserRow>();
-  return json({ user: row ? toPublicUser(row) : null }, 200);
+    .first<UserRow & { is_admin?: number }>();
+  if (!row) return json({ user: null }, 200);
+  // is_admin rides along ONLY on /api/auth/me (the admin UI gate). It is
+  // deliberately absent from every public profile/search projection.
+  return json({ user: { ...toPublicUser(row), is_admin: !!row.is_admin } }, 200);
 }

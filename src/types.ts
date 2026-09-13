@@ -10,6 +10,11 @@ export interface PresenceKV {
   get(key: string, type?: 'text'): Promise<string | null>;
   get(key: string, type: 'json'): Promise<unknown>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  /** Paginated key listing (admin occupancy view). Class B operation. */
+  list(options?: { prefix?: string; limit?: number }): Promise<{
+    keys: { name: string }[];
+    list_complete: boolean;
+  }>;
   delete(key: string): Promise<void>;
   /** Batch read — up to 128 keys per call. */
   get(keys: string[], type?: 'text'): Promise<Map<string, string | null>>;

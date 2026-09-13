@@ -1475,6 +1475,9 @@
           } else {
             toast('Nothing in your watch history yet.');
           }
+        } else if (key === 'admin') {
+          // Admin drawer (only visible when the signed-in user is_admin).
+          if (WP.Social && WP.Social.toggleAdminPanel) WP.Social.toggleAdminPanel();
         } else if (key === 'friends') {
           // Friends drawer: a global slide-over (right → left) on every
           // surface — home, /discovery pages, profiles and rooms alike.

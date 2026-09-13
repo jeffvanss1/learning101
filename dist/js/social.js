@@ -113,7 +113,10 @@
         const meRes = await fetch('/api/auth/me', { headers: authHeaders() });
         if (meRes.ok) {
           const meData = await meRes.json();
-          if (meData && meData.user) return { ok: true, session: existing };
+          if (meData && meData.user) {
+            applyAdminNav(meData.user);
+            return { ok: true, session: existing };
+          }
           // Token is for a deleted account — drop it and (re)create below.
           saveSession(null);
         }
@@ -2118,7 +2121,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.30';
+  global.WP.build = 'ui-2026-09-13.31';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2134,6 +2137,160 @@
       })
       .catch(() => console.warn('[WatchParty] API unreachable'));
   } catch (_) {}
+
+  // ---------------------------------------------------------------------------
+  // 12. Admin drawer (deployment-owner monitoring)
+  // Server-enforced: /api/admin/overview 403s non-admins - the nav item and
+  // drawer are conveniences, never the gate.
+  // ---------------------------------------------------------------------------
+
+  /** @param {{ is_admin?: boolean } | null} user */
+  function applyAdminNav(user) {
+    const btn = /** @type {HTMLElement | null} */ (document.querySelector('.sidenav__item[data-nav="admin"]'));
+    if (btn) btn.hidden = !(user && user.is_admin);
+  }
+
+  /** @returns {{ drawer: HTMLElement, backdrop: HTMLElement, body: HTMLElement }} */
+  function ensureAdminDrawer() {
+    let drawer = /** @type {HTMLElement | null} */ (document.querySelector('.admin-drawer'));
+    if (drawer) {
+      return {
+        drawer: drawer,
+        backdrop: /** @type {HTMLElement} */ (document.querySelector('.admin-drawer__backdrop')),
+        body: /** @type {HTMLElement} */ (drawer.querySelector('.admin-drawer__body')),
+      };
+    }
+    const backdrop = h('div', 'admin-drawer__backdrop');
+    backdrop.addEventListener('click', () => toggleAdminPanel());
+    drawer = h('aside', 'admin-drawer');
+    drawer.setAttribute('aria-label', 'Admin monitoring');
+
+    const head = h('div', 'friends-rail__head');
+    const titleWrap = h('div', 'friends-rail__title-wrap');
+    titleWrap.appendChild(h('h2', 'friends-rail__title', 'Admin'));
+    titleWrap.appendChild(h('span', 'friends-rail__count', 'rooms \u00b7 users'));
+    head.appendChild(titleWrap);
+    const refreshBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '\u27f3'));
+    refreshBtn.type = 'button';
+    refreshBtn.title = 'Refresh';
+    refreshBtn.addEventListener('click', () => refreshAdminPanel());
+    head.appendChild(refreshBtn);
+    const closeBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '\u00d7'));
+    closeBtn.type = 'button';
+    closeBtn.title = 'Close';
+    closeBtn.setAttribute('aria-label', 'Close admin panel');
+    closeBtn.addEventListener('click', () => toggleAdminPanel());
+    head.appendChild(closeBtn);
+    drawer.appendChild(head);
+
+    const body = h('div', 'admin-drawer__body');
+    body.appendChild(h('div', 'muted admin-drawer__hint', 'Loading\u2026'));
+    drawer.appendChild(body);
+
+    document.body.appendChild(backdrop);
+    document.body.appendChild(drawer);
+    return { drawer: drawer, backdrop: backdrop, body: body };
+  }
+
+  /** @param {number} ts */
+  function joinedOrSeen(ts) {
+    return ts ? WP.timeAgo(ts) : '\u2014';
+  }
+
+  async function refreshAdminPanel() {
+    const parts = ensureAdminDrawer();
+    parts.body.innerHTML = '';
+    parts.body.appendChild(h('div', 'muted admin-drawer__hint', 'Loading\u2026'));
+    try {
+      const data = await api('/api/admin/overview');
+      parts.body.innerHTML = '';
+      if (!data || !data.users) throw new Error('unexpected payload');
+
+      // ---- stats chips ----
+      const stats = h('div', 'admin-drawer__stats');
+      const chip = (/** @type {string} */ label, /** @type {number|string} */ value) => {
+        const c = h('div', 'admin-stat');
+        c.appendChild(h('div', 'admin-stat__value', String(value)));
+        c.appendChild(h('div', 'admin-stat__label', label));
+        return c;
+      };
+      stats.appendChild(chip('Users', data.users.total));
+      stats.appendChild(chip('New 24h', data.users.today));
+      stats.appendChild(chip('Rooms', data.rooms.total));
+      stats.appendChild(chip('Live now', (data.live && data.live.rooms) || 0));
+      parts.body.appendChild(stats);
+
+      // ---- live rooms ----
+      if (data.live && data.live.rooms) {
+        const sec = h('div', 'admin-drawer__section');
+        sec.appendChild(h('h3', 'admin-drawer__heading', 'Live rooms \u00b7 ' + data.live.viewers + ' watching'));
+        Object.keys(data.live.byRoom || {}).forEach((roomId) => {
+          const row = h('div', 'admin-row');
+          const info = h('div', 'admin-row__main');
+          info.appendChild(h('div', 'admin-row__title', 'Room ' + String(roomId).slice(0, 8)));
+          info.appendChild(h('div', 'admin-row__meta', data.live.byRoom[roomId] + ' watching'));
+          row.appendChild(info);
+          row.appendChild(h('span', 'admin-live', 'LIVE'));
+          sec.appendChild(row);
+        });
+        parts.body.appendChild(sec);
+      }
+
+      // ---- rooms created ----
+      const rsec = h('div', 'admin-drawer__section');
+      rsec.appendChild(h('h3', 'admin-drawer__heading', 'Rooms created (' + data.rooms.total + ')'));
+      (data.rooms.recent || []).forEach((/** @type {any} */ r) => {
+        const row = h('div', 'admin-row');
+        const info = h('div', 'admin-row__main');
+        info.appendChild(h('div', 'admin-row__title', 'Room ' + String(r.room_id || '').slice(0, 8)));
+        info.appendChild(
+          h('div', 'admin-row__meta', 'by ' + (r.owner_username ? '@' + r.owner_username : 'anon') + ' \u00b7 ' + joinedOrSeen(r.created_at))
+        );
+        row.appendChild(info);
+        if (data.live.byRoom && data.live.byRoom[r.room_id]) row.appendChild(h('span', 'admin-live', 'LIVE'));
+        rsec.appendChild(row);
+      });
+      if (!(data.rooms.recent || []).length) rsec.appendChild(h('div', 'muted admin-drawer__hint', 'No rooms yet.'));
+      parts.body.appendChild(rsec);
+
+      // ---- users ----
+      const usec = h('div', 'admin-drawer__section');
+      usec.appendChild(h('h3', 'admin-drawer__heading', 'Users (' + data.users.total + ')'));
+      (data.users.recent || []).forEach((/** @type {any} */ u) => {
+        const row = h('div', 'admin-row');
+        row.appendChild(avatarWithFrame(u.display_name || u.username, u.avatar_url, u.avatar_frame_id || 'default', ''));
+        const info = h('div', 'admin-row__main');
+        info.appendChild(h('div', 'admin-row__title', (u.display_name || u.username) + (u.is_admin ? ' \u2605' : '')));
+        info.appendChild(
+          h('div', 'admin-row__meta', '@' + u.username + ' \u00b7 joined ' + joinedOrSeen(u.created_at) + ' \u00b7 seen ' + joinedOrSeen(u.last_seen_at))
+        );
+        row.appendChild(info);
+        usec.appendChild(row);
+      });
+      parts.body.appendChild(usec);
+    } catch (e) {
+      parts.body.innerHTML = '';
+      const msg = e instanceof Error ? e.message : 'unknown';
+      if (/403/.test(msg)) {
+        parts.body.appendChild(h('div', 'muted admin-drawer__hint', 'Admin only.'));
+      } else {
+        parts.body.appendChild(h('div', 'muted admin-drawer__hint', 'Failed to load \u2014 try again.'));
+      }
+    }
+  }
+
+  function toggleAdminPanel() {
+    const parts = ensureAdminDrawer();
+    const opening = /** @type {boolean} */ (parts.drawer.hidden);
+    parts.drawer.hidden = !opening;
+    /** @type {HTMLElement} */ (parts.backdrop).hidden = !opening;
+    document.body.classList.toggle('admin-open', opening);
+    if (opening) {
+      const me = getSession();
+      applyAdminNav(/** @type {any} */ (me && me.user));
+      refreshAdminPanel();
+    }
+  }
 
   global.WP.Social = {
     ensureSession,
@@ -2156,5 +2313,6 @@
     mountFriendsRail,
     toggleFriendsRail,
     refreshFriendsRail,
+    toggleAdminPanel,
   };
 })(/** @type {any} */ (window));
