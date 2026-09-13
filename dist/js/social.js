@@ -397,11 +397,34 @@
       this.client = client;
       this.app = app;
       this.timer = /** @type {any} */ (null);
+      /** Pending "blip → IDLE" timer while the room socket reconnects. */
+      this._blipTimer = /** @type {any} */ (null);
       /** Latest playback position, refreshed by syncProgress(). */
       this._lastProgress = 0;
       this.offOpen = client.on('open', () => {
+        if (this._blipTimer) {
+          clearTimeout(this._blipTimer);
+          this._blipTimer = null;
+        }
         this.syncNow();
         this._start();
+      });
+      // While the socket auto-reconnects (network blip, dev reload), the DO
+      // has already cleared our presence — report IDLE ("Online") via REST
+      // so the user doesn't flash OFFLINE for the whole reconnect window.
+      this.offClose = client.on('close', () => {
+        this._stop();
+        if (!this._blipTimer) {
+          this._blipTimer = setTimeout(() => {
+            this._blipTimer = null;
+            const s = getSession();
+            if (!s) return;
+            api('/api/presence', {
+              method: 'PUT',
+              body: JSON.stringify({ status: 'IDLE' }),
+            }).catch(() => {});
+          }, 1500); // after the DO's disconnect clear has landed
+        }
       });
       this._start();
     }
@@ -448,8 +471,13 @@
 
     destroy() {
       this._stop();
+      if (this._blipTimer) {
+        clearTimeout(this._blipTimer);
+        this._blipTimer = null;
+      }
       try {
         this.offOpen();
+        this.offClose();
       } catch (_) {}
       this.client = /** @type {RoomClientLike | null} */ (null);
     }
@@ -474,6 +502,15 @@
     idleTimer = setInterval(beat, IDLE_HEARTBEAT_MS);
     if (!WP.Social._pagehideWired) {
       WP.Social._pagehideWired = true;
+      // iOS/bfcache can fire pagehide without a real exit; on return the
+      // presence used to stay cleared until the next beat. Heal immediately.
+      window.addEventListener('pageshow', () => {
+        if (document.body.classList.contains('in-room')) {
+          global.dispatchEvent(new CustomEvent('wp:presence-nudge'));
+        } else if (loadSession()) {
+          beat();
+        }
+      });
       window.addEventListener('pagehide', () => {
         const s = loadSession();
         if (!s) return;
@@ -1999,7 +2036,7 @@
   // ---------------------------------------------------------------------------
   // Build marker: makes "which UI build am I running?" answerable at a
   // glance (DevTools console / WP.build) instead of guesswork.
-  global.WP.build = 'ui-2026-09-13.5';
+  global.WP.build = 'ui-2026-09-13.6';
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
   } catch (_) {}

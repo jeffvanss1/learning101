@@ -546,6 +546,8 @@
       if (state.presence) state.presence.syncNow();
     };
     ['play', 'pause', 'seek', 'videoChange', 'peers'].forEach((t) => client.on(t, presenceNudge));
+    // bfcache/page-restore: social.js asks us to re-assert room presence.
+    window.addEventListener('wp:presence-nudge', presenceNudge);
 
     client.on('reconnecting', (info) => {
       setConnStatus('Reconnecting\u2026', true);

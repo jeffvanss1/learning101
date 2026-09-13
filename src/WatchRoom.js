@@ -322,12 +322,24 @@ export class WatchRoom {
 
     // Presence teardown on disconnect. Only clear when the stored state still
     // points at THIS room — the same user may have joined another room from a
-    // second tab, and we must not erase that.
+    // second tab, and we must not erase that. Also skip the clear when OTHER
+    // live sockets of the same user remain here (two tabs, one room): the
+    // room is still active for them.
     const presenceUserId = peer.userId || (attach && attach.userId);
     if (presenceUserId) {
-      try {
-        await clearPresenceIfRoom(this.env, presenceUserId, this.meta.id);
-      } catch (_) {}
+      let sameUserLeft = 0;
+      for (const other of this.ctx.getWebSockets()) {
+        if (other === ws) continue;
+        try {
+          const a = other.deserializeAttachment();
+          if (a && a.userId === presenceUserId) sameUserLeft++;
+        } catch (_) {}
+      }
+      if (sameUserLeft === 0) {
+        try {
+          await clearPresenceIfRoom(this.env, presenceUserId, this.meta.id);
+        } catch (_) {}
+      }
     }
   }
 

@@ -163,8 +163,10 @@ avatar frame, pinned titles searched from TMDB).
 
 ### Presence engine (`src/presence.ts`)
 
-State lives in KV under `presence:user:<user_id>` with a **90 s TTL**, so
-vanished clients expire on their own:
+State lives in KV under `presence:user:<user_id>` with a **180 s TTL**
+(deliberately generous — background tabs get timer-throttled and can miss
+heartbeats; real exits still go offline instantly via disconnect
+clearing):
 
 ```json
 {
@@ -183,7 +185,11 @@ vanished clients expire on their own:
   (`WATCHING_PARTY` when 2+ peers, `WATCHING_SOLO` otherwise).
 - **Disconnect cleanup.** The DO clears the user's key in
   `webSocketClose`/`webSocketError` — but only if it still points at *this*
-  room (a second tab in another room wins).
+  room (a second tab in another room wins) **and** no other live socket of
+  the same user remains in the room (two tabs, one room). While a socket
+  auto-reconnects after a blip, the client reports IDLE via REST so nobody
+  flashes OFFLINE mid-reconnect; a fresh room socket's state also can't be
+  downgraded by another tab's idle heartbeat.
 - **Home surface.** While browsing (not in a room) the client sends a REST
   `PUT /api/presence {status:"IDLE"}` heartbeat every 60 s and a
   `sendBeacon` `DELETE /api/presence` on page unload.

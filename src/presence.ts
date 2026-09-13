@@ -15,7 +15,15 @@
 import type { Env, PresencePayload, PresenceStatus } from './types.js';
 import { formatClock } from './lib/format.js';
 
-export const PRESENCE_TTL_S = 90; // heartbeat every ~30s; 3 missed beats = offline
+// TTL is deliberately generous: heartbeats are 20s (room) / 60s (home), and
+// background tabs get timer-throttled, so a live user can easily miss a beat
+// or two. True exits still go OFFLINE instantly via disconnect clearing —
+// the TTL is only the safety net for vanished clients.
+export const PRESENCE_TTL_S = 180;
+
+/** A WATCHING_* payload younger than this cannot be downgraded to IDLE/OFFLINE
+ * by the REST surface (another tab's room socket owns it and beats every 20s). */
+export const ROOM_FRESH_MS = 60_000;
 const VALID_STATUSES: PresenceStatus[] = [
   'WATCHING_PARTY',
   'WATCHING_SOLO',
@@ -58,6 +66,19 @@ export async function setPresence(
 ): Promise<PresencePayload> {
   const patch = sanitizePresenceInput(input);
   const previous = await getRawPresence(env, userId);
+
+  // Guard: a REST IDLE/OFFLINE heartbeat must not clobber a room socket's
+  // fresh WATCHING_* state (classic case: the user has a second tab open on
+  // the home surface — its idle beat used to erase the first tab's "watching").
+  // Room state that hasn't beaten in ROOM_FRESH_MS is genuinely stale and may
+  // be downgraded.
+  const prevWatching =
+    previous && (previous.status === 'WATCHING_PARTY' || previous.status === 'WATCHING_SOLO');
+  const downgrading = patch.status === 'IDLE' || patch.status === 'OFFLINE';
+  if (prevWatching && downgrading && previous.last_updated > Date.now() - ROOM_FRESH_MS) {
+    return previous; // keep the live room state untouched
+  }
+
   // Room/media context survives heartbeat refreshes that omit it — but only
   // while the user is watching; IDLE/OFFLINE resets it (a home-surface
   // heartbeat must never advertise a room the user already left).
