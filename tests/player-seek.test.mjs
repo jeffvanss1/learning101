@@ -403,3 +403,69 @@ test('new-load hygiene: stale baseline reset - a new title never mirrors a bogus
   assert.equal(events.length, 0, 'stale state must not emit bogus controls');
   sync.destroy();
 });
+
+// ---------------------------------------------------------------------------
+// HOST SOVEREIGNTY (user directive): the host's player is never sought/paused
+// by room echoes, snapshots or polls. Only an explicit play/pause/seek from
+// ANOTHER user with control permission complies. Fresh loads still follow.
+// ---------------------------------------------------------------------------
+
+test('sovereign host: nameless snapshots/echoes NEVER pause or seek a playing host', async () => {
+  const { sync, fire } = await freshPlayer();
+  const events = [];
+  sync.on('control', (e) => events.push(e));
+  try {
+    sync.isController = true;
+    sync._iframeLoaded = true;
+    sync.applyRemote({ isPlaying: true, time: 100, timestamp: Date.now() - 5000 });
+    await tick(10);
+    fire(100, true); // start confirmed -> _hasPlayed = true (sovereign from here)
+    await tick(1300);
+    sync.applyRemote({ isPlaying: false, time: 500, timestamp: Date.now() });
+    await tick(2200);
+    assert.equal(sync.localPlaying, true, 'host stays playing');
+    assert.ok(sync.localTime < 200, 'host was not seeked');
+    assert.equal(events.filter((e) => e.action === 'pause').length, 0, 'no pause compliance');
+  } finally {
+    sync.destroy();
+  }
+});
+
+test('sovereign host: own echo (by === selfName) is ignored', async () => {
+  const { sync, fire } = await freshPlayer();
+  try {
+    sync.isController = true;
+    sync.selfName = 'Jeff';
+    sync._iframeLoaded = true;
+    sync.applyRemote({ isPlaying: true, time: 100, timestamp: Date.now() - 5000 });
+    await tick(10);
+    fire(100, true);
+    await tick(1300);
+    sync.handleServerMessage({ type: 'pause', by: 'Jeff', playback: { isPlaying: false, time: 100, timestamp: Date.now() } });
+    await tick(2200);
+    assert.equal(sync.localPlaying, true, 'own echo must not pause the host');
+  } finally {
+    sync.destroy();
+  }
+});
+
+test('another controller (by !== selfName) COMPLIES: pause + seek land immediately', async () => {
+  const { sync, fire } = await freshPlayer();
+  try {
+    sync.isController = true;
+    sync.selfName = 'Jeff';
+    sync._iframeLoaded = true;
+    sync.applyRemote({ isPlaying: true, time: 100, timestamp: Date.now() - 5000 });
+    await tick(10);
+    fire(100, true);
+    await tick(1300);
+    sync.handleServerMessage({ type: 'seek', by: 'Guest2', time: 777, playback: { isPlaying: true, time: 777, timestamp: Date.now() } });
+    await tick(60);
+    assert.ok(sync.localTime > 700, 'external seek complied');
+    sync.handleServerMessage({ type: 'pause', by: 'Guest2', playback: { isPlaying: false, time: 777, timestamp: Date.now() } });
+    await tick(60);
+    assert.equal(sync.localPlaying, false, 'external pause complied immediately (war guard skipped for external commands)');
+  } finally {
+    sync.destroy();
+  }
+});

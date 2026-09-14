@@ -77,6 +77,8 @@
       this._lastMsg = null; // latest authoritative playback tuple (with timestamp)
       this._awaitingStart = false; // we commanded play; the embed has not confirmed playing yet
       this._playCmdAt = 0; // when we commanded play (bounds the start latch)
+      this.selfName = ''; // OUR chat/peer name - 'by != selfName' marks EXTERNAL controller commands
+      this._externalUntil = 0; // while set, an explicit command from ANOTHER controller must comply
       this._lastAppliedTs = 0; // staleness guard: ignore older server snapshots
       this._iframeLoaded = false;
       this._lastPauseAssert = 0;
@@ -268,7 +270,13 @@
         }
         case 'play':
         case 'pause':
-        case 'seek':
+        case 'seek': {
+          // HOST SOVEREIGNTY: only an explicit broadcast from ANOTHER user
+          // with control permission may drive the host's player. Own echoes
+          // (by === selfName) and nameless snapshots never qualify.
+          if (msg.by && this.selfName && msg.by !== this.selfName) {
+            this._externalUntil = Date.now() + 4000;
+          }
           // Every playback broadcast carries the authoritative `playback`
           // tuple from the server. Use it so an incoming seek can never
           // overwrite the room's play/pause state with our local state —
@@ -284,6 +292,7 @@
           // read as play/pause looping).
           this._syncToTarget(true);
           break;
+        }
         default:
           break;
       }
@@ -336,6 +345,31 @@
       const absDrift = Math.abs(target.time - this.localTime);
 
       if (this.isController) {
+        // HOST SOVEREIGNTY (user directive): once the host's player is up and
+        // playing, the room NEVER seeks or pauses it - echoes, snapshots and
+        // polls are ignored (the host IS the clock). Two exceptions: a fresh
+        // load still follows the room (initial autoplay, next-episode
+        // advance), and an EXPLICIT command from ANOTHER user holding control
+        // permission always complies - WITHOUT the own-command war guard
+        // (we did not command this; our suppression must never eat their
+        // seek-then-pause sequence).
+        if (Date.now() < this._externalUntil) {
+          if (target.isPlaying) {
+            if (Math.abs(target.time - this.localTime) > DRIFT_TOLERANCE && !this.isBuffering) {
+              this.seek(target.time);
+            }
+            if (!this.localPlaying) this.play();
+          } else {
+            if (Math.abs(target.time - this.localTime) > SEEK_THRESHOLD && !this.isBuffering) {
+              this.seek(target.time);
+            }
+            if (this.localPlaying) this.pause();
+          }
+          return;
+        }
+        if (this._hasPlayed) return; // SOVEREIGN: ignore echoes/snapshots/polls
+        // fresh load: fall through (initial sync / autoplay) with the
+        // classic guards below.
         // WAR GUARD: right after OUR OWN command (play/pause/seek, or a drift
         // correction), the embed's status lags behind what we commanded. The
         // host got ping-ponged (seek war -> chat spam) because the very next

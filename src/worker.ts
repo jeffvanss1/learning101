@@ -82,6 +82,7 @@ function securityHeaders(): Record<string, string> {
     // stay (the pre-paint theme bootstrap is inline by design).
     'Content-Security-Policy':
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; " +
       "img-src 'self' data: https://image.tmdb.org https://api.dicebear.com; " +
       "media-src 'self' https:; frame-src https://bingr.one https://www.youtube.com; " +
       "connect-src 'self' wss: https://graph.anilist.org; font-src 'self' data:; " +

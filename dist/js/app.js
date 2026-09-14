@@ -462,6 +462,7 @@
     initRoomUI();
 
     const sync = new WP.PlaybackSyncManager($('video-frame'));
+    sync.selfName = state.name; // host sovereignty: own echoes never drive us
     state.sync = sync;
     wireSync(sync);
 

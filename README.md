@@ -1351,3 +1351,27 @@ USER: "better to use horizontal poster for the history". The card box is
   one visit heals all rows permanently (existing poster-only rows are
   re-resolved once: "!v.backdrop" targeting).
 app v51 / social v46 / ui-2026-09-14.81. Tests 186/186, check clean.
+
+## Host sovereignty + explicit CSP style directives (ui/api-2026-09-14.82)
+
+USER: "don't seek the host or pause with authoritative, just ignore it
+for the host, unless there's another user that has control permission."
+
+HOST SOVEREIGNTY (player v15 + app v52):
+- Once the host's player has started playing, the room NEVER seeks or
+  pauses it: echoes, state snapshots and status polls are all ignored —
+  the host IS the clock (their actions drive the room, never the
+  reverse).
+- Two exceptions, both intended: a FRESH load still follows the room
+  (initial autoplay at the right spot, next-episode advance), and an
+  EXPLICIT play/pause/seek broadcast from ANOTHER user with control
+  permission (by !== selfName) always complies — through a dedicated
+  path that skips the own-command war guard (a host's own seek must
+  never eat another controller's follow-up pause).
+- app.js wires sync.selfName = state.name.
+Behavior-tested: snapshots don't yank, own echoes ignored, external
+seek+pause comply instantly. Worker CSP: style-src-elem/style-src-attr
+now explicit (the "style-src-elem was not explicitly set" fallback
+note is gone; our page never relied on external styles/fonts — the
+reported font block originates inside the bingr embed's own CSP).
+190/190, check clean. app v52 / player v15 / ui+api-2026-09-14.82.

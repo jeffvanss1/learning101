@@ -199,7 +199,8 @@ test('derived end: poll-based detection with once-per-load dedupe', () => {
 
 test('seek-war guards: convergence self-suppression + DO log dedupe window', () => {
   const p = readFileSync(join(ROOT, 'dist/js/player.js'), 'utf8');
-  assert.match(p, /if \(this\.isController\) \{\s*\/\/ WAR GUARD:[^]*?if \(Date\.now\(\) - this\._suppressed < 1500\) return;/, 'controller skips corrections within 1.5s of its own command');
+  assert.match(p, /HOST SOVEREIGNTY \(user directive\)/, 'sovereignty gate precedes the war guard');
+  assert.match(p, /if \(Date\.now\(\) - this\._suppressed < 1500\) return;/, 'controller skips corrections within 1.5s of its own command (fresh-load path)');
   const wr = readFileSync(join(ROOT, 'src/WatchRoom.js'), 'utf8');
   assert.match(wr, /now\(\) - lastSeek\.at > 4000/, 'seek-log dedupe window 4s (the 1.5s window let wars flood the chat)');
 });
@@ -301,7 +302,7 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /card\.addEventListener\('click', \(\) => startRoomWithVideo\(v\)\);/, 'single click path: server cards rebuilt playable, position rides along');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=51/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -313,7 +314,7 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=51/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
@@ -351,7 +352,7 @@ test('history nav dead-end fixed + never-blank view setup + global error surface
   assert.match(a, /window\.addEventListener\('error', \(ev\) =>/, 'uncaught errors surface as a visible toast');
   assert.match(a, /window\.addEventListener\('unhandledrejection', \(ev\) =>/, 'rejections surface too');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=51/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
 });
 
 test('history is SERVER-FIRST with an on-page status line', () => {
@@ -380,7 +381,7 @@ test('history self-diagnosis: card counts in the status line + empty-scroller ca
   assert.match(css, /#history-scroller:empty::after/, 'empty scroller prints the red canary');
   assert.match(css, /\.history-card \{[^}]*display: block;/, 'cards are guaranteed opaque boxes');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=51/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
@@ -394,7 +395,7 @@ test('history poster self-heal: bounded TMDB lookup paints cards and patches the
   assert.match(a, /console\.log\('\[history\] healing posters:', missing\.length\)/, 'heal feedback is console-only (clean status line)');
   assert.match(a, /'https:\/\/image\.tmdb\.org\/t\/p\/w500' \+ d\.poster_path/, 'TMDB art resolved from the id');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=51/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
 });
 
 test('history cards carry CONTENT (empty-box regression - appends were lost)', () => {
@@ -402,7 +403,7 @@ test('history cards carry CONTENT (empty-box regression - appends were lost)', (
   assert.match(a, /card\.appendChild\(poster\);/, 'poster attached to the card');
   assert.match(a, /card\.appendChild\(body\);/, 'body attached to the card');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=51/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
 });
 
 test('landscape history art: backdrop column end-to-end + healer prefers it', () => {
@@ -422,4 +423,19 @@ test('landscape history art: backdrop column end-to-end + healer prefers it', ()
   assert.match(a, /w780' \+ d\.backdrop_path/, 'TMDB backdrop at w780');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/social\.js\?v=46/, 'social cache-bumped');
+});
+
+test('host sovereignty: only external controller commands drive the host + explicit CSP', () => {
+  const p = readFileSync(join(ROOT, 'dist/js/player.js'), 'utf8');
+  assert.match(p, /HOST SOVEREIGNTY \(user directive\)/, 'sovereign gate');
+  assert.match(p, /msg\.by && this\.selfName && msg\.by !== this\.selfName/, 'external = by !== selfName');
+  assert.match(p, /this\._externalUntil = Date\.now\(\) \+ 4000/, 'external compliance window');
+  assert.match(p, /if \(this\._hasPlayed\) return; \/\/ SOVEREIGN/, 'fresh loads still follow the room; played = sovereign');
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /sync\.selfName = state\.name;/, 'selfName wired');
+  const w = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
+  assert.match(w, /style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline';/, 'CSP explicit elem/attr');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/player\.js\?v=15/, 'player cache-bumped');
+  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
 });
