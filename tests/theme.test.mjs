@@ -27,6 +27,12 @@ test('theme: system dark/light respected by default, explicit override, profile 
   );
   assert.equal((style.match(/background: rgba\(255, 255, 255, 0\.0/g) || []).length, 0, 'no dark-only white-alpha backgrounds left');
 
+  // Light surfaces must stay DISTINCT step-by-step (the "colors blend with
+  // the same color" bug): page fff -> card f7 -> tile f1 -> hover dd.
+  assert.equal((style.match(/--bg-elev: #f1f1f1;/g) || []).length, 2, 'elevated tile tone in BOTH light blocks');
+  assert.equal((style.match(/--bg-elev: #ffffff;/g) || []).length, 0, '--bg-elev no longer equals the page background in light mode');
+  assert.equal((style.match(/--bg-soft: #f7f7f7;/g) || []).length, 2, 'card tone distinct from page in both light blocks');
+
   // Header brand text must follow the theme, not stay white.
   assert.doesNotMatch(style, /color: #fff;\n  font-size: 18px;\n  font-weight: 700/, 'brand text is themed');
 
@@ -53,4 +59,18 @@ test('theme: system dark/light respected by default, explicit override, profile 
   // --- picker styles themed via vars ---
   assert.match(socialCss, /\.theme-picker__opt \{/, 'theme picker styles exist');
   assert.match(socialCss, /\.theme-picker__opt\.is-selected \{\s*border-color: var\(--blue\);/, 'selected state');
+});
+
+test('theme: no invisible tiles - every picker/poster-fallback tile has a rim', async () => {
+  const socialCss = readFileSync(join(ROOT, 'dist/css/social.css'), 'utf8');
+  const catalogCss = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+
+  // frame + theme picker tiles: rimmed (was border: transparent -> blended
+  // into the modal card), selected state still switches to --blue.
+  assert.equal((socialCss.match(/border: 2px solid var\(--border\)/g) || []).length, 2, 'frame/theme picker tiles have a real rim');
+  assert.doesNotMatch(socialCss, /\.frame-picker__opt \{[^}]*border: 2px solid transparent/, 'frame tiles no longer borderless');
+  assert.doesNotMatch(socialCss, /\.theme-picker__opt \{[^}]*border: 2px solid transparent/, 'theme tiles no longer borderless');
+
+  // poster fallback (no-poster placeholder) is visible on the card.
+  assert.match(catalogCss, /\.card-item__poster-fallback \{[^}]*border: 1px solid var\(--border-soft\)/, 'poster fallback rimmed');
 });

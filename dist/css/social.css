@@ -701,7 +701,7 @@
   align-items: center;
   gap: 6px;
   background: var(--bg-elev);
-  border: 2px solid transparent;
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   cursor: pointer;
@@ -724,8 +724,8 @@
 }
 
 .theme-picker__opt {
-  background: var(--bg-elev);
-  border: 2px solid transparent;
+  background: var(--bg-raised);
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 14px;
   font-size: 13px;

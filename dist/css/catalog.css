@@ -659,7 +659,9 @@ body.sidenav-collapsed .sidenav__search {
   place-items: center;
   font-size: 34px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
   background: linear-gradient(160deg, var(--bg-raised), var(--bg-elev));
 }
 

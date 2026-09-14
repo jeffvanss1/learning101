@@ -836,3 +836,17 @@ Tests 130/130, tsc clean. app.js v30 / catalog.js v18 / ui-2026-09-14.47.
   mini-map track) moved to semantic `--fill-*` vars that flip direction in
   light mode; header brand text follows the theme instead of staying white.
   Video surfaces stay black (players should).
+
+## Light-theme contrast fix: no more same-on-same surfaces (ui-2026-09-14.50)
+
+- The first light palette collapsed elevation steps (`--bg-elev` == page
+  background): tiles, default buttons and active nav items literally
+  blended into their surroundings. The light palette now mirrors the dark
+  theme's shade steps: page #fff -> card #f7f7f7 -> tile #f1f1f1 ->
+  hover #dddddd (inputs #f4f4f4, borders #e0e0e0) — in BOTH light blocks.
+- Tile-style controls got real rims: avatar-frame + theme picker options
+  (was `border: transparent`), poster fallback placeholders, and the
+  peers "+N" avatar uses the raised tone with a visible ring.
+- Audit + pins: a scanner asserts no rule pairs `var(--bg-elev)` with a
+  transparent border outside hover/selected states, and the palette test
+  pins the distinct steps in both light blocks. Tests 132/132.
