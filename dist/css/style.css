@@ -18,6 +18,9 @@
   --fill-med: rgba(255, 255, 255, 0.08);
   --fill-strong: rgba(255, 255, 255, 0.14);
 
+  /* The blurred home top bar (translucent over the page). */
+  --topnav-bg: rgba(15, 15, 15, 0.92);
+
   --text: #f1f1f1;
   --text-dim: #aaaaaa;
   --text-muted: #717171;
@@ -68,6 +71,8 @@ html[data-theme='light'] {
   --fill-med: rgba(0, 0, 0, 0.07);
   --fill-strong: rgba(0, 0, 0, 0.12);
 
+  --topnav-bg: rgba(255, 255, 255, 0.92);
+
   --text: #0f0f0f;
   --text-dim: #606060;
   --text-muted: #909090;
@@ -95,6 +100,8 @@ html[data-theme='light'] {
     --fill-soft: rgba(0, 0, 0, 0.045);
     --fill-med: rgba(0, 0, 0, 0.07);
     --fill-strong: rgba(0, 0, 0, 0.12);
+
+    --topnav-bg: rgba(255, 255, 255, 0.92);
 
     --text: #0f0f0f;
     --text-dim: #606060;
@@ -772,7 +779,9 @@ button {
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.14);
   font-size: 12px;
-  color: var(--text-dim);
+  /* Always sits ON the dark player surface - pinned light-on-dark, it must
+     NOT follow the theme (dark-grey on black in light mode otherwise). */
+  color: #cccccc;
   backdrop-filter: blur(6px);
   transition: border-color 0.2s ease, color 0.2s ease;
 }

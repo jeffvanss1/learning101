@@ -876,3 +876,17 @@ New tests/stability.test.mjs pins all three classes (4 guarded like
 paths, detached-card guard, trailer catch, worker try/catch + JSON 500,
 try-wrapped JSON.parse sweep). Tests 135/135, tsc + node --check clean.
 app.js v31 / catalog.js v20 / social.js v43 / ui-2026-09-14.51.
+
+## Theme: home top bar + player watch page verified/fixed (ui-2026-09-14.52)
+
+- **Home top bar** (`.topnav`) was STILL hard-coded dark
+  (`rgba(15,15,15,.92)`) - in light mode it stayed a dark bar under the
+  now-themed near-black brand text. It now uses `--topnav-bg`
+  (translucent white .92 in light, dark .92 in dark), keeping the blur.
+- **Player watch page**: header/chat/chips were already var-driven; the
+  over-video `sync-indicator` pill is PINNED light-on-dark (`#cccccc`) -
+  it sits on the black player, so it must NOT follow the theme (it was
+  `--text-dim`, which turns dark-grey-on-black in light mode). Video
+  surfaces stay black by design.
+- Pins: topnav var in :root + both light blocks, themed background,
+  pinned overlay color. Tests 135/135. style.css v19 / catalog.css v13.

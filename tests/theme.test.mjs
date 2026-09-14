@@ -36,6 +36,13 @@ test('theme: system dark/light respected by default, explicit override, profile 
   // Header brand text must follow the theme, not stay white.
   assert.doesNotMatch(style, /color: #fff;\n  font-size: 18px;\n  font-weight: 700/, 'brand text is themed');
 
+  // Home top bar + player overlay:
+  assert.match(style, /--topnav-bg: rgba\(15, 15, 15, 0\.92\);/, 'topnav dark var');
+  assert.equal((style.match(/--topnav-bg: rgba\(255, 255, 255, 0\.92\);/g) || []).length, 2, 'topnav light var in BOTH light blocks');
+  const catalogCss = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.match(catalogCss, /\.topnav \{[^}]*background: var\(--topnav-bg/, 'topnav bar is themed (was hard-coded dark rgba)');
+  assert.match(style, /\/\* Always sits ON the dark player surface[^]*?color: #cccccc;/, 'sync-indicator pinned on-dark (not themed)');
+
   // --- index.html: pre-paint application, before ANY script src ---
   assert.match(html, /wp:theme:explicit/, 'explicit theme storage key');
   assert.match(html, /document\.htmlElement|document\.documentElement\.setAttribute\('data-theme'/, 'applies data-theme pre-paint');
