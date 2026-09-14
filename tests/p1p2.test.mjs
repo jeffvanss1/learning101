@@ -301,7 +301,7 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /card\.addEventListener\('click', \(\) => startRoomWithVideo\(v\)\);/, 'single click path: server cards rebuilt playable, position rides along');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=48/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -313,7 +313,7 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=48/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
@@ -351,7 +351,7 @@ test('history nav dead-end fixed + never-blank view setup + global error surface
   assert.match(a, /window\.addEventListener\('error', \(ev\) =>/, 'uncaught errors surface as a visible toast');
   assert.match(a, /window\.addEventListener\('unhandledrejection', \(ev\) =>/, 'rejections surface too');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=48/, 'app cache-bumped');
 });
 
 test('history is SERVER-FIRST with an on-page status line', () => {
@@ -380,6 +380,19 @@ test('history self-diagnosis: card counts in the status line + empty-scroller ca
   assert.match(css, /#history-scroller:empty::after/, 'empty scroller prints the red canary');
   assert.match(css, /\.history-card \{[^}]*display: block;/, 'cards are guaranteed opaque boxes');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=48/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
+});
+
+test('history poster self-heal: bounded TMDB lookup paints cards and patches the DB rows', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /function healHistoryPosters\(items\)/, 'healer present');
+  assert.match(a, /data-poster-queued/, 'queue marker');
+  assert.match(a, /card\.dataset\.mediakey = v\.type \+ ':' \+ v\.id/, 'cards carry a lookup key');
+  assert.match(a, /setTimeout\(run, 150\);/, 'staggered queue (no fan-out burst - rate-limit rule)');
+  assert.match(a, /WP\.Social\.recordHistoryFor\(\{[\s\S]*?poster: url/, 'resolved posters patch the server row permanently');
+  assert.match(a, /healing posters: ' \+ missing\.length/, 'status line reports the heal count');
+  assert.match(a, /'https:\/\/image\.tmdb\.org\/t\/p\/w500' \+ d\.poster_path/, 'TMDB art resolved from the id');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/app\.js\?v=48/, 'app cache-bumped');
 });

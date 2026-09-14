@@ -1863,6 +1863,7 @@
         card.type = 'button';
         card.className = 'history-card';
         card.title = v.title;
+        card.dataset.mediakey = v.type + ':' + v.id + '|' + (v.season != null ? v.season : '') + '|' + (v.episode != null ? v.episode : '');
 
         const poster = document.createElement('div');
         poster.className = 'history-card__poster';
@@ -1934,6 +1935,14 @@
         card.addEventListener('click', () => startRoomWithVideo(v));
         scroller.appendChild(card);
       });
+      // POSTER SELF-HEAL: rows recorded without artwork get a TMDB lookup
+      // (bounded queue), the card is painted in place, and the server row is
+      // patched - the database heals itself over one page visit. Cosmetic
+      // ONLY: a failure here can never nuke the rendered cards.
+      try {
+        healHistoryPosters(items);
+      } catch (_) {}
+
       // SELF-DIAGNOSIS: the status line reports how many cards were BUILT
       // and how many are ACTUALLY in the DOM - "Account: 62 · Device: 13 ·
       // Cards: 75 (DOM: 75)". A mismatch pinpoints the failing layer
@@ -1955,6 +1964,67 @@
           empty.hidden = false;
         }
       }
+  }
+
+  // ---- Poster self-heal (bounded, cached, self-patching) ---------------------
+  const POSTER_QUEUED = 'data-poster-queued';
+  /** mediaKey -> Promise<posterUrl>; one lookup per title per session. */
+  const posterLookups = new Map();
+
+  /** @param {{ id: string|number, type: string }} v */
+  function lookupPoster(v) {
+    const key = v.type + ':' + v.id;
+    if (posterLookups.has(key)) return posterLookups.get(key);
+    const base = v.type === 'movie' ? '/movie/' : '/tv/';
+    const p = WP.Catalog
+      .api(base + encodeURIComponent(String(v.id)))
+      .then((d) => (d && d.poster_path ? 'https://image.tmdb.org/t/p/w500' + d.poster_path : ''))
+      .catch(() => '');
+    posterLookups.set(key, p);
+    return p;
+  }
+
+  /**
+   * Fill in missing card artwork + patch the server rows. Concurrency is
+   * capped (150ms stagger) — never a fan-out burst.
+   * @param {Array<any>} items rendered history entries
+   */
+  function healHistoryPosters(items) {
+    const missing = items.filter((v) => !v.poster && !v.backdrop && v.id);
+    if (!missing.length) return;
+    const st = $('history-status');
+    if (st && st.textContent) {
+      st.textContent += ' \u00b7 healing posters: ' + missing.length;
+    }
+    let idx = 0;
+    const run = () => {
+      if (idx >= missing.length) return;
+      const v = missing[idx++];
+      const card = /** @type {HTMLElement | null} */ (document.querySelector('.history-card[data-mediakey="' + v.type + ':' + v.id + '|' + (v.season != null ? v.season : '') + '|' + (v.episode != null ? v.episode : '') + '"]'));
+      const finish = (url) => {
+        if (!url || !card || !card.isConnected) return;
+        const box = card.querySelector('.history-card__poster');
+        if (box && !box.querySelector('img')) {
+          const im = document.createElement('img');
+          im.src = url;
+          im.alt = '';
+          im.loading = 'lazy';
+          box.appendChild(im);
+        }
+        // Patch the server row so the fix is permanent (fire-and-forget).
+        if (WP.Social && WP.Social.recordHistoryFor) {
+          WP.Social.recordHistoryFor({
+            id: v.id, type: v.type, title: v.title,
+            poster: url, season: v.season, episode: v.episode,
+            position: v.position, duration: v.duration,
+          });
+        }
+      };
+      if (card) card.setAttribute(POSTER_QUEUED, '1');
+      lookupPoster(v).then(finish);
+      setTimeout(run, 150);
+    };
+    run();
   }
 
   /** Visible status line: WHICH side has data (ends the blank-page guessing). */

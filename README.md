@@ -1293,3 +1293,20 @@ environment. Shipped so the next look is DEFINITIVE:
 - Console breadcrumb: '[history] rendered N cards, M in DOM'.
 catalog.css compacted back under the 1400-line dedup ceiling.
 app v47 / catalog css v24 / ui-2026-09-14.77. Tests 183/183.
+
+## History poster self-heal (ui-2026-09-14.78)
+
+USER: cards show, posters don't. Cause: rows recorded without artwork
+(posterUrl empty at record time - e.g. room flows / replays of earlier
+poster-less rows). Instead of a migration, /history now HEALS:
+- Cards without artwork get a TMDB lookup (/movie/:id or /tv/:id ->
+  poster_path), painted in place, and the server row is PATCHED via
+  recordHistoryFor - the D1 poster_urls fill in permanently over one
+  page visit.
+- Bounded queue: one lookup per title per session, 150ms stagger (no
+  fan-out bursts - the rate-limit rule).
+- Status line appends "healing posters: N".
+- The healer is cosmetic-only: wrapped so it can never nuke the render
+  (proven by the execution tests - a healer TypeError once wiped the
+  freshly rendered cards; now impossible).
+app v48 / ui-2026-09-14.78. Tests 184/184, check clean.

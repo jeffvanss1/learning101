@@ -29,6 +29,7 @@ function harness({ local = [], signedIn = null, boom = false, server = undefined
     title: '',
     textContent: '',
     style: { setProperty() {} },
+    dataset: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     setAttribute() {},
     addEventListener() {},
@@ -41,7 +42,12 @@ function harness({ local = [], signedIn = null, boom = false, server = undefined
     },
   });
   ['history-scroller', 'history-empty', 'history-filters', 'history-status'].forEach((id) => (els[id] = mk(id)));
-  const document = { createElement: () => mk('dyn'), createTextNode: (t) => ({ text: t }) };
+  const document = {
+    createElement: () => mk('dyn'),
+    createTextNode: (t) => ({ text: t }),
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
   const WP = {
     historyGet: boom
       ? () => {
@@ -51,7 +57,10 @@ function harness({ local = [], signedIn = null, boom = false, server = undefined
     historyKey: (v) => `${v.id}|${v.season ?? ''}|${v.episode ?? ''}`,
     historyRemove: () => {},
     timeAgo: () => '5m ago',
-    Catalog: { buildVideo: (ref, opts) => ({ src: `https://bingr.one/watch/${ref.type === 'movie' ? 'movie' : ref.type === 'anime' ? 'anime' : 'tv'}/${ref.id}` }) },
+    Catalog: {
+      buildVideo: (ref, opts) => ({ src: `https://bingr.one/watch/${ref.type === 'movie' ? 'movie' : ref.type === 'anime' ? 'anime' : 'tv'}/${ref.id}` }),
+      api: () => Promise.resolve({ poster_path: null }),
+    },
     Social: signedIn === null
       ? undefined
       : {
