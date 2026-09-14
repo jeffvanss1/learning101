@@ -284,13 +284,17 @@
   // ZOOM: the strip shows a 5-minute window around the playhead, not the
   // whole movie (a 2h film compressed into one bar is unreadable). The
   // window slides forward as playback approaches its right edge.
-  // ONE-MINUTE WINDOW, HEAD PINNED MID-STRIP: the visible strip is always
-  // [t-30s .. t+30s] on a fixed scale (edPps = barWidth/60). Caption BLOCKS
-  // (width = their duration) sit on absolute px; ONE transform per frame
-  // centers the window, so the scale slides under the stationary head.
-  const EDITOR_WINDOW_S = 60;
-  /** px per second on the 60-second mini-map scale */
+  // FULL-TIMELINE MINI-MAP: the strip spans the WHOLE subtitle file so
+  // every caption is ALWAYS visible as a bar (a 60s window "missed" most
+  // subs - they were simply outside the strip). edPps = barWidth / span;
+  // caption bars sit at absolute px (length = their own duration); the red
+  // head travels the strip with the clock; the drag slides the thread.
+  /** px per second on the full-timeline mini-map scale */
   let edPps = 10;
+  /** total timeline span in seconds (last cue end); 1 while empty */
+  function edSpan() {
+    return cues.length ? Math.max(1, cues[cues.length - 1].end || 1) : 1;
+  }
 
   /** @param {number} s @returns {string} h:mm:ss / m:ss */
   function fmtTS(s) {
@@ -312,7 +316,7 @@
       if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
       return;
     }
-    edPps = edBarWidth() / EDITOR_WINDOW_S; // 60 seconds across the strip
+    edPps = edBarWidth() / edSpan(); // the WHOLE file across the strip
     // EVERY caption becomes a BLOCK whose length equals its timestamp span
     // (left = start, width = duration on the px scale) - a Premiere-style
     // sequence of caption clips, not thin ticks. Sample only absurd files.
@@ -322,7 +326,7 @@
       const tick = h('div', 'subs-editor__tick' + (ix === edSelected ? ' subs-editor__tick--sel' : ''));
       tick.style.left = (cue.start * edPps).toFixed(1) + 'px'; // absolute time -> px
       // BAR LENGTH = CAPTION LENGTH: width mirrors the cue's own duration.
-      tick.style.width = Math.max(2, (cue.end - cue.start) * edPps).toFixed(1) + 'px';
+      tick.style.width = Math.max(1, (cue.end - cue.start) * edPps).toFixed(1) + 'px';
       // ALTERNATING PALETTE: adjacent bars always differ (4-color cycle;
       // same-color neighbors are impossible since consecutive bars cycle
       // through 4 distinct hues - even sampled files keep k and k+1 apart).
@@ -580,17 +584,21 @@
   function paintEditorThread() {
     if (!edTicks) return;
     const t = now();
-    // Head PINNED mid-strip; hidden until the clock reports (a garbage
-    // position here read as "not synced").
+    // The head TRAVELS the strip with the clock (hidden until the player
+    // reports one - a garbage position here read as "not synced").
     if (edPlay) {
-      edPlay.style.left = '50%';
-      edPlay.style.display = t >= 0 ? 'block' : 'none';
+      if (t >= 0) {
+        edPlay.style.display = 'block';
+        edPlay.style.left = (Math.min(1, Math.max(0, t / edSpan())) * 100).toFixed(2) + '%';
+      } else {
+        edPlay.style.display = 'none';
+      }
     }
-    // Center the window on the playhead. now() ALREADY subtracts the offset
-    // (sub-timeline time), so NO extra offset term here - double-counting
-    // it rendered bars at 2x the offset ("bar not sync with the subs").
-    // Pre-clock: virtual V=0 (x = center + offset*pps) so drags still slide.
-    const x = edBarWidth() / 2 - (t >= 0 ? t : -offset) * edPps;
+    // now() ALREADY subtracts the offset (sub-timeline time), so the
+    // transform carries ONLY the offset - double-counting it rendered bars
+    // at 2x the offset ("bar not sync with the subs"). Bars are STABLE
+    // relative to the strip; only the head and the drag move things.
+    const x = offset * edPps;
     edTicks.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
   }
 

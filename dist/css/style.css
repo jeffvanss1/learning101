@@ -1659,9 +1659,9 @@ button {
 .subs-editor { flex-direction: column; align-items: stretch; gap: 4px; }
 .subs-editor__bar { position: relative; height: 26px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .subs-editor__ticks { position: absolute; inset: 0; }
-.subs-editor__tick { position: absolute; top: 4px; bottom: 4px; min-width: 2px; border-radius: 2px; background: rgba(122, 162, 255, 0.45); border-left: 2px solid rgba(122, 162, 255, 0.95); cursor: pointer; }
+.subs-editor__tick { position: absolute; top: 4px; bottom: 4px; min-width: 1px; border-radius: 1px; background: rgba(122, 162, 255, 0.45); border-left: 1px solid rgba(122, 162, 255, 0.95); cursor: pointer; }
 .subs-editor__tick:hover { background: #7aa2ff; }
-.subs-editor__tick--sel { box-shadow: 0 0 0 2px #ffd166, 0 0 10px rgba(255, 213, 30, 0.7); filter: brightness(1.25); }
+.subs-editor__tick--sel { z-index: 2; box-shadow: 0 0 0 2px #ffd166, 0 0 10px rgba(255, 213, 30, 0.7); filter: brightness(1.25); }
 .subs-editor__play { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff5d73; pointer-events: none; }
 
 /* ---- Mini-map thread sync (drag the cue strip like a Premiere clip) -------------- */
