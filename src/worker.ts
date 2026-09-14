@@ -210,26 +210,33 @@ async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<stri
     // handles worse than the english/romaji `name` — a single-variant search
     // was the Boruto-class "couldn't match on AniList" failure. Merge the
     // candidate pages (dedupe by id) and let matchAnilist score them all.
-    const variants = Array.from(new Set([show.original_name, show.name].filter(Boolean)));
-    const pages: any[] = await Promise.all(
-      variants.map((s) =>
-        fetch(ANILIST_ORIGIN, {
+    // TRY TITLE VARIANTS SEQUENTIALLY (name first, then original_name): the
+    // mixed-script original_name ("BORUTO-ボルト- NARUTO NEXT GENERATIONS")
+    // matches AniList SEARCH_MATCH worse than the romaji name, but searching
+    // BOTH IN PARALLEL doubled the per-title AniList load - and the anime
+    // feed resolves 20-40 titles per view, which got the whole pipeline
+    // rate-limited into mass "couldn't match" (the everything-broken
+    // regression). Sequential keeps the Boruto fix at 1x steady-state: the
+    // second variant fires only on a miss; the day-long animeCache absorbs
+    // repeat views.
+    const variants = Array.from(new Set([show.name, show.original_name].filter(Boolean)));
+    let best: any = null;
+    for (const s of variants) {
+      if (best) break;
+      try {
+        const res = await fetch(ANILIST_ORIGIN, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ query: ANILIST_QUERY, variables: { search: s } }),
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null)
-      )
-    );
-    const byId = new Map<number, any>();
-    for (const data of pages) {
-      const media = (data && data.data && data.data.Page && data.data.Page.media) || [];
-      for (const m of media) {
-        if (m && m.id != null && !byId.has(m.id)) byId.set(m.id, m);
+        });
+        if (!res.ok) continue;
+        const data: any = await res.json();
+        const media = (data && data.data && data.data.Page && data.data.Page.media) || [];
+        best = matchAnilist(show, media);
+      } catch (_) {
+        // try the next variant
       }
     }
-    const best = matchAnilist(show, Array.from(byId.values()));
     if (best) {
       anilistId = best.id;
       malId = best.idMal || null;

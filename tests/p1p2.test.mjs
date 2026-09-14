@@ -123,7 +123,7 @@ test('security headers: every page and API response is hardened', async () => {
   assert.match(w, /frame-ancestors 'self'/, 'no third-party framing');
   assert.match(w, /\.\.\.securityHeaders\(\),/, 'json() inherits them');
   assert.match(w, /for \(const \[k, v\] of Object\.entries\(securityHeaders\(\)\)\) res\.headers\.set\(k, v\);/, 'static assets are wrapped');
-  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.62';/, 'api stamp bumped');
+  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.64';/, 'api stamp bumped');
 });
 
 
@@ -161,4 +161,13 @@ test('mobile/desktop readiness: dvh viewports, touch-visible controls, responsiv
   assert.match(catalog, /@media \(hover: none\) \{[\s\S]*\.card-item__like \{\s*opacity: 1 !important;/, 'card hearts visible on touch');
   assert.match(catalog, /@media \(hover: none\) \{[\s\S]*\.btn--sm \{\s*min-height: 38px;/, 'touch targets >= 38px');
   assert.match(style, /@media \(max-width: 560px\) \{\s*\.up-next \{/, 'up-next overlay fits small screens');
+});
+
+test('anilist burst control: feed classification is bounded (no mass rate-limit)', () => {
+  const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  const block = cat.match(/async function classifyAnime\([\s\S]*?\n  \}/);
+  assert.ok(block, 'classifyAnime exists');
+  assert.doesNotMatch(block[0], /await Promise\.all\(\s*tvs\.map/, 'NO parallel fan-out over all titles');
+  assert.match(block[0], /Promise\.all\(\[run\(\), run\(\), run\(\)\]\)/, 'exactly 3 concurrent resolvers');
+  assert.match(block[0], /await sleep\(150\)/, 'staggered requests');
 });

@@ -186,7 +186,8 @@ test('matchAnilist: Boruto (real TMDB 70881 record) matches AniList romaji/nativ
 
 test('boruto fix wiring: dual-variant search + short-lived misses (both caches)', () => {
   const worker = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
-  assert.match(worker, /variants = Array\.from\(new Set\(\[show\.original_name, show\.name\]/, 'worker searches BOTH title variants');
+  assert.match(worker, /variants = Array\.from\(new Set\(\[show\.name, show\.original_name\]/, 'BOTH variants, name first, SEQUENTIAL (parallel 2x load rate-limited the feed)');
+  assert.match(worker, /for \(const s of variants\) \{\s*if \(best\) break;/, 'second variant fires only on a miss');
   const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
   assert.match(cat, /wp:anilist:v4:/, 'cache prefix bumped (v3 entries hold 7-day nulls)');
   assert.match(cat, /\/api\/anilist\/' \+ encodeURIComponent\(tmdbId\) \+ '\?v=3'/, 'endpoint buster bumped');

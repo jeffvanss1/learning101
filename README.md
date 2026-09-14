@@ -1023,3 +1023,19 @@ Pinned with the REAL TMDB fixture (70881) against AniList-shaped
 candidates incl. Naruto decoys. Playground query to eyeball the raw API:
 {"query":"{Page(page:1,perPage:5){media(search:\"Boruto: Naruto Next Generations\",type:ANIME,isAdult:false,sort:[SEARCH_MATCH]){id title{romaji english native} episodes startDate{year}}}}"}
 (graph.anilist.co - POST). Tests 154/154, check clean. catalog v23 / ui .63.
+
+## HOTFIX: anime feed empty (rate-limit burst) - sequential + bounded (ui/api-2026-09-14.64)
+
+The Boruto dual-search ran BOTH title variants IN PARALLEL, and the anime
+feed classifies 20-40 titles per view with an UNBOUNDED Promise.all - so a
+single view fired up to ~80 concurrent AniList POSTs, got rate-limited,
+and every classification failed: the anime feed went EMPTY and the strict
+no-TMDB-fallback rule turned the rest into "couldn't match". This broke
+everything anime after the previous fix deployed.
+
+Fix: (1) title variants now try SEQUENTIALLY (name first, then
+original_name only on a miss) - the Boruto fix keeps working at 1x
+steady-state cost; (2) classifyAnime resolves with bounded concurrency
+(3 workers, 150ms stagger) - the worker's day-long cache absorbs repeat
+views. Pins for both. Tests 155/155, check clean.
+catalog v24 / ui+api-2026-09-14.64.

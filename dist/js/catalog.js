@@ -104,8 +104,17 @@
       (r) => r && r.type === 'tv' && r._animeChecked !== true
     );
     if (!tvs.length) return;
-    await Promise.all(
-      tvs.map(async (r) => {
+    // BOUNDED CONCURRENCY (3, staggered): a feed view resolves 20-40 titles;
+    // firing them ALL at once hammered AniList into rate-limiting the whole
+    // batch -> mass unresolved -> the anime feed went EMPTY. The worker's
+    // day-long cache makes repeat views free; this keeps the first view polite.
+    const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+    let idx = 0;
+    const run = async () => {
+      for (;;) {
+        const i = idx++;
+        if (i >= tvs.length) return;
+        const r = tvs[i];
         r._animeChecked = true;
         try {
           const info = await anilistApi(r.id);
@@ -114,8 +123,10 @@
         } catch (_) {
           r.isAnime = false;
         }
-      })
-    );
+        await sleep(150);
+      }
+    };
+    await Promise.all([run(), run(), run()]);
   }
 
   // ---- direct (browser -> AniList) lookup ------------------------------------
