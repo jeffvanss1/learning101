@@ -327,6 +327,22 @@ body.room-focus.rail-peek .sidenav {
   margin-bottom: 0;
 }
 
+/* Dedicated /history page: same cards, wrapped as a grid instead of a strip. */
+.history--page {
+  padding: 22px 24px 48px;
+}
+
+.history--page .history__scroller {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  overflow-x: visible;
+  padding-bottom: 0;
+}
+
+.history--page .browse__empty {
+  padding: 40px 16px;
+}
+
 .history__scroller {
   display: flex;
   gap: 12px;

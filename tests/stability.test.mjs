@@ -79,3 +79,30 @@ test('stability: room auto-collapses the sidenav; leaving restores pre-room stat
   assert.match(css, /body\.room-focus\.rail-peek \.sidenav \{\s*display: flex;/, 'CSS restores the rail on peek');
   assert.match(css, /body\.room-focus #room-nav-toggle \{\s*display: inline-flex;/, 'Menu button only visible in rooms');
 });
+
+test('history: dedicated /history page; home page no longer hosts it', async () => {
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+
+  // Home main no longer contains the history section.
+  const homeMain = html.match(/<main id="home"[\s\S]*?<\/main>/)[0];
+  assert.doesNotMatch(homeMain, /id="history"/, 'home page has NO history section');
+  assert.doesNotMatch(app, /sec\.scrollIntoView/, 'no scroll-to-section hack anymore');
+
+  // Dedicated surface exists with its own controls + empty state.
+  assert.match(html, /<main id="history-page"[^>]*hidden>/, 'dedicated history page exists');
+  assert.match(html, /id="history-empty"/, 'friendly empty state');
+
+  // Routing: /history is a real route with proper teardown symmetry.
+  assert.match(app, /const HISTORY_RE = /, 'HISTORY_RE route');
+  assert.equal((app.match(/renderHistory\(\);/g) || []).length, 2, 'renderHistory: boot + history page only (NOT mountHome)');
+  assert.match(app, /function showHistoryView\(\)/, 'view renderer exists');
+  assert.match(app, /function teardownHistoryView\(\)/, 'teardown exists');
+  assert.equal((app.match(/teardownHistoryView\(\);/g) || []).length, 3, 'torn down from routeCurrent fall-through + profile + discovery views (history view itself tears those down instead)');
+  assert.match(app, /history\.pushState\(null, '', '\/history'\);/, 'sidenav pushes the /history URL');
+  assert.match(app, /setActiveNav\('history'\);/, 'nav state follows the page');
+
+  // The page renders cards as a grid, not a horizontal strip.
+  assert.match(css, /\.history--page \.history__scroller \{[^}]*display: grid/, 'dedicated page uses a grid');
+});

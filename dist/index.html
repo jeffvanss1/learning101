@@ -23,7 +23,7 @@
   <!-- Type is the system stack Apple uses (SF Pro on Apple devices, Segoe UI /
        Roboto elsewhere) — no web font download, so it matches apple.com. -->
   <link rel="stylesheet" href="/css/style.css?v=20" />
-  <link rel="stylesheet" href="/css/catalog.css?v=15" />
+  <link rel="stylesheet" href="/css/catalog.css?v=16" />
   <link rel="stylesheet" href="/css/social.css?v=16" />
 </head>
 <body>
@@ -134,13 +134,6 @@
   </nav>
 
   <main id="home" class="home">
-    <section id="history" class="history" hidden>
-      <div class="history__head">
-        <h2 class="row__title" data-i18n="history.title">Watch history</h2>
-        <button id="history-clear" class="btn btn--ghost btn--sm" type="button" data-i18n="history.clear">Clear</button>
-      </div>
-      <div id="history-scroller" class="history__scroller"></div>
-    </section>
     <div id="browse" class="browse"></div>
   </main>
 
@@ -314,6 +307,18 @@
     <!-- Discovery pages (/discovery/:key — one library collection per page,
          infinite scroll; rendered by catalog.js) -->
     <main id="discovery" class="discovery" hidden></main>
+
+    <!-- Dedicated watch-history page (removed from the home page) -->
+    <main id="history-page" class="discovery" hidden>
+      <section class="history history--page">
+        <div class="history__head">
+          <h2 class="row__title" data-i18n="history.title">Watch history</h2>
+          <button id="history-clear" class="btn btn--ghost btn--sm" type="button" data-i18n="history.clear">Clear</button>
+        </div>
+        <div id="history-empty" class="browse__empty" hidden>Nothing here yet - watch something and it will show up.</div>
+        <div id="history-scroller" class="history__scroller"></div>
+      </section>
+    </main>
     </div>
   </div>
 
@@ -423,6 +428,6 @@
   <script src="/js/subs.js?v=25"></script>
   <script src="/js/catalog.js?v=20"></script>
   <script src="/js/social.js?v=43"></script>
-  <script src="/js/app.js?v=33"></script>
+  <script src="/js/app.js?v=34"></script>
 </body>
 </html>

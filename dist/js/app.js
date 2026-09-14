@@ -1293,6 +1293,7 @@
     $('profile').hidden = true;
     $('home-nav').hidden = false;
     $('home').hidden = false;
+    if ($('history-page')) $('history-page').hidden = true;
     if (!alreadyHome) mountHome();
   }
 
@@ -1326,6 +1327,7 @@
   function showProfileView(username) {
     if (state.client || state.sync) teardownRoomSession();
     teardownDiscoveryView();
+    teardownHistoryView();
     $('room').hidden = true;
     $('home').hidden = true;
     $('home-nav').hidden = false;
@@ -1344,6 +1346,7 @@
   function showDiscoveryView(routeKey) {
     if (state.client || state.sync) teardownRoomSession();
     teardownProfileView();
+    teardownHistoryView();
     $('room').hidden = true;
     $('home').hidden = true;
     $('home-nav').hidden = false;
@@ -1361,8 +1364,46 @@
     });
   }
 
+  // Dedicated watch-history page (own URL, own surface - NOT the home page).
+  function teardownHistoryView() {
+    const page = $('history-page');
+    if (page && !page.hidden) {
+      page.hidden = true;
+      const sc = $('history-scroller');
+      if (sc) sc.innerHTML = '';
+    }
+  }
+
+  function showHistoryView() {
+    if (state.client || state.sync) teardownRoomSession();
+    teardownProfileView();
+    teardownDiscoveryView();
+    $('room').hidden = true;
+    $('home').hidden = true;
+    $('home-nav').hidden = false;
+    clearSearchInputs();
+    if (state.browseHandle) {
+      // Pause browse work while the history page owns the screen.
+      state.browseHandle.destroy();
+      state.browseHandle = null;
+    }
+    const page = $('history-page');
+    if (page) page.hidden = false;
+    renderHistory();
+    window.dispatchEvent(new CustomEvent('wp:view-changed'));
+  }
+
   // Render whichever surface the current URL asks for (boot + popstate).
+  const HISTORY_RE = /^\/history\/?$/;
+
   function routeCurrent() {
+    if (HISTORY_RE.test(location.pathname)) {
+      teardownProfileView();
+      teardownDiscoveryView();
+      showHistoryView();
+      setActiveNav('history');
+      return;
+    }
     const profileMatch = location.pathname.match(PROFILE_RE);
     if (profileMatch) {
       showProfileView(decodeURIComponent(profileMatch[1]));
@@ -1377,6 +1418,7 @@
     if (isRoomPath()) return; // room deep-links are handled at boot
     teardownProfileView();
     teardownDiscoveryView();
+    teardownHistoryView();
     showHome();
     setActiveNav('home');
     // /search?q=... and /?q=... prefill the unified search.
@@ -1432,14 +1474,15 @@
   function renderHistory() {
     const sec = $('history');
     const scroller = $('history-scroller');
+    const empty = $('history-empty');
     if (!sec || !scroller) return;
     const items = WP.historyGet();
+    // Dedicated page: an EMPTY history shows a friendly note, not a blank page.
+    if (empty) empty.hidden = !!items.length;
     if (!items.length) {
-      sec.hidden = true;
       scroller.innerHTML = '';
       return;
     }
-    sec.hidden = false;
     scroller.innerHTML = '';
     items.forEach((v) => {
       const card = document.createElement('button');
@@ -1542,18 +1585,12 @@
           setActive('home');
           scrollHomeTop();
         } else if (key === 'history') {
+          // Dedicated page: real URL, back-button friendly.
           if (inRoom) goHome();
-          if (!$('profile').hidden || !$('discovery').hidden) {
-            history.pushState(null, '', '/');
-            routeCurrent();
+          if (location.pathname !== '/history') {
+            history.pushState(null, '', '/history');
           }
-          const sec = $('history');
-          if (sec && !sec.hidden) {
-            setActive('history');
-            sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          } else {
-            toast('Nothing in your watch history yet.');
-          }
+          routeCurrent();
         } else if (key === 'admin') {
           // Admin drawer (only visible when the signed-in user is_admin).
           if (WP.Social && WP.Social.toggleAdminPanel) WP.Social.toggleAdminPanel();
@@ -1670,7 +1707,6 @@
       // People results (profiles + live presence) render above media results.
       peopleProvider: WP.Social ? (q) => WP.Social.renderPeople(q) : null,
     });
-    renderHistory();
     // (The friends drawer is global — mounted once at boot, overlays any view.)
   }
 

@@ -946,3 +946,16 @@ Tests 139/139, check clean. style v20 / catalog v14 / social v16 / ui .53.
 - Pins: room-focus add/remove, peek wiring + icon-strip, CSS rules,
   Menu button room-only. Tests 140/140, check clean.
   app.js v33 / catalog.css v15 / ui-2026-09-14.55.
+
+## Dedicated watch-history page; removed from the home page (ui-2026-09-14.56)
+
+- History is its own surface now: the sidenav "Watch history" item opens
+  a real /history URL (back-button friendly, active nav state), instead
+  of scroll-to-section-on-home (with a toast when empty).
+- The home page no longer renders a history section at all.
+- The page shows the same history cards as a WRAPPING GRID (not the home
+  strip) and a friendly empty state instead of a blank page; Clear works
+  in place. Leaving the page (home / discovery / profile / back) tears
+  it down with the same symmetry as the other views.
+- Pinned in stability tests. Tests 141/141, check clean.
+  app.js v34 / catalog.css v16 / ui-2026-09-14.56.
