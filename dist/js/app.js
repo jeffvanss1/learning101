@@ -1555,36 +1555,81 @@
     }
     if (state._upNextShown) return;
     state._upNextShown = true;
-    const curEp = Number(v.episode) || 1;
-    // Verify the next episode exists in THIS season before offering it
-    // (TMDB season counts; cross-season is intentionally not auto-jumped).
-    WP.Catalog.api('/tv/' + encodeURIComponent(String(v.id)))
-      .then((data) => {
-        const seasons = (data && data.seasons) || [];
-        const s = seasons.find((x) => Number(x.season_number) === Number(v.season));
-        if (!s || curEp + 1 > Number(s.episode_count || 0)) {
+    resolveNextEpisode(v)
+      .then((next) => {
+        if (!next) {
           state._upNextShown = false;
-          return;
+          return; // series/season finale - nothing to advance to
         }
-        showUpNext(curEp + 1);
+        showUpNext(next);
       })
       .catch(() => {
         state._upNextShown = false;
       });
   }
 
-  /** Countdown overlay in the player: "Up next: E<n>" with Play now / Cancel. */
-  function showUpNext(nextEp) {
+  /**
+   * TRUE next episode. Two data-correctness rules learned the hard way:
+   * - TV: TMDB's season episode_count METADATA lies (The Walking Dead S02
+   *   advanced to a phantom E14) - use the SEASON DETAIL episode list and
+   *   skip specials. At a season finale, offer the next season's E1.
+   * - Anime: Jikan/MAL absolute list is the source of truth (TMDB splits
+   *   anime into bogus seasons); falls back to the AniList total.
+   * @returns {Promise<{season?: number, episode: number} | null>}
+   */
+  function resolveNextEpisode(v) {
+    if (v.type === 'anime') {
+      const curEp = Number(v.episode) || 1;
+      const withTimeout = (/** @type {Promise<number|null>} */ p) =>
+        Promise.race([p, new Promise((r) => setTimeout(() => r(null), 4000))]);
+      return withTimeout(v.malId ? WP.Catalog.jikanCount(v.malId) : Promise.resolve(null)).then(
+        (/** @type {number|null} */ count) => {
+          if (count && curEp + 1 <= count) return { episode: curEp + 1 };
+          if (count) return null; // MAL says we finished the series
+          if (v.anilistId == null) return null;
+          return WP.Catalog.anilistApi(v.id)
+            .then((/** @type {any} */ info) =>
+              info && info.episodes && curEp + 1 <= Number(info.episodes)
+                ? { episode: curEp + 1 }
+                : null
+            )
+            .catch(() => null);
+        }
+      );
+    }
+    const curSeason = Number(v.season) || 1;
+    const curEp = Number(v.episode) || 1;
+    return WP.Catalog.api('/tv/' + encodeURIComponent(String(v.id)) + '/season/' + curSeason)
+      .then((/** @type {any} */ season) => {
+        const eps = (((season && season.episodes) || []) )
+          .filter((/** @type {any} */ e) => e && e.episode_type !== 'special' && Number.isFinite(Number(e.episode_number)))
+          .map((/** @type {any} */ e) => Number(e.episode_number));
+        const nextEp = eps.find((/** @type {number} */ n) => n > curEp);
+        if (nextEp) return { season: curSeason, episode: nextEp };
+        // Season finale: first episode of the next season with content.
+        return WP.Catalog.api('/tv/' + encodeURIComponent(String(v.id))).then((/** @type {any} */ data) => {
+          const seasons = ((data && data.seasons) || [])
+            .filter((/** @type {any} */ s) => s && Number(s.season_number) > curSeason && Number(s.episode_count) > 0)
+            .sort((/** @type {any} */ x, /** @type {any} */ y) => Number(x.season_number) - Number(y.season_number));
+          if (!seasons.length) return null; // series finale
+          return { season: Number(seasons[0].season_number), episode: 1 };
+        });
+      });
+  }
+
+  /** Countdown overlay in the player: "Up next: ..." with Play now / Cancel. */
+  function showUpNext(next) {
     clearUpNext();
     const host = document.querySelector('.player');
     if (!host) return;
     const v = state.video;
+    const nextLabel = next.season ? 'S' + next.season + ' E' + next.episode : 'E' + next.episode;
     const bar = document.createElement('div');
     bar.id = 'up-next';
     bar.className = 'up-next';
     const label = document.createElement('span');
     label.className = 'up-next__label';
-    label.textContent = 'Up next: E' + nextEp;
+    label.textContent = 'Up next: ' + nextLabel;
     const playNow = document.createElement('button');
     playNow.type = 'button';
     playNow.className = 'btn btn--primary btn--sm';
@@ -1601,17 +1646,17 @@
     const advance = () => {
       clearUpNext();
       if (!state.video || !state.sync) return;
-      setRoomVideo(WP.Catalog.buildVideo(state.video, { season: state.video.season, episode: nextEp }));
+      setRoomVideo(WP.Catalog.buildVideo(state.video, { season: next.season != null ? next.season : state.video.season, episode: next.episode }));
     };
     let left = 5;
-    label.textContent = 'Up next: E' + nextEp + ' in ' + left + 's';
+    label.textContent = 'Up next: ' + nextLabel + ' in ' + left + 's';
     state._upNextTimer = setInterval(() => {
       left -= 1;
       if (left <= 0) {
         advance();
         return;
       }
-      label.textContent = 'Up next: E' + nextEp + ' in ' + left + 's';
+      label.textContent = 'Up next: ' + nextLabel + ' in ' + left + 's';
     }, 1000);
     playNow.addEventListener('click', advance);
     cancel.addEventListener('click', clearUpNext);

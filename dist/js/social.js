@@ -368,7 +368,7 @@
   /**
    * Server history for the signed-in user (the /history page merges it with
    * the local list; local entries win because they carry resume positions).
-   * @returns {Promise<Array | null>} null when signed out / on failure
+   * @returns {Promise<Array<any> | null>} null when signed out / on failure
    */
   function getServerHistory() {
     const s0 = loadSession();
@@ -2213,7 +2213,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.59';
+  global.WP.build = 'ui-2026-09-14.60';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

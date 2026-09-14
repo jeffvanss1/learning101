@@ -73,6 +73,7 @@
       backdrop: video.backdrop || '',
       season: video.season != null ? video.season : null,
       episode: video.episode != null ? video.episode : null,
+      malId: video.malId != null ? video.malId : null,
       rating: video.rating != null ? video.rating : null,
       watchedAt: Date.now(),
     });

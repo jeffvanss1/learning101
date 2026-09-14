@@ -73,6 +73,102 @@
 
   // Resolve a TMDB TV id into { anime, anilistId, episodes, title } via the
   // Worker (classifies with TMDB keywords, then looks the title up on AniList).
+  // ---- Jikan (MyAnimeList) episode data - THE anime source of truth ---------
+  // Absolute episode numbering + real titles, unaffected by TMDB's anime
+  // season splitting. Server-proxied (/api/jikan, throttled + edge-cached
+  // against Jikan's 3/s + 60/min limits); browser results cached 24h.
+
+  const JIKAN_TTL_MS = 24 * 60 * 60 * 1000;
+
+  function jikanCacheGet(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (Date.now() - o.ts < JIKAN_TTL_MS && o.eps) return o.eps;
+    } catch (_) {}
+    return null;
+  }
+
+  function jikanCacheSet(key, eps) {
+    try {
+      localStorage.setItem(key, JSON.stringify({ ts: Date.now(), eps: eps }));
+    } catch (_) {}
+  }
+
+  /**
+   * Full absolute episode list [{number, title, filler, recap}] for a MAL id,
+   * or null on any failure (callers fall back to AniList/TMDB counts).
+   * @param {string|number} malId
+   * @returns {Promise<Array|null>}
+   */
+  async function jikanEpisodes(malId) {
+    if (malId == null || malId === '') return null;
+    const key = 'wp:jikan:' + malId;
+    const cached = jikanCacheGet(key);
+    if (cached) return cached;
+    const all = [];
+    let lastPage = 1;
+    try {
+      for (let page = 1; page <= 12; page++) {
+        const res = await fetch('/api/jikan/anime/' + encodeURIComponent(String(malId)) + '/episodes?page=' + page);
+        if (!res.ok) return all.length ? all : null; // partial beats nothing
+        const data = await res.json();
+        const eps = (data && data.episodes) || [];
+        all.push(...eps);
+        lastPage = Number(data && data.lastPage) || 1;
+        if (page >= lastPage) break;
+      }
+    } catch (_) {
+      return all.length ? all : null;
+    }
+    if (!all.length) return null;
+    jikanCacheSet(key, all);
+    return all;
+  }
+
+  /**
+   * Cheap total-episode count (first + last page only).
+   * @param {string|number} malId
+   * @returns {Promise<number|null>}
+   */
+  async function jikanCount(malId) {
+    if (malId == null || malId === '') return null;
+    const key = 'wp:jikan-count:' + malId;
+    const cached = jikanCacheGet(key);
+    if (cached && cached.count) return cached.count;
+    try {
+      const res = await fetch('/api/jikan/anime/' + encodeURIComponent(String(malId)) + '/episodes?page=1');
+      if (!res.ok) return null;
+      const data = await res.json();
+      const eps = (data && data.episodes) || [];
+      const lastPage = Number(data && data.lastPage) || 1;
+      if (!eps.length) return null;
+      let count = eps.length;
+      if (lastPage > 1) {
+        const res2 = await fetch('/api/jikan/anime/' + encodeURIComponent(String(malId)) + '/episodes?page=' + lastPage);
+        if (res2.ok) {
+          const data2 = await res2.json();
+          count = eps.length * (lastPage - 1) + (((data2 && data2.episodes) || []).length || 0);
+        }
+      }
+      jikanCacheSet(key, { count: count });
+      return count;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Patch real MAL titles onto rendered .ep-btn nodes. */
+  function applyJikanNames(root, eps) {
+    if (!root || !eps || !eps.length) return;
+    const byNum = new Map(eps.map((e) => [Number(e.number), e]));
+    root.querySelectorAll('.ep-btn').forEach((b) => {
+      const ep = byNum.get(Number(b.textContent));
+      if (ep && ep.title) b.title = 'E' + b.textContent + ' \u00b7 ' + ep.title;
+    });
+  }
+
   async function anilistApi(tmdbId) {
     const cacheKey = ANILIST_CACHE_PREFIX + tmdbId;
     try {
@@ -253,6 +349,7 @@
       type,
       id: String(item.id),
       anilistId: item.anilistId != null ? String(item.anilistId) : null,
+      malId: item.malId != null ? String(item.malId) : null,
       src: watchUrl({ type, id: item.id, anilistId: item.anilistId }, opts),
       title: item.title || '',
       year: item.year || '',
@@ -715,7 +812,9 @@
             }
             if (anilistId != null) {
               item.anilistId = anilistId;
-              renderAnimeBody(body, item, extra, { episodes }, onPick, close);
+              const malId = info && info.malId != null ? String(info.malId) : null;
+              if (malId) item.malId = malId;
+              renderAnimeBody(body, item, extra, { episodes: episodes, malId: malId }, onPick, close);
             } else {
               renderAnimeUnresolved(body, item, extra);
             }
@@ -872,6 +971,24 @@
     renderEpisodeGrid(epGrid, { count: count, pick: pick, showId: item.id, season: null });
     section.appendChild(epGrid);
     body.appendChild(section);
+    // Jikan enrichment: real MAL titles, and if MAL knows MORE episodes than
+    // AniList/TMDB reported (common for ongoing/partial catalogs), re-render
+    // the grid with the TRUE count. Falls back silently - zero regression.
+    if (info && info.malId) {
+      jikanEpisodes(info.malId)
+        .then((eps) => {
+          if (!eps || !eps.length || !document.contains(epGrid)) return;
+          if (eps.length > count) {
+            const newGrid = h('div', 'detail__episodes');
+            renderEpisodeGrid(newGrid, { count: eps.length, pick: pick, showId: null, season: null });
+            epGrid.replaceWith(newGrid);
+            applyJikanNames(newGrid, eps);
+          } else {
+            applyJikanNames(epGrid, eps);
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   // Detected as anime, but AniList lookup failed to yield an ID.
@@ -1520,12 +1637,25 @@
           // episode - so every pick past TMDB season 1 replayed the wrong
           // episode. Render ONE flat absolute grid instead.
           let anilistId = video.anilistId != null ? String(video.anilistId) : null;
+          let malId = video.malId != null ? String(video.malId) : null;
           let episodes = 0;
           try {
             const info = await anilistApi(video.id);
             if (info && info.anilistId != null) anilistId = String(info.anilistId);
+            if (info && info.malId != null) malId = String(info.malId);
             if (info && info.episodes != null) episodes = Number(info.episodes) || 0;
           } catch (_) {}
+          // JIKAN: MAL episode list is the source of truth for anime - real
+          // count + real titles (TMDB seasons/counts are wrong for anime).
+          let jikanEps = null;
+          if (malId) {
+            try {
+              jikanEps = await jikanEpisodes(malId);
+            } catch (_) {
+              jikanEps = null;
+            }
+            if (jikanEps && jikanEps.length) episodes = jikanEps.length;
+          }
           // Ongoing anime often have episodes: null on AniList - use the
           // TMDB total (same source the detail picker falls back to).
           if (!episodes) episodes = Number(extra && extra.number_of_episodes) || 0;
@@ -1546,13 +1676,14 @@
             renderEpisodeGrid(epGrid, {
               count: episodes,
               pick: (n) => {
-                onPick(buildVideo({ id: video.id, type: 'anime', isAnime: true, anilistId: anilistId, title: video.title }, { episode: n }));
+                onPick(buildVideo({ id: video.id, type: 'anime', isAnime: true, anilistId: anilistId, malId: malId, title: video.title }, { episode: n }));
                 close();
               },
               currentEp: Number(video.episode) || 0,
               showId: null,
               season: null,
             });
+            applyJikanNames(epGrid, jikanEps);
             return;
           }
           // No AniList match: fall through to the TMDB grid (best effort).
@@ -1612,6 +1743,8 @@
   global.WP.Catalog = {
     api,
     anilistApi,
+    jikanEpisodes,
+    jikanCount,
     buildVideo,
     watchUrl,
     typeLabel,

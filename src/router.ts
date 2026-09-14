@@ -22,6 +22,7 @@ import {
   handleFriendAccept,
   handleFriendRemove,
 } from './routes/users.js';
+import { handleJikanEpisodes } from './routes/jikan.js';
 import {
   handlePresencePut,
   handlePresenceDelete,
@@ -38,7 +39,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-14.57';
+export const WORKER_BUILD = 'api-2026-09-14.60';
 
 /**
  * Coarse KV rate limiter (fail-open): counts hits per key inside a sliding
@@ -196,6 +197,17 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
     if (me instanceof Response) return me;
     return handleRecordHistory(request, env, me);
   }
+  // ---- Jikan (MyAnimeList) episode lists for anime ---------------------------
+  // Public data + edge-cached; IP-damped for politeness (upstream: 3/s, 60/min).
+  const jikanMatch = path.match(/^\/api\/jikan\/anime\/([^/]+)\/episodes\/?$/);
+  if (jikanMatch && method === 'GET') {
+    if (!(await kvRateLimit(env, 'jikan:' + clientIp(request), 60, 60))) {
+      return errorJson(429, 'Too many requests - slow down.');
+    }
+    const url1 = new URL(request.url);
+    return handleJikanEpisodes(request, env, decodeURIComponent(jikanMatch[1]), url1.searchParams.get('page') || '1');
+  }
+
   if (path === '/api/user/history' && method === 'GET') {
     const me = await requireUser(request, env);
     if (me instanceof Response) return me;

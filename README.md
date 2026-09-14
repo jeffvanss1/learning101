@@ -959,3 +959,28 @@ Tests 139/139, check clean. style v20 / catalog v14 / social v16 / ui .53.
   it down with the same symmetry as the other views.
 - Pinned in stability tests. Tests 141/141, check clean.
   app.js v34 / catalog.css v16 / ui-2026-09-14.56.
+
+## Jikan (MAL) integration + auto-advance data-correctness (ui/api-2026-09-14.60)
+
+USER REPORTS FIXED:
+- TWD S02E13 auto-advanced to a phantom E14: TMDB's season episode_count
+  METADATA lies. TV auto-advance now uses the SEASON DETAIL episode list
+  (specials skipped by episode_type), offers next-season E1 at a season
+  finale, and refuses ghost episodes. Series finale = no offer.
+- JoJo-class anime listing inaccuracies: the anime pipeline now runs on
+  JIKAN (MyAnimeList) via /api/jikan - absolute numbering, TRUE episode
+  counts and REAL titles for the anime detail picker, the room episode
+  modal and auto-advance. Affected every anime with odd TMDB seasons,
+  not just JoJo.
+
+JIKAN INTEGRATION (per docs.api.jikan.moe, limits 3/s + 60/min):
+- Worker proxy /api/jikan/anime/:malId/episodes?page=N: in-memory 6h
+  edge cache + token bucket UNDER upstream limits (2/s, 50/min),
+  fail-soft 429; client falls back to AniList/TMDB - zero regressions
+  when Jikan is down. IP-damped 60/min. Mal ids come from the AniList
+  resolve (idMal was already queried - now returned as malId) and flow
+  through buildVideo -> history entries (survive restarts). Client
+  caches lists 24h in localStorage.
+
+Tests 153/153 (jikan route runtime-tested: normalization, cache hit,
+422, throttle), tsc clean. catalog v21 / app v38 / utils v8 / ui+api .60.

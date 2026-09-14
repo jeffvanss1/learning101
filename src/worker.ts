@@ -201,6 +201,7 @@ async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<stri
   if (!classifyIsAnime(show, keywords)) return { anime: false };
 
   let anilistId: number | null = null;
+  let malId: number | null = null;
   let episodes: number | null = null;
   let title: string | null = null;
   try {
@@ -218,6 +219,7 @@ async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<stri
       const best = matchAnilist(show, media);
       if (best) {
         anilistId = best.id;
+        malId = best.idMal || null; // Jikan (MAL) key for episode lists
         episodes = best.episodes || null;
         title = (best.title && (best.title.romaji || best.title.english)) || null;
       }
@@ -226,7 +228,7 @@ async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<stri
     // AniList unreachable — the caller gets { anime: true, anilistId: null }.
   }
 
-  return { anime: true, anilistId, episodes, title };
+  return { anime: true, anilistId, malId, episodes, title };
 }
 
 export default {
