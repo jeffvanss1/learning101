@@ -1926,6 +1926,11 @@
           );
           renderHistory();
         });
+        // THE FIX: poster + body were BUILT but never ATTACHED - every card
+        // rendered as an empty box. (Lost in a refactor; tests only counted
+        // cards, never their contents.)
+        card.appendChild(poster);
+        card.appendChild(body);
         card.appendChild(rm);
 
         // Server-only entries have no src - they link to a fresh start (and

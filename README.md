@@ -1310,3 +1310,20 @@ poster-less rows). Instead of a migration, /history now HEALS:
   (proven by the execution tests - a healer TypeError once wiped the
   freshly rendered cards; now impossible).
 app v48 / ui-2026-09-14.78. Tests 184/184, check clean.
+
+## THE empty-box bug: poster+body were never attached (ui-2026-09-14.79)
+
+USER'S SCREENSHOT finally showed it: cards render as empty rounded
+boxes. Root cause found by READING the deployed card-builder: the poster
+div and body div were CREATED but `card.appendChild(poster/body)` was
+missing - only the remove X was attached. Lost somewhere before .71
+(git -S: the append string last touched in fdcfcf5); every verification
+since only COUNTED cards, never their contents, so it shipped
+"working" through .71-.78.
+
+Fix: the two appends restored. Test gap closed: the execution harness
+now asserts CONTENT (each card >= 3 children: poster, body with real
+title text, remove control) - counting alone is banned by this pin.
+Status "healing posters: 1" confirmed 62 rows already carry poster URLs
+- with the appends restored those images finally display.
+app v49 / ui-2026-09-14.79. Tests 185/185, check clean.

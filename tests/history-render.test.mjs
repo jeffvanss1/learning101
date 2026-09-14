@@ -101,6 +101,17 @@ test('/history EXECUTES: local entries render as cards (dead-guard regression)',
   assert.equal(els['history-scroller'].kids.length, 2, 'two cards rendered');
   assert.equal(els['history-empty'].hidden, true, 'empty state hidden');
   assert.equal(els['history-filters'].kids.length, 4, 'filter chips rendered');
+  // CONTENT-LEVEL (the empty-box regression shipped because tests only
+  // COUNTED cards): every card must contain poster + body with real text.
+  for (const card of els['history-scroller'].kids) {
+    assert.ok(card.kids.length >= 3, 'card carries poster, body and remove controls');
+    const poster = card.kids.find((k) => k.className === 'history-card__poster');
+    const body = card.kids.find((k) => k.className === 'history-card__body');
+    assert.ok(poster, 'poster div attached');
+    assert.ok(body, 'body div attached');
+    const title = body.kids.find((k) => k.className === 'history-card__title');
+    assert.ok(title && title.textContent, 'title text renders');
+  }
 });
 
 test('/history empty + SIGNED OUT says so (never a bare blank)', () => {
