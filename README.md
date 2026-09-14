@@ -1275,3 +1275,21 @@ USER DIRECTIVE: "just doing it from server db, and its better" — done:
 Execution-tested: server rows render with src + status counts; a server
 failure shows in-page while local still renders. Tests 182/182.
 app v46 / social v45 / catalog css v23 / ui-2026-09-14.76.
+
+## /history self-diagnosis build (ui-2026-09-14.77)
+
+The full app was reproduced END-TO-END in jsdom (real index.html, all 8
+scripts executed, signed-in session, 62 server rows + 13 local, booted
+straight to /history through the real route chain): 75 cards render in
+the DOM with the exact status line the user quoted. Code + DOM + data
+are proven; the user-side blank must come from the rendering
+environment. Shipped so the next look is DEFINITIVE:
+
+- Status line now self-diagnoses: "Account: N · Device: M · Cards: X
+  (DOM: Y)" — built-vs-in-DOM counts pinpoint the failing layer.
+- CSS canary: an EMPTY #history-scroller prints a red warning line.
+- Defensive: .history-card is a guaranteed opaque box (display/min-
+  height/bg/border) — cards cannot be silently invisible.
+- Console breadcrumb: '[history] rendered N cards, M in DOM'.
+catalog.css compacted back under the 1400-line dedup ceiling.
+app v47 / catalog css v24 / ui-2026-09-14.77. Tests 183/183.

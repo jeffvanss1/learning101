@@ -239,7 +239,7 @@ test('minimal shape pass: no oval buttons — flat radii, circles only where the
   assert.match(social, /\.avatar-frame \{[^}]*border-radius: 50%;/, 'avatars stay circular');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /css\/style\.css\?v=24/, 'style cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=24/, 'catalog cache-bumped');
   assert.match(html, /css\/social\.css\?v=19/, 'social cache-bumped');
 });
 
@@ -259,7 +259,7 @@ test('cover survives episode switch + season covers in both modals', () => {
   assert.match(c, /episodes-modal__season', episodes \+ ' episodes'/, 'anime modal shows the episode count');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=27/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
 test('room cover broken-art guard + profile showcase has no empty poster-height holes', () => {
@@ -301,7 +301,7 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /card\.addEventListener\('click', \(\) => startRoomWithVideo\(v\)\);/, 'single click path: server cards rebuilt playable, position rides along');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=46/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -313,8 +313,8 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=46/, 'app cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog css cache-bumped');
+  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
 test('episode selector watched fade: local + server watched states on every grid', () => {
@@ -332,7 +332,7 @@ test('episode selector watched fade: local + server watched states on every grid
   assert.match(css, /\.ep-btn--partial::after \{[^}]*width: var\(--wp, 0%\);/s, 'partial = mini progress bar');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=27/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
 test('/history never-silent guarantees: error surface + self-explanatory empty', () => {
@@ -351,7 +351,7 @@ test('history nav dead-end fixed + never-blank view setup + global error surface
   assert.match(a, /window\.addEventListener\('error', \(ev\) =>/, 'uncaught errors surface as a visible toast');
   assert.match(a, /window\.addEventListener\('unhandledrejection', \(ev\) =>/, 'rejections surface too');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=46/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
 });
 
 test('history is SERVER-FIRST with an on-page status line', () => {
@@ -370,4 +370,16 @@ test('history is SERVER-FIRST with an on-page status line', () => {
   assert.match(html, /js\/social\.js\?v=45/, 'social cache-bumped');
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history__status--err \{/, 'error status styled');
+});
+
+test('history self-diagnosis: card counts in the status line + empty-scroller canary', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /Cards: ' \+ items\.length \+ ' \(DOM: ' \+ scroller\.children\.length/, 'status reports built vs in-DOM card counts');
+  assert.match(a, /console\.log\('\[history\] rendered', items\.length/, 'console breadcrumb');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.match(css, /#history-scroller:empty::after/, 'empty scroller prints the red canary');
+  assert.match(css, /\.history-card \{[^}]*display: block;/, 'cards are guaranteed opaque boxes');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/app\.js\?v=47/, 'app cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });

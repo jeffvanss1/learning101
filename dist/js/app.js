@@ -1934,6 +1934,18 @@
         card.addEventListener('click', () => startRoomWithVideo(v));
         scroller.appendChild(card);
       });
+      // SELF-DIAGNOSIS: the status line reports how many cards were BUILT
+      // and how many are ACTUALLY in the DOM - "Account: 62 · Device: 13 ·
+      // Cards: 75 (DOM: 75)". A mismatch pinpoints the failing layer
+      // instantly (0 built = logic, built-but-absent = environment).
+      try {
+        const st = $('history-status');
+        if (st && st.textContent) {
+          st.textContent +=
+            ' \u00b7 Cards: ' + items.length + ' (DOM: ' + scroller.children.length + ')';
+        }
+        console.log('[history] rendered', items.length, 'cards,', scroller.children.length, 'in DOM');
+      } catch (_) {}
       } catch (e) {
         // NEVER silent: a failed render shows WHY instead of a blank page.
         console.error('[history] render failed', e);
