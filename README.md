@@ -1336,3 +1336,18 @@ with a clean breakdown. The status line now reads:
 Debug counts (cards/DOM/healing) moved to the console only; the red
 account-error and loading variants remain. app v50 / ui-2026-09-14.80.
 Tests 185/185.
+
+## Landscape history art (ui-2026-09-14.81)
+
+USER: "better to use horizontal poster for the history". The card box is
+16:9 but rows only carried vertical posters (center-cropped). Now:
+- D1 gains watch_history.backdrop_url (DDL + self-provisioning ALTER +
+  migration 0004); POST upserts it, GET returns backdropUrl.
+- Both client record paths (recordHistoryFor + recordProgressFor) send
+  backdropUrl.
+- The self-heal now resolves BOTH TMDB arts (poster w500 + backdrop
+  w780), paints the BACKDROP first (native 16:9, pixel-perfect in the
+  card box), falls back to the poster, and patches the row with both —
+  one visit heals all rows permanently (existing poster-only rows are
+  re-resolved once: "!v.backdrop" targeting).
+app v51 / social v46 / ui-2026-09-14.81. Tests 186/186, check clean.

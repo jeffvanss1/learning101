@@ -390,6 +390,7 @@
         mediaType: video.type || 'movie',
         mediaTitle: video.title,
         posterUrl: video.poster || video.thumb || '',
+        backdropUrl: video.backdrop || '',
         season: video.season != null ? video.season : null,
         episode: video.episode != null ? video.episode : null,
         // Resuming a card carries its saved position — the server row starts accurate.
@@ -422,6 +423,7 @@
         mediaType: video.type || 'movie',
         mediaTitle: video.title,
         posterUrl: video.poster || video.thumb || '',
+        backdropUrl: video.backdrop || '',
         season: video.season != null ? video.season : null,
         episode: video.episode != null ? video.episode : null,
         positionSeconds: pos,
@@ -2290,7 +2292,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.80';
+  global.WP.build = 'ui-2026-09-14.81';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

@@ -1808,7 +1808,7 @@
           seen.add(kOf(String(h.mediaId), h.season || null, h.episode || null));
           return {
             type, id: String(h.mediaId), src,
-            title: h.mediaTitle || 'Untitled', year: '', poster: h.posterUrl || '', backdrop: '',
+            title: h.mediaTitle || 'Untitled', year: '', poster: h.posterUrl || '', backdrop: h.backdropUrl || '',
             season: h.season || null, episode: h.episode || null,
             watchedAt: h.watchedAt || 0, completed: !!h.completed,
             position: Number(h.positionSeconds) || 0,
@@ -1971,15 +1971,18 @@
   /** mediaKey -> Promise<posterUrl>; one lookup per title per session. */
   const posterLookups = new Map();
 
-  /** @param {{ id: string|number, type: string }} v */
-  function lookupPoster(v) {
+  /** @param {{ id: string|number, type: string }} v @returns {Promise<{poster: string, backdrop: string}>} */
+  function lookupArt(v) {
     const key = v.type + ':' + v.id;
     if (posterLookups.has(key)) return posterLookups.get(key);
     const base = v.type === 'movie' ? '/movie/' : '/tv/';
     const p = WP.Catalog
       .api(base + encodeURIComponent(String(v.id)))
-      .then((d) => (d && d.poster_path ? 'https://image.tmdb.org/t/p/w500' + d.poster_path : ''))
-      .catch(() => '');
+      .then((d) => ({
+        poster: d && d.poster_path ? 'https://image.tmdb.org/t/p/w500' + d.poster_path : '',
+        backdrop: d && d.backdrop_path ? 'https://image.tmdb.org/t/p/w780' + d.backdrop_path : '',
+      }))
+      .catch(() => ({ poster: '', backdrop: '' }));
     posterLookups.set(key, p);
     return p;
   }
@@ -1990,7 +1993,9 @@
    * @param {Array<any>} items rendered history entries
    */
   function healHistoryPosters(items) {
-    const missing = items.filter((v) => !v.poster && !v.backdrop && v.id);
+    // Landscape-first: anything missing its BACKDROP gets healed (rows that
+    // only carry a vertical poster are re-resolved once, then permanent).
+    const missing = items.filter((v) => !v.backdrop && v.id);
     if (!missing.length) return;
     console.log('[history] healing posters:', missing.length);
     let idx = 0;
@@ -1998,27 +2003,36 @@
       if (idx >= missing.length) return;
       const v = missing[idx++];
       const card = /** @type {HTMLElement | null} */ (document.querySelector('.history-card[data-mediakey="' + v.type + ':' + v.id + '|' + (v.season != null ? v.season : '') + '|' + (v.episode != null ? v.episode : '') + '"]'));
-      const finish = (url) => {
-        if (!url || !card || !card.isConnected) return;
+      const finish = (art) => {
+        if (!art || (!art.backdrop && !art.poster) || !card || !card.isConnected) return;
         const box = card.querySelector('.history-card__poster');
-        if (box && !box.querySelector('img')) {
-          const im = document.createElement('img');
-          im.src = url;
-          im.alt = '';
-          im.loading = 'lazy';
-          box.appendChild(im);
+        // LANDSCAPE FIRST: the card box is 16:9 — the native backdrop fills
+        // it perfectly; the vertical poster is only the fallback.
+        const url = art.backdrop || art.poster;
+        if (box) {
+          const im = box.querySelector('img');
+          if (im) im.src = url;
+          else if (box) {
+            const el = document.createElement('img');
+            el.src = url;
+            el.alt = '';
+            el.loading = 'lazy';
+            box.appendChild(el);
+          }
         }
-        // Patch the server row so the fix is permanent (fire-and-forget).
+        // Patch the server row (poster + backdrop) so the fix is permanent.
         if (WP.Social && WP.Social.recordHistoryFor) {
           WP.Social.recordHistoryFor({
             id: v.id, type: v.type, title: v.title,
-            poster: url, season: v.season, episode: v.episode,
+            poster: art.poster || v.poster || '',
+            backdrop: art.backdrop || '',
+            season: v.season, episode: v.episode,
             position: v.position, duration: v.duration,
           });
         }
       };
       if (card) card.setAttribute(POSTER_QUEUED, '1');
-      lookupPoster(v).then(finish);
+      lookupArt(v).then(finish);
       setTimeout(run, 150);
     };
     run();

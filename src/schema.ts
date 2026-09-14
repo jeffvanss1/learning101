@@ -55,6 +55,7 @@ const DDL = [
     completed INTEGER NOT NULL DEFAULT 0,
     position_seconds INTEGER NOT NULL DEFAULT 0,
     duration_seconds INTEGER NOT NULL DEFAULT 0,
+    backdrop_url TEXT NOT NULL DEFAULT '',
     watched_at INTEGER NOT NULL,
     UNIQUE (user_id, media_id, season, episode)
   )`,
@@ -107,6 +108,7 @@ export async function ensureSchema(env: Env): Promise<void> {
     let needsCodeColumn = false;
     let needsAdminColumn = false;
     let needsProgressColumns = false;
+    let needsBackdropColumn = false;
     try {
       const info = await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>();
       needsCodeColumn = !info.results.some((c) => c.name === 'code_hash');
@@ -121,6 +123,7 @@ export async function ensureSchema(env: Env): Promise<void> {
       needsProgressColumns =
         !whInfo.results.some((c) => c.name === 'position_seconds') ||
         !whInfo.results.some((c) => c.name === 'duration_seconds');
+      needsBackdropColumn = !whInfo.results.some((c) => c.name === 'backdrop_url');
     } catch {
       // Table missing entirely → the CREATE TABLE in the batch covers it.
     }
@@ -135,6 +138,11 @@ export async function ensureSchema(env: Env): Promise<void> {
     if (needsProgressColumns) {
       statements.push(env.DB.prepare('ALTER TABLE watch_history ADD COLUMN position_seconds INTEGER NOT NULL DEFAULT 0'));
       statements.push(env.DB.prepare('ALTER TABLE watch_history ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0'));
+    }
+    if (needsBackdropColumn) {
+      // 0004: landscape art (TMDB backdrop) for history cards; poster stays
+      // the vertical fallback.
+      statements.push(env.DB.prepare("ALTER TABLE watch_history ADD COLUMN backdrop_url TEXT NOT NULL DEFAULT ''"));
     }
     // D1 batches run inside an implicit transaction and reject DDL there, so
     // each statement runs individually (all idempotent — safe to retry).
