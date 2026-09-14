@@ -490,26 +490,11 @@
     const sideHead = document.querySelector('.sidebar__head');
     if (sideHead) sideHead.onclick = onToggleChat;
 
-    const seek = $('seek-bar');
-    seek.oninput = () => {
-      state.scrubbing = true;
-      $('time-current').textContent = WP.formatDuration(parseFloat(seek.value));
-    };
-    seek.onchange = () => {
-      state.scrubbing = false;
-      if (canControl() && state.sync) {
-        state.sync.localSeek(parseFloat(seek.value));
-      }
-    };
   }
 
   function resetProgress() {
     $('time-current').textContent = '0:00';
     $('time-duration').textContent = '0:00';
-    const seek = $('seek-bar');
-    seek.value = '0';
-    seek.max = '1000';
-    seek.disabled = true;
   }
 
   // --------------------------------------------------------------------------
@@ -645,17 +630,10 @@
   }
 
   function updateProgress(time, playing, duration) {
-    const seek = $('seek-bar');
     if (duration != null && duration > 0) {
-      seek.max = String(duration);
       $('time-duration').textContent = WP.formatDuration(duration);
     }
-    if (!state.scrubbing) {
-      seek.value = String(time || 0);
-      $('time-current').textContent = WP.formatDuration(time || 0);
-    }
-    // Controllers may scrub only once we know the duration.
-    seek.disabled = !(canControl() && duration != null && duration > 0);
+    $('time-current').textContent = WP.formatDuration(time || 0);
     updatePlayerControls(playing);
   }
 

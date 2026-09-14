@@ -353,3 +353,41 @@ test('subs auto-load: same-video guard + force flag + room dedup wired', async (
   assert.match(subs, /roomSubsActive/, 'host subs suppress local auto-load');
   assert.match(subs, /autoLoadGen\+\+/, 'in-flight auto-loads are generation-checked');
 });
+
+test('host seek logs a chat line with h:mm:ss format; scrub bursts dedupe', async () => {
+  const { room, store, wsHost, wsGuest } = await freshRoom();
+
+  await room.webSocketMessage(wsHost, JSON.stringify({ type: 'seek', time: 3725 })); // 1:02:05
+  const sys = store.chat.filter((c) => c.type === 'system' && /seeked/.test(c.text));
+  assert.equal(sys.length, 1, 'seek logged once');
+  assert.equal(sys[0].text, '\u23e9 Host seeked to 1:02:05', 'hours/minutes/seconds format: ' + sys[0].text);
+  assert.ok(wsGuest._sent.some((m) => m.type === 'system' && /seeked/.test(m.text)), 'guest saw the log');
+
+  // Rapid near-identical seek (scrub burst): within 1.5s AND within 2s -> silent.
+  await room.webSocketMessage(wsHost, JSON.stringify({ type: 'seek', time: 3726 }));
+  assert.equal(store.chat.filter((c) => c.type === 'system' && /seeked/.test(c.text)).length, 1, 'scrub burst deduped');
+
+  // Genuinely different target -> logs again (no long cooldown swallow).
+  await room.webSocketMessage(wsHost, JSON.stringify({ type: 'seek', time: 500 }));
+  const sys2 = store.chat.filter((c) => c.type === 'system' && /seeked/.test(c.text));
+  assert.equal(sys2.length, 2, 'different target logged');
+  assert.equal(sys2[1].text, '\u23e9 Host seeked to 8:20', 'm:ss format under an hour: ' + sys2[1].text);
+
+  // Guests cannot seek at all -> cannot spam the log either.
+  const before = store.chat.filter((c) => c.type === 'system' && /seeked/.test(c.text)).length;
+  await room.webSocketMessage(wsGuest, JSON.stringify({ type: 'seek', time: 999 }));
+  assert.equal(store.chat.filter((c) => c.type === 'system' && /seeked/.test(c.text)).length, before, 'guest seek ignored');
+});
+
+test('seek bar removed from the room UI; time labels remain', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.equal(/id="seek-bar"/.test(html), false, 'no seek-bar input in the markup');
+  assert.equal(/id="time-current"/.test(html), true, 'time label kept');
+  assert.equal(/id="time-duration"/.test(html), true, 'duration label kept');
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.equal(/\$\('seek-bar'\)/.test(app), false, 'no stale seek-bar wiring');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.equal(/progress-row__bar/.test(css), false, 'bar styles removed');
+});

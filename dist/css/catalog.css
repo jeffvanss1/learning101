@@ -1033,6 +1033,7 @@ body.sidenav-collapsed .sidenav__search {
 .progress-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-top: 10px;
 }
@@ -1045,48 +1046,1058 @@ body.sidenav-collapsed .sidenav__search {
   text-align: center;
 }
 
-.progress-row__bar {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 5px;
+* ============================================================================
+   WatchParty — catalog / browse (YouTube-style) + modals + progress bar
+   ========================================================================== */
+
+/* ---- Top nav ----------------------------------------------------------------- */
+.topnav {
+  flex: 0 0 auto;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px max(20px, env(safe-area-inset-left)) 10px max(20px, env(safe-area-inset-right));
+  background: rgba(15, 15, 15, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.topnav__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* The search bar lives in the same top bar as the logo, always on top. */
+.topnav__search {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 600px;
+  min-width: 0;
+}
+
+.topnav__search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.topnav__search-input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--bg-raised);
+  color: var(--text);
+  padding: 10px 18px 10px 42px;
+  font-size: 14.5px;
+  font-family: inherit;
   outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.topnav__search-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+}
+
+.topnav__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Collapse toggle for the home guide rail. */
+.topnav__hamburger {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.progress-row__bar:disabled {
-  cursor: default;
+.topnav__hamburger:hover {
+  background: var(--bg-hover);
 }
 
-.progress-row__bar::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--red);
+/* ---- Home ---------------------------------------------------------------------- */
+.home {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  background: var(--bg);
+  scroll-behavior: smooth;
+}
+
+.browse {
+  min-height: 100vh;
+}
+
+/* ---- Side navigation (left guide rail) ------------------------------------------ */
+/* The rail lives at the app-shell level, so it stays visible on every view. */
+.sidenav {
+  flex: 0 0 var(--sidenav-w);
+  width: var(--sidenav-w);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 8px;
+  background: var(--bg);
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: width 0.2s ease, flex-basis 0.2s ease;
+}
+
+.sidenav__search {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 4px 4px;
+}
+
+.sidenav__search svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.sidenav__search-input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 10px 16px 10px 40px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sidenav__search-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+}
+
+.sidenav__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.sidenav__heading {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 12px 4px;
+  white-space: nowrap;
+}
+
+.sidenav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidenav__group--bottom {
+  margin-top: auto;
+}
+
+.sidenav__item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 10px 12px;
   border: none;
-  box-shadow: 0 0 6px rgba(255, 0, 51, 0.6);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease;
 }
 
-.progress-row__bar:disabled::-webkit-slider-thumb {
-  background: var(--text-muted);
-  box-shadow: none;
+.sidenav__item svg {
+  flex: 0 0 auto;
+  color: inherit;
 }
 
-.progress-row__bar::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--red);
+.sidenav__item:hover {
+  background: var(--bg-hover);
+}
+
+.sidenav__item.is-active {
+  background: var(--bg-raised);
+  font-weight: 600;
+}
+
+.sidenav__item--accent {
+  color: var(--red);
+}
+.sidenav__item--accent:hover {
+  background: rgba(255, 0, 51, 0.14);
+}
+
+/* Collapsed: icon-only rail (labels slide away), driven by body.sidenav-collapsed. */
+body.sidenav-collapsed .sidenav {
+  flex-basis: var(--sidenav-w-collapsed);
+  width: var(--sidenav-w-collapsed);
+}
+
+body.sidenav-collapsed .sidenav__item {
+  justify-content: center;
+  gap: 0;
+}
+
+body.sidenav-collapsed .sidenav__label,
+body.sidenav-collapsed .sidenav__heading,
+body.sidenav-collapsed .sidenav__search {
+  display: none;
+}
+
+/* ---- Search -------------------------------------------------------------------- */
+.browse__search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 4px;
+  max-width: 1400px;
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+
+.browse__search-input {
+  flex: 1;
+  min-width: 220px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  padding: 11px 18px;
+  font-size: 14.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.browse__search-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+}
+
+.browse__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.browse__filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chip:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.chip--active {
+  background: var(--text);
+  color: #0b0b0b;
+  border-color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- Watch history ------------------------------------------------------------- */
+.history {
+  max-width: 1400px;
+  margin: 18px auto 0;
+  padding: 0 16px;
+  scroll-margin-top: calc(var(--topnav-h) + 12px);
+}
+
+.history__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.history__head .row__title {
+  margin-bottom: 0;
+}
+
+.history__scroller {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 8px 2px 14px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.history__scroller::-webkit-scrollbar {
+  height: 8px;
+}
+.history__scroller::-webkit-scrollbar-thumb {
+  background: var(--bg-raised);
+  border-radius: 6px;
+}
+
+.history-card {
+  flex: 0 0 200px;
   border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 10px;
+  scroll-snap-align: start;
+  font-family: inherit;
+  color: inherit;
 }
 
-.progress-row__bar:disabled::-moz-range-thumb {
-  background: var(--text-muted);
+.history-card:hover .history-card__poster {
+  transform: translateY(-3px);
+  border-color: var(--bg-hover);
 }
+
+.history-card__poster {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 56.25%; /* fixed 16:9 — identical on every history card */
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.history-card__poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 9px;
+}
+
+.history-card__title {
+  margin-top: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-card__meta {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Hero ------------------------------------------------------------------------ */
+.browse__hero {
+  max-width: 1400px;
+  margin: 6px auto 0;
+  padding: 0 16px;
+}
+
+.hero {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  /* Fixed height: the artwork can never stretch the banner. */
+  height: clamp(190px, 26vw, 360px);
+  min-height: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  background-color: var(--bg-elev);
+  box-shadow: var(--shadow);
+}
+
+/* The banner image lives on its own clipped layer, so it can never
+   overflow the hero box (no background-size up-scaling, no spills). */
+.hero__media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.hero__media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(15, 15, 15, 0.15) 0%,
+    rgba(15, 15, 15, 0.35) 45%,
+    rgba(15, 15, 15, 0.96) 100%
+  );
+}
+
+.hero__content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+  padding: clamp(20px, 3vw, 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hero__badge {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--red);
+  border-radius: 4px;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.hero__title {
+  margin: 0;
+  font-size: clamp(24px, 3.4vw, 44px);
+  line-height: 1.06;
+  letter-spacing: -0.5px;
+  font-weight: 700;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hero__meta {
+  color: var(--text-dim);
+  font-size: 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hero__overview {
+  margin: 0;
+  color: #d4d4d4;
+  font-size: 14.5px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7);
+}
+
+.hero__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.hero__skeleton {
+  height: clamp(190px, 26vw, 360px);
+  min-height: 0;
+  border-radius: 16px;
+  background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position-x: -200%;
+  }
+}
+
+/* ---- Rows ----------------------------------------------------------------------- */
+.browse__rows {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 8px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Invisible sentinel that infinite scroll observes to load the next pages. */
+.browse__sentinel {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 1px;
+}
+
+.row {
+  margin-top: 14px;
+  scroll-margin-top: calc(var(--topnav-h) + 12px);
+}
+
+.row__title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.row__scroller {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 2px 12px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.row__scroller::-webkit-scrollbar {
+  height: 8px;
+}
+.row__scroller::-webkit-scrollbar-thumb {
+  background: var(--bg-raised);
+  border-radius: 6px;
+}
+
+.row__skeleton {
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+.row__skeleton .skel-card {
+  flex: 0 0 158px;
+  height: 236px;
+  border-radius: 10px;
+  background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* ---- Cards ------------------------------------------------------------------------ */
+/* One source of truth for the poster-card size. Every card is exactly this
+   wide and its poster exactly this tall — in rows, in the search grid, and
+   in the modal. No aspect-ratio, no padding trick, nothing can stretch it. */
+:root {
+  --card-w: 158px;
+  --card-h: 237px; /* fixed 2:3 poster height */
+}
+
+.card-item {
+  flex: 0 0 var(--card-w);
+  width: var(--card-w);
+  cursor: pointer;
+  scroll-snap-align: start;
+  border-radius: 10px;
+  transition: transform 0.18s ease;
+  outline: none;
+}
+
+.card-item:hover,
+.card-item:focus-visible {
+  transform: translateY(-4px);
+}
+
+.card-item__poster {
+  /* Fixed pixel size, identical on every card and every browser. */
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--card-h);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.card-item:hover .card-item__poster,
+.card-item:focus-visible .card-item__poster {
+  border-color: var(--bg-hover);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* The artwork is a clipped layer hard-locked to the box above. */
+.card-item__poster img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  border-radius: 9px;
+  transition: transform 0.35s ease;
+}
+
+/* Subtle zoom on hover — still clipped inside the fixed box. */
+.card-item:hover .card-item__poster img,
+.card-item:focus-visible .card-item__poster img {
+  transform: scale(1.05);
+}
+
+.card-item__poster-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: linear-gradient(160deg, var(--bg-raised), var(--bg-elev));
+}
+
+.card-item__badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.card-item__body {
+  padding: 8px 2px 0;
+}
+
+.card-item__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-item__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-item__meta .star {
+  color: #f5c518;
+}
+
+/* ---- Hover preview (trailer + plot) ----------------------------------------------------- */
+.card-preview {
+  position: fixed;
+  z-index: 400;
+  width: 304px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  pointer-events: auto;
+  animation: preview-in 0.16s ease;
+}
+
+.card-preview__media {
+  position: relative;
+  width: 100%;
+  height: 0;
+  padding-bottom: 56.25%; /* fixed 16:9 preview box */
+  background: #000;
+}
+
+.card-preview__media iframe,
+.card-preview__media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  object-fit: cover;
+  border: 0;
+}
+
+.card-preview__body {
+  padding: 12px 14px;
+}
+
+.card-preview__title {
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-preview__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 6px;
+}
+
+.card-preview__overview {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Search results grid ------------------------------------------------------------- */
+.grid {
+  display: grid;
+  /* Fixed columns so every search-result card is exactly the same size as
+     the row cards — no stretching, no uneven poster heights. */
+  grid-template-columns: repeat(auto-fill, var(--card-w));
+  gap: 14px;
+  margin-top: 12px;
+  justify-content: center;
+}
+
+.grid .card-item {
+  width: var(--card-w);
+  flex: none;
+}
+
+.browse__empty {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.browse__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  text-align: center;
+}
+
+.browse__error .browse__empty {
+  padding: 0;
+}
+
+.browse__error-detail {
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 560px;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Modals -------------------------------------------------------------------------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;
+}
+
+.modal__card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  animation: modal-in 0.2s ease;
+}
+
+.modal__card--wide {
+  max-width: 1000px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.modal__card--wide .modal__head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal__card--wide .browse {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A compact banner inside the "choose a video" picker. */
+.modal__card--wide .hero,
+.modal__card--wide .hero__skeleton {
+  height: clamp(140px, 20vh, 200px);
+  min-height: 0;
+  border-radius: 12px;
+}
+
+.modal__card--wide .hero__overview {
+  display: none;
+}
+
+.modal__card--wide .hero__title {
+  -webkit-line-clamp: 1;
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.modal__close {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.modal__close:hover {
+  color: var(--text);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Detail / episode picker -------------------------------------------------------------- */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail__top {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.detail__poster {
+  flex: 0 0 120px;
+  width: 120px;
+  aspect-ratio: 2 / 3;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+}
+
+.detail__info {
+  min-width: 0;
+}
+
+.detail__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.detail__meta {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.detail__meta .star {
+  color: #f5c518;
+}
+
+.detail__overview {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.detail__section {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.detail__label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+.detail__seasons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.detail__episodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ep-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.ep-btn:hover {
+  background: var(--bg-raised);
+  border-color: var(--blue);
+}
+
+.detail__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ---- Progress / seek bar ------------------------------------------------------------------ */
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.progress-row__time {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 40px;
+  text-align: center;
+}
+
+
+
+
+
+
 
 /* ---- Video-bar poster thumbnail -------------------------------------------------------------- */
 .video-bar__poster {

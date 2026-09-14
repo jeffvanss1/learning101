@@ -98,6 +98,17 @@ function now() {
   return Date.now();
 }
 
+/** Chat-clock format: h:mm:ss (>= 1h) or m:ss. */
+function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h
+    ? h + ':' + String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0')
+    : m + ':' + String(r).padStart(2, '0');
+}
+
 function sanitizeText(s) {
   return String(s ?? '');
 }
@@ -537,6 +548,14 @@ export class WatchRoom {
         const t = this.clampTime(msg.time);
         this.playback.time = t;
         this.playback.timestamp = now();
+        // Seek log lands in the PERSISTED chat (late joiners see it too).
+        // Dedupe scrub bursts: rapid seeks to ~the same spot stay silent,
+        // a genuinely different target always logs.
+        const lastSeek = this._lastSeekLog;
+        if (!lastSeek || now() - lastSeek.at > 1500 || Math.abs(t - lastSeek.time) > 2) {
+          this._lastSeekLog = { at: now(), time: t };
+          this.logSystem('\u23e9 ' + (peer.name || 'Host') + ' seeked to ' + fmtClock(t));
+        }
         this.broadcast({
           type: MSG.SEEK,
           time: t,

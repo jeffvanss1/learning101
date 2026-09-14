@@ -713,3 +713,15 @@ language, and the subtitle auto-load chain is: EXPLICIT user pick
 IP/geo language > 'en'. Stale unflagged saved values can never override
 the IP language again - Indonesian subs are the default, impossible to
 miss.
+
+## Seek chat log + bar removed (api-2026-09-13.40)
+
+- **Host seeks land in the chat**: `⏩ <name> seeked to 1:02:05`
+  (h:mm:ss, or m:ss under an hour) as a PERSISTED system line, so late
+  joiners see it too. Scrub bursts dedupe (rapid seeks within 1.5s AND
+  within 2s of the same spot stay silent; a different target always
+  logs). Guests cannot seek, so they cannot spam it.
+- **The room seek bar is removed** from the player UI (markup, wiring,
+  styles). The current/total time labels remain. Hosts still seek via
+  the embedded player's own controls - the sync manager mirrors those
+  clock jumps to the room exactly as before.
