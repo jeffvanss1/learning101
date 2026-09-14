@@ -239,7 +239,7 @@ test('minimal shape pass: no oval buttons — flat radii, circles only where the
   assert.match(social, /\.avatar-frame \{[^}]*border-radius: 50%;/, 'avatars stay circular');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /css\/style\.css\?v=24/, 'style cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=20/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=21/, 'catalog cache-bumped');
   assert.match(html, /css\/social\.css\?v=19/, 'social cache-bumped');
 });
 
@@ -259,7 +259,7 @@ test('cover survives episode switch + season covers in both modals', () => {
   assert.match(c, /episodes-modal__season', episodes \+ ' episodes'/, 'anime modal shows the episode count');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=26/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=20/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=21/, 'catalog css cache-bumped');
 });
 
 test('room cover broken-art guard + profile showcase has no empty poster-height holes', () => {
@@ -301,5 +301,18 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /else startRoomWithVideo\(\{ \.\.\.v, src: undefined \}\);/, 'server-only cards keep their position on click');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=42/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=43/, 'app cache-bumped');
+});
+
+test('history page renders (dead-guard regression) + watched fade bar', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.doesNotMatch(a, /const sec = \$\('history'\);/, "no phantom $('history') guard (it blanked the whole page)");
+  assert.match(a, /if \(!scroller\) return;/, 'renderHistory requires only the scroller');
+  assert.match(a, /history-card__progress-fill--done/, 'watched entries get the faded full bar');
+  assert.match(a, /const finished = !!v\.completed \|\| \(v\.duration > 0 && v\.position > 0 && v\.position >= v\.duration - 30\);/, 'finished = completed flag OR watched past dur-30');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/app\.js\?v=43/, 'app cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=21/, 'catalog css cache-bumped');
 });

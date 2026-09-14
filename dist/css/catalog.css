@@ -405,6 +405,11 @@ body.room-focus.rail-peek .sidenav {
   background: var(--red);
 }
 
+/* Watched-to-the-end: the full bar at reduced opacity ("already seen"). */
+.history-card__progress-fill--done {
+  opacity: 0.45;
+}
+
 .history__scroller {
   display: flex;
   gap: 12px;

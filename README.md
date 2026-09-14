@@ -1184,3 +1184,20 @@ Now:
 Deploy note: the D1 columns self-provision on the first profile-route
 request; `npm run db:migrate:remote` applies migration 0003 explicitly.
 Tests 171/171, check clean. app v42 / ui+api-2026-09-14.71.
+
+## /history blank-page regression + watched fade (ui-2026-09-14.72)
+
+USER: "/history doesn't showing, also where the faded after the movie
+being watched". ROOT CAUSE: renderHistory() guarded on $('history') —
+an element removed from the DOM long ago — so the function returned
+before rendering a single card. The page was (silently) always blank:
+no cards, no server merge visible, no progress bars. Guard now requires
+only #history-scroller.
+
+WATCHED FADE: a finished movie/episode (completed flag, or watched past
+duration-30s) now shows a FULL faded red bar (opacity .45, YouTube
+"already watched" style) instead of disappearing. Partial watches keep
+the percent bar. catalog css v21.
+
+Tests 172/172 (dead-guard pinned absent + fade pinned). app v43 /
+ui-2026-09-14.72.

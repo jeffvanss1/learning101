@@ -1744,10 +1744,12 @@
   }
 
   function renderHistory() {
-    const sec = $('history');
     const scroller = $('history-scroller');
     const empty = $('history-empty');
-    if (!sec || !scroller) return;
+    // NOTE: the old guard also required $('history') — an element removed
+    // from the DOM long ago — so the page silently rendered NOTHING
+    // ("/history doesn't show"). Only the scroller is required now.
+    if (!scroller) return;
 
     // LOCAL history is the source of truth for resume positions; the server
     // list (signed-in) fills gaps so phone and desktop agree on titles.
@@ -1826,7 +1828,18 @@
         poster.appendChild(im);
       }
       // Resume position: YouTube-style red progress bar under the artwork.
-      if (v.position > 15 && v.duration && v.position < v.duration - 30) {
+      // WATCHED FADE: a finished movie/episode shows a FULL faded bar (like
+      // YouTube's watched state) instead of nothing.
+      const finished = !!v.completed || (v.duration > 0 && v.position > 0 && v.position >= v.duration - 30);
+      if (finished) {
+        const prog = document.createElement('div');
+        prog.className = 'history-card__progress';
+        const fill = document.createElement('div');
+        fill.className = 'history-card__progress-fill history-card__progress-fill--done';
+        fill.style.width = '100%';
+        prog.appendChild(fill);
+        poster.appendChild(prog);
+      } else if (v.position > 15 && v.duration && v.position < v.duration - 30) {
         const prog = document.createElement('div');
         prog.className = 'history-card__progress';
         const fill = document.createElement('div');
