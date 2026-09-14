@@ -1219,3 +1219,23 @@ Sources: local history paints instantly; the server history (cached
 per show, one fetch) re-paints cross-device when it arrives. Painter is
 deep + idempotent so lazily-materialized thread rows decorate too.
 catalog v27 / catalog css v22 / ui-2026-09-14.73. Tests 173/173.
+
+## /history empty: evidence-based diagnosis + never-silent render (ui-2026-09-14.74)
+
+USER: "history broken, it's just empty". Instead of another theory, the
+render path was EXECUTED: renderHistory + renderHistoryChips were sliced
+out of the shipped app.js and run against a stub DOM — HEAD renders
+cards, chips, hides the empty state, zero exceptions (now a permanent
+test file: tests/history-render.test.mjs, 4 execution cases).
+
+Verdict: an empty page at HEAD can only be (a) a stale client still
+running the pre-.72 dead-guard build, or (b) genuinely no data on that
+browser (empty local storage + signed out — server memory needs the
+account). Shipped hardening so neither can ever look like a silent
+blank again:
+- renderHistory is wrapped: a failure now logs '[history] render failed'
+  AND surfaces "History failed to load: <cause>" IN the page.
+- The empty state is self-explanatory: signed-out users see "Sign in and
+  your watch history follows you across every device"; signed-in users
+  see the account-empty hint.
+app v44 / ui-2026-09-14.74. Tests 178/178, check clean.

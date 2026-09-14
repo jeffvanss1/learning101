@@ -301,7 +301,7 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /else startRoomWithVideo\(\{ \.\.\.v, src: undefined \}\);/, 'server-only cards keep their position on click');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=43/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=44/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -313,7 +313,7 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=43/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=44/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=22/, 'catalog css cache-bumped');
 });
 
@@ -333,4 +333,12 @@ test('episode selector watched fade: local + server watched states on every grid
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=27/, 'catalog cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=22/, 'catalog css cache-bumped');
+});
+
+test('/history never-silent guarantees: error surface + self-explanatory empty', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /console\.error\('\[history\] render failed', e\);/, 'render failures are logged AND shown');
+  assert.match(a, /'History failed to load: ' \+ \(\(e && e\.message\) \|\| e\)/, 'the error lands in the page');
+  assert.match(a, /Sign in and your watch history follows you across every device/, 'signed-out hint');
+  assert.match(a, /Nothing watched on your account yet/, 'account-empty hint');
 });

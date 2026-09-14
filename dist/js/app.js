@@ -1750,146 +1750,164 @@
     // from the DOM long ago — so the page silently rendered NOTHING
     // ("/history doesn't show"). Only the scroller is required now.
     if (!scroller) return;
+    try {
 
-    // LOCAL history is the source of truth for resume positions; the server
-    // list (signed-in) fills gaps so phone and desktop agree on titles.
-    const local = WP.historyGet();
-    const kOf = (id, s, e) => `${id}|${s != null ? s : ''}|${e != null ? e : ''}`;
-    const seen = new Set();
-    let merged = local.map((v) => {
-      seen.add(kOf(v.id, v.season, v.episode));
-      return v;
-    });
-    const server = state._historyServer;
-    if (server && server.length) {
-      const extras = server
-        .filter((h) => !seen.has(kOf(String(h.mediaId), h.season || null, h.episode || null)))
-        .map((h) => ({
-          type: h.mediaType === 'tv' ? 'tv' : h.mediaType === 'anime' ? 'anime' : 'movie',
-          id: String(h.mediaId),
-          src: '',
-          title: h.mediaTitle || 'Untitled',
-          year: '',
-          poster: h.posterUrl || '',
-          backdrop: '',
-          season: h.season || null,
-          episode: h.episode || null,
-          watchedAt: h.watchedAt || 0,
-          completed: !!h.completed,
-          // SERVER RESUME MEMORY: positions ride along, so the progress bar
-          // renders and the click resumes exactly where the other device stopped.
-          position: Number(h.positionSeconds) || 0,
-          duration: Number(h.durationSeconds) || 0,
-        }));
-      merged = merged.concat(extras);
-      merged.sort((x, y) => (y.watchedAt || 0) - (x.watchedAt || 0));
-    } else if (!state._historyServerTried && WP.Social && WP.Social.getServerHistory && WP.Social.getSession && WP.Social.getSession()) {
-      // One fetch per page visit; re-render merges it in when it arrives.
-      state._historyServerTried = true;
-      WP.Social.getServerHistory().then((items) => {
-        state._historyServer = items || [];
-        const page = $('history-page');
-        if (page && !page.hidden) renderHistory();
+      // LOCAL history is the source of truth for resume positions; the server
+      // list (signed-in) fills gaps so phone and desktop agree on titles.
+      const local = WP.historyGet();
+      const kOf = (id, s, e) => `${id}|${s != null ? s : ''}|${e != null ? e : ''}`;
+      const seen = new Set();
+      let merged = local.map((v) => {
+        seen.add(kOf(v.id, v.season, v.episode));
+        return v;
       });
-    }
+      const server = state._historyServer;
+      if (server && server.length) {
+        const extras = server
+          .filter((h) => !seen.has(kOf(String(h.mediaId), h.season || null, h.episode || null)))
+          .map((h) => ({
+            type: h.mediaType === 'tv' ? 'tv' : h.mediaType === 'anime' ? 'anime' : 'movie',
+            id: String(h.mediaId),
+            src: '',
+            title: h.mediaTitle || 'Untitled',
+            year: '',
+            poster: h.posterUrl || '',
+            backdrop: '',
+            season: h.season || null,
+            episode: h.episode || null,
+            watchedAt: h.watchedAt || 0,
+            completed: !!h.completed,
+            // SERVER RESUME MEMORY: positions ride along, so the progress bar
+            // renders and the click resumes exactly where the other device stopped.
+            position: Number(h.positionSeconds) || 0,
+            duration: Number(h.durationSeconds) || 0,
+          }));
+        merged = merged.concat(extras);
+        merged.sort((x, y) => (y.watchedAt || 0) - (x.watchedAt || 0));
+      } else if (!state._historyServerTried && WP.Social && WP.Social.getServerHistory && WP.Social.getSession && WP.Social.getSession()) {
+        // One fetch per page visit; re-render merges it in when it arrives.
+        state._historyServerTried = true;
+        WP.Social.getServerHistory().then((items) => {
+          state._historyServer = items || [];
+          const page = $('history-page');
+          if (page && !page.hidden) renderHistory();
+        });
+      }
 
-    // Filter chips (All / Movies / Series / Anime).
-    const f = state._historyFilter || 'all';
-    const items = merged.filter((v) => {
-      if (f === 'all') return true;
-      if (f === 'movie') return v.type === 'movie';
-      if (f === 'tv') return v.type === 'tv';
-      if (f === 'anime') return v.type === 'anime';
-      return true;
-    });
+      // Filter chips (All / Movies / Series / Anime).
+      const f = state._historyFilter || 'all';
+      const items = merged.filter((v) => {
+        if (f === 'all') return true;
+        if (f === 'movie') return v.type === 'movie';
+        if (f === 'tv') return v.type === 'tv';
+        if (f === 'anime') return v.type === 'anime';
+        return true;
+      });
 
-    renderHistoryChips(merged.length);
-    if (empty) empty.hidden = !!items.length;
-    if (!items.length) {
+      renderHistoryChips(merged.length);
+      if (empty) empty.hidden = !!items.length;
+      if (!items.length) {
+        scroller.innerHTML = '';
+        // SELF-EXPLANATORY EMPTY: signed-out users must learn that history is
+        // account-bound (cross-device), not a rendering failure.
+        if (empty) {
+        const signedIn = !!(WP.Social && WP.Social.getSession && WP.Social.getSession());
+        empty.textContent = signedIn
+        ? 'Nothing watched on your account yet - press play on anything and it will show up here.'
+        : 'Nothing here on this device yet. Sign in and your watch history follows you across every device.';
+        }
+        return;
+      }
       scroller.innerHTML = '';
-      return;
-    }
-    scroller.innerHTML = '';
-    items.forEach((v) => {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'history-card';
-      card.title = v.title;
+      items.forEach((v) => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'history-card';
+        card.title = v.title;
 
-      const poster = document.createElement('div');
-      poster.className = 'history-card__poster';
-      const src = v.backdrop || v.poster;
-      if (src) {
-        const im = document.createElement('img');
-        im.src = src;
-        im.alt = '';
-        im.loading = 'lazy';
-        im.onerror = () => im.remove();
-        poster.appendChild(im);
-      }
-      // Resume position: YouTube-style red progress bar under the artwork.
-      // WATCHED FADE: a finished movie/episode shows a FULL faded bar (like
-      // YouTube's watched state) instead of nothing.
-      const finished = !!v.completed || (v.duration > 0 && v.position > 0 && v.position >= v.duration - 30);
-      if (finished) {
-        const prog = document.createElement('div');
-        prog.className = 'history-card__progress';
-        const fill = document.createElement('div');
-        fill.className = 'history-card__progress-fill history-card__progress-fill--done';
-        fill.style.width = '100%';
-        prog.appendChild(fill);
-        poster.appendChild(prog);
-      } else if (v.position > 15 && v.duration && v.position < v.duration - 30) {
-        const prog = document.createElement('div');
-        prog.className = 'history-card__progress';
-        const fill = document.createElement('div');
-        fill.className = 'history-card__progress-fill';
-        fill.style.width = Math.min(100, Math.round((v.position / v.duration) * 100)) + '%';
-        prog.appendChild(fill);
-        poster.appendChild(prog);
-      }
-      const body = document.createElement('div');
-      body.className = 'history-card__body';
-      const title = document.createElement('div');
-      title.className = 'history-card__title';
-      title.textContent = v.title;
-      const meta = document.createElement('div');
-      meta.className = 'history-card__meta';
-      const ep = v.season != null ? `S${v.season} E${v.episode} · ` : '';
-      const when = v.completed ? 'Watched' : WP.timeAgo(v.watchedAt);
-      meta.textContent = ep + when;
-      body.appendChild(title);
-      body.appendChild(meta);
+        const poster = document.createElement('div');
+        poster.className = 'history-card__poster';
+        const src = v.backdrop || v.poster;
+        if (src) {
+          const im = document.createElement('img');
+          im.src = src;
+          im.alt = '';
+          im.loading = 'lazy';
+          im.onerror = () => im.remove();
+          poster.appendChild(im);
+        }
+        // Resume position: YouTube-style red progress bar under the artwork.
+        // WATCHED FADE: a finished movie/episode shows a FULL faded bar (like
+        // YouTube's watched state) instead of nothing.
+        const finished = !!v.completed || (v.duration > 0 && v.position > 0 && v.position >= v.duration - 30);
+        if (finished) {
+          const prog = document.createElement('div');
+          prog.className = 'history-card__progress';
+          const fill = document.createElement('div');
+          fill.className = 'history-card__progress-fill history-card__progress-fill--done';
+          fill.style.width = '100%';
+          prog.appendChild(fill);
+          poster.appendChild(prog);
+        } else if (v.position > 15 && v.duration && v.position < v.duration - 30) {
+          const prog = document.createElement('div');
+          prog.className = 'history-card__progress';
+          const fill = document.createElement('div');
+          fill.className = 'history-card__progress-fill';
+          fill.style.width = Math.min(100, Math.round((v.position / v.duration) * 100)) + '%';
+          prog.appendChild(fill);
+          poster.appendChild(prog);
+        }
+        const body = document.createElement('div');
+        body.className = 'history-card__body';
+        const title = document.createElement('div');
+        title.className = 'history-card__title';
+        title.textContent = v.title;
+        const meta = document.createElement('div');
+        meta.className = 'history-card__meta';
+        const ep = v.season != null ? `S${v.season} E${v.episode} · ` : '';
+        const when = v.completed ? 'Watched' : WP.timeAgo(v.watchedAt);
+        meta.textContent = ep + when;
+        body.appendChild(title);
+        body.appendChild(meta);
 
-      // Per-item remove (does not nuke the whole history).
-      const rm = document.createElement('span');
-      rm.className = 'history-card__remove';
-      rm.textContent = '\u00d7';
-      rm.title = 'Remove from history';
-      rm.setAttribute('role', 'button');
-      rm.setAttribute('aria-label', 'Remove ' + v.title + ' from history');
-      rm.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        WP.historyRemove(WP.historyKey(v));
-        state._historyServer = (state._historyServer || []).filter(
-          (h) => kOf(String(h.mediaId), h.season || null, h.episode || null) !== kOf(v.id, v.season, v.episode)
-        );
-        renderHistory();
+        // Per-item remove (does not nuke the whole history).
+        const rm = document.createElement('span');
+        rm.className = 'history-card__remove';
+        rm.textContent = '\u00d7';
+        rm.title = 'Remove from history';
+        rm.setAttribute('role', 'button');
+        rm.setAttribute('aria-label', 'Remove ' + v.title + ' from history');
+        rm.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          WP.historyRemove(WP.historyKey(v));
+          state._historyServer = (state._historyServer || []).filter(
+            (h) => kOf(String(h.mediaId), h.season || null, h.episode || null) !== kOf(v.id, v.season, v.episode)
+          );
+          renderHistory();
+        });
+        card.appendChild(rm);
+
+        // Server-only entries have no src - they link to a fresh start (and
+        // still resume if a local position exists for them later).
+        card.addEventListener('click', () => {
+          if (v.src) startRoomWithVideo(v);
+          // Server-only entries have no src (rebuilt from the id) — but the
+          // remembered position MUST ride along (it is the whole point of the
+          // server-side memory).
+          else startRoomWithVideo({ ...v, src: undefined });
+        });
+        scroller.appendChild(card);
       });
-      card.appendChild(rm);
-
-      // Server-only entries have no src - they link to a fresh start (and
-      // still resume if a local position exists for them later).
-      card.addEventListener('click', () => {
-        if (v.src) startRoomWithVideo(v);
-        // Server-only entries have no src (rebuilt from the id) — but the
-        // remembered position MUST ride along (it is the whole point of the
-        // server-side memory).
-        else startRoomWithVideo({ ...v, src: undefined });
-      });
-      scroller.appendChild(card);
-    });
+      } catch (e) {
+        // NEVER silent: a failed render shows WHY instead of a blank page.
+        console.error('[history] render failed', e);
+        scroller.innerHTML = '';
+        if (empty) {
+          empty.textContent = 'History failed to load: ' + ((e && e.message) || e);
+          empty.hidden = false;
+        }
+      }
   }
 
   /** Filter chip row (All / Movies / Series / Anime) for the history page. */
