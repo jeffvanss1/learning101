@@ -890,3 +890,33 @@ app.js v31 / catalog.js v20 / social.js v43 / ui-2026-09-14.51.
   surfaces stay black by design.
 - Pins: topnav var in :root + both light blocks, themed background,
   pinned overlay color. Tests 135/135. style.css v19 / catalog.css v13.
+
+## Full color audit: root cause found + every hardcoded ink fixed (ui-2026-09-14.53)
+
+ROOT CAUSE (why fixes "didn't take"): **catalog.css contained the entire
+stylesheet TWICE** (~2250 lines; second copy won the cascade) - every
+themed rule I patched in the first copy was silently overridden by the
+stale hardcoded duplicate (topnav dark bar included). Deduplicated to
+1217 lines; duplication now test-BANNED.
+
+Exhaustive literal sweep (all 3 stylesheets inventoried, every color
+classified):
+- New theme vars: --on-accent (ink on accent fills: dark ink on bright
+  blue in dark mode, WHITE ink on dark navy in light - the old
+  `#0b0b0b`-on-blue buttons were unreadable in light), --amber (away
+  status: pastel dark / deep amber light).
+- Fixed inks: secondary + chat-send buttons, active chips (black-on-black
+  in light -> var(--bg) inverse), spinner (currentColor), error toast,
+  host chip, peer badges, chat owner/you markers, subs error, presence
+  watching/idle, access-code reveal, code warning - all pastel/`#fff`
+  literals -> var(--red)/var(--blue)/var(--green)/var(--amber)/var(--bg).
+- Default .btn got a real border (was transparent on tinted surfaces).
+- Remaining hardcoded literals are ALL intentional and exactly
+  allowlisted: brand red/blue/green accents, on-video overlays (sync
+  pill #cccccc/#f5d76a, scrims, hero gradients), on-accent #fff inks,
+  avatar chip #444, IMDb yellow.
+- tests/color-audit.test.mjs: banned-literal list, EXACT allowlist
+  counts (any new hardcoded literal fails CI until reviewed), 16
+  structural var pins, and the duplication detector.
+
+Tests 139/139, check clean. style v20 / catalog v14 / social v16 / ui .53.

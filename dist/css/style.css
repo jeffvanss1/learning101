@@ -30,6 +30,10 @@
   --blue: #3ea6ff;
   --blue-hover: #65b8ff;
   --green: #2ba640;
+  /* Text/ink ON accent fills (blue is bright in dark, dark navy in light). */
+  --on-accent: #0b0b0b;
+  /* Away/amber status - pastel on dark, deep amber on light. */
+  --amber: #e8c35a;
 
   /* The system type stack Apple ships on its site: SF Pro on Apple devices
      (Display/Text/Icons), with graceful fallbacks everywhere else. */
@@ -79,6 +83,8 @@ html[data-theme='light'] {
 
   --blue: #065fd4;
   --blue-hover: #0557c5;
+  --on-accent: #ffffff;
+  --amber: #8f6c00;
 
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
 
@@ -109,6 +115,8 @@ html[data-theme='light'] {
 
     --blue: #065fd4;
     --blue-hover: #0557c5;
+    --on-accent: #ffffff;
+    --amber: #8f6c00;
 
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
 
@@ -243,7 +251,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border); /* neutral buttons read as buttons on any surface */
   border-radius: 999px;
   padding: 9px 18px;
   font-size: 14px;
@@ -267,6 +275,7 @@ button {
 .btn--primary {
   background: var(--red);
   color: #fff;
+  border-color: transparent; /* solid accent: no ring */
 }
 .btn--primary:hover:not(:disabled) {
   background: var(--red-hover);
@@ -274,7 +283,8 @@ button {
 
 .btn--secondary {
   background: var(--blue);
-  color: #0b0b0b;
+  color: var(--on-accent);
+  border-color: transparent;
 }
 .btn--secondary:hover:not(:disabled) {
   background: var(--blue-hover);
@@ -307,8 +317,8 @@ button {
   display: none;
   width: 15px;
   height: 15px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border: 2px solid var(--fill-strong);
+  border-top-color: currentColor; /* follows the button ink - visible on any theme */
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -575,7 +585,7 @@ button {
 
 .toast--error {
   border-color: rgba(255, 0, 51, 0.5);
-  color: #ff8fa3;
+  color: var(--red);
 }
 
 .toast.is-leaving {
@@ -838,7 +848,7 @@ button {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #ffccd5;
+  color: var(--red);
   background: rgba(255, 0, 51, 0.16);
   border: 1px solid rgba(255, 0, 51, 0.4);
   border-radius: 999px;
@@ -1192,13 +1202,13 @@ button {
 }
 
 .peer-row .peer-badge:first-of-type {
-  color: #ffccd5;
+  color: var(--red);
   background: rgba(255, 0, 51, 0.16);
   border: 1px solid rgba(255, 0, 51, 0.4);
 }
 
 .peer-badge {
-  color: #b9e3ff;
+  color: var(--blue);
   background: rgba(62, 166, 255, 0.14);
   border: 1px solid rgba(62, 166, 255, 0.4);
 }
@@ -1315,12 +1325,12 @@ button {
 }
 
 .chat-msg__author.is-owner {
-  color: #ff8fa3;
+  color: var(--red);
 }
 
 .chat-msg__author::after {
   content: '· host';
-  color: #ff8fa3;
+  color: var(--red);
   font-size: 11px;
   font-weight: 500;
   margin-left: 6px;
@@ -1427,7 +1437,7 @@ button {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #b9e3ff;
+  color: var(--blue);
   background: rgba(62, 166, 255, 0.14);
   border: 1px solid rgba(62, 166, 255, 0.4);
   border-radius: 999px;
@@ -1480,7 +1490,7 @@ button {
   border-radius: 50%;
   border: none;
   background: var(--blue);
-  color: #0b0b0b;
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1727,7 +1737,7 @@ button {
 }
 
 .subs-panel__status--err {
-  color: #ff6b6b;
+  color: var(--red);
 }
 
 .subs-panel__hint {
