@@ -446,7 +446,6 @@
     empty.textContent = 'Connecting to the room\u2026';
     $('chat').appendChild(empty);
 
-    resetProgress();
 
     // Property assignment (not addEventListener) so re-entering a room never
     // stacks duplicate handlers — a duplicate toggle handler was a source of
@@ -490,11 +489,6 @@
     const sideHead = document.querySelector('.sidebar__head');
     if (sideHead) sideHead.onclick = onToggleChat;
 
-  }
-
-  function resetProgress() {
-    $('time-current').textContent = '0:00';
-    $('time-duration').textContent = '0:00';
   }
 
   // --------------------------------------------------------------------------
@@ -613,8 +607,8 @@
       else if (action === 'seek') state.client.send({ type: 'seek', time });
     });
 
-    sync.on('progress', ({ time, playing, duration }) => {
-      updateProgress(time, playing, duration);
+    sync.on('progress', ({ time, playing }) => {
+      updatePlayerControls(playing);
       if (state.presence) state.presence.syncProgress(time);
     });
 
@@ -627,14 +621,6 @@
     sync.on('unavailable', () => {
       toast('The player does not expose remote control (Server 2 fallback). Sync may be limited.', true);
     });
-  }
-
-  function updateProgress(time, playing, duration) {
-    if (duration != null && duration > 0) {
-      $('time-duration').textContent = WP.formatDuration(duration);
-    }
-    $('time-current').textContent = WP.formatDuration(time || 0);
-    updatePlayerControls(playing);
   }
 
   function updatePlayerControls(playing) {

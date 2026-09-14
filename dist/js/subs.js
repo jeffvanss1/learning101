@@ -284,13 +284,20 @@
   // ZOOM: the strip shows a 5-minute window around the playhead, not the
   // whole movie (a 2h film compressed into one bar is unreadable). The
   // window slides forward as playback approaches its right edge.
-  // FULL-TIMELINE MINI-MAP: the strip spans the WHOLE subtitle file so
-  // every caption is ALWAYS visible as a bar (a 60s window "missed" most
-  // subs - they were simply outside the strip). edPps = barWidth / span;
-  // caption bars sit at absolute px (length = their own duration); the red
-  // head travels the strip with the clock; the drag slides the thread.
-  /** px per second on the full-timeline mini-map scale */
+  // MINI-MAP, TWO PERSISTED MODES:
+  //  FULL (default): the strip spans the WHOLE subtitle file - every caption
+  //    bar is always visible; the head travels the strip with the clock.
+  //  ZOOM: a 60-second window with the head pinned mid-strip (the working
+  //    view for precise sync). The choice persists across sessions.
+  const ZOOM_PREF_KEY = 'wp:subsmap:zoom';
+  const EDITOR_WINDOW_S = 60;
+  /** px per second on the current mini-map scale */
   let edPps = 10;
+  /** zoom mode: false = full timeline (default), true = 60s centered window */
+  let edZoom = false;
+  try {
+    edZoom = localStorage.getItem(ZOOM_PREF_KEY) === '1';
+  } catch (_) {}
   /** total timeline span in seconds (last cue end); 1 while empty */
   function edSpan() {
     return cues.length ? Math.max(1, cues[cues.length - 1].end || 1) : 1;
@@ -316,7 +323,7 @@
       if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
       return;
     }
-    edPps = edBarWidth() / edSpan(); // the WHOLE file across the strip
+    edPps = edBarWidth() / (edZoom ? EDITOR_WINDOW_S : edSpan());
     // EVERY caption becomes a BLOCK whose length equals its timestamp span
     // (left = start, width = duration on the px scale) - a Premiere-style
     // sequence of caption clips, not thin ticks. Sample only absurd files.
@@ -584,21 +591,28 @@
   function paintEditorThread() {
     if (!edTicks) return;
     const t = now();
-    // The head TRAVELS the strip with the clock (hidden until the player
-    // reports one - a garbage position here read as "not synced").
+    // FULL: the head TRAVELS the strip with the clock; bars carry ONLY the
+    // offset (now() already subtracts it - double-counting rendered bars at
+    // 2x the offset, "bar not sync with the subs").
+    // ZOOM: the head is PINNED mid-strip and the scale centers on the clock.
     if (edPlay) {
-      if (t >= 0) {
+      if (edZoom) {
+        edPlay.style.left = '50%'; // pinned, clock or not
+        edPlay.style.display = t >= 0 ? 'block' : 'none';
+      } else if (t >= 0) {
         edPlay.style.display = 'block';
         edPlay.style.left = (Math.min(1, Math.max(0, t / edSpan())) * 100).toFixed(2) + '%';
       } else {
         edPlay.style.display = 'none';
       }
     }
-    // now() ALREADY subtracts the offset (sub-timeline time), so the
-    // transform carries ONLY the offset - double-counting it rendered bars
-    // at 2x the offset ("bar not sync with the subs"). Bars are STABLE
-    // relative to the strip; only the head and the drag move things.
-    const x = offset * edPps;
+    let x;
+    if (edZoom) {
+      // now() already subtracts the offset; pre-clock uses virtual V=0.
+      x = edBarWidth() / 2 - (t >= 0 ? t : -offset) * edPps;
+    } else {
+      x = offset * edPps;
+    }
     edTicks.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
   }
 
@@ -792,6 +806,19 @@
       applyOffsetValue(0);
     });
     rowEd.appendChild(resetBtn);
+    // Zoom toggle: full timeline <-> 60s centered window (persisted).
+    const zoomBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm subs-editor__zoom', edZoom ? '\u23f1 60s' : '\u2922 full'));
+    zoomBtn.type = 'button';
+    zoomBtn.title = tr('subs.zoomHint', 'Switch between the whole timeline and a 60-second working view.');
+    zoomBtn.addEventListener('click', () => {
+      edZoom = !edZoom;
+      try {
+        localStorage.setItem(ZOOM_PREF_KEY, edZoom ? '1' : '0');
+      } catch (_) {}
+      zoomBtn.textContent = edZoom ? '\u23f1 60s' : '\u2922 full';
+      buildEditorTicks();
+    });
+    rowEd.appendChild(zoomBtn);
     panel.appendChild(rowEd);
 
     const row3b = h('div', 'subs-panel__row');

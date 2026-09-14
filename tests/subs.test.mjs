@@ -1344,3 +1344,86 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   assert.equal(offEl.textContent, '0.00s', 'reset returns to zero');
   assert.equal(Math.round(parseFloat(String(ticks.style.transform).replace(/[^-0-9.]/g, '')) - xBefore), 0, 'thread snaps back to the pre-drag position');
 });
+
+test('mini-map zoom toggle: 60s centered window, persisted across loads', async () => {
+  const storeZ = {};
+  const docZ = {
+    createElement: (tag) => new El2(tag),
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    documentElement: new El2('html'),
+    body: new El2('body'),
+    addEventListener() {},
+    readyState: 'complete',
+    hidden: false,
+  };
+  globalThis.window = {
+    WP: {},
+    innerWidth: 1200,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {},
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    localStorage: {
+      getItem: (k) => (k in storeZ ? storeZ[k] : null),
+      setItem: (k, v) => (storeZ[k] = String(v)),
+      removeItem: (k) => delete storeZ[k],
+    },
+  };
+  globalThis.document = docZ;
+  globalThis.location = { search: '' };
+  globalThis.localStorage = globalThis.window.localStorage;
+  Object.assign(globalThis.window, { document: docZ, location: globalThis.location, localStorage: globalThis.localStorage });
+  globalThis.fetch = () => Promise.resolve({ ok: true, json: async () => ({ results: [], best: null }) });
+
+  const stamp = 'zoom' + Date.now();
+  let Subs = (await import(join(ROOT, 'dist/js/subs.js') + '?' + stamp)).window ? null : null;
+  Subs = globalThis.window.WP.Subs;
+  assert.ok(Subs, 'module registered');
+  const wrapZ = new El2();
+  Subs.mount(wrapZ);
+  Subs.loadCues(FRESH_SRT); // 10s..12s
+
+  const findBy = (root, cls) => {
+    if (String(root.className || '').split(/\s+/).indexOf(cls) !== -1) return root;
+    for (const c of root.children || []) {
+      const hit = findBy(c, cls);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const panel = wrapZ.children.find((c) => c.className === 'subs-panel');
+  const row = findBy(panel, 'subs-editor');
+  const bar = row.children[0];
+  const ticksWrap = bar.children[0];
+  const play = bar.children[1];
+  const zoomBtn = row.children.find((c) => String(c.className).indexOf('subs-editor__zoom') !== -1);
+  assert.ok(zoomBtn, 'zoom toggle exists');
+
+  // Default: FULL mode (600px / 12s span = 50px/s) -> block left 500px.
+  assert.equal(Math.round(parseFloat(ticksWrap.children[0].style.left)), 500, 'full-mode scale by default');
+
+  // Toggle to ZOOM: 600px / 60s = 10px/s -> block left 100px; head pinned 50%.
+  zoomBtn._h.click();
+  assert.equal(storeZ['wp:subsmap:zoom'], '1', 'zoom choice persisted');
+  assert.equal(Math.round(parseFloat(ticksWrap.children[0].style.left)), 100, 'zoom-mode scale (60s window)');
+  assert.equal(play.style.left, '50%', 'head pinned mid-strip in zoom mode');
+
+  // A FRESH module load restores the persisted zoom mode.
+  delete globalThis.window.WP;
+  const mod2 = await import(join(ROOT, 'dist/js/subs.js') + '?' + stamp + 'b');
+  const Subs2 = globalThis.window.WP.Subs;
+  const wrap2 = new El2();
+  Subs2.mount(wrap2);
+  Subs2.loadCues(FRESH_SRT);
+  const panel2 = wrap2.children.find((c) => c.className === 'subs-panel');
+  const row2 = findBy(panel2, 'subs-editor');
+  const ticks2 = row2.children[0].children[0];
+  assert.equal(Math.round(parseFloat(ticks2.children[0].style.left)), 100, 'zoom mode RESTORED from storage');
+  const zoomBtn2 = row2.children.find((c) => String(c.className).indexOf('subs-editor__zoom') !== -1);
+  assert.equal(zoomBtn2.textContent, '\u23f1 60s', 'toggle shows the active mode');
+});

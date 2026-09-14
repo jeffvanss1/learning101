@@ -379,15 +379,21 @@ test('host seek logs a chat line with h:mm:ss format; scrub bursts dedupe', asyn
   assert.equal(store.chat.filter((c) => c.type === 'system' && /seeked/.test(c.text)).length, before, 'guest seek ignored');
 });
 
-test('seek bar removed from the room UI; time labels remain', async () => {
+test('progress row fully removed from the room UI', async () => {
   const { readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.equal(/id="seek-bar"/.test(html), false, 'no seek-bar input in the markup');
-  assert.equal(/id="time-current"/.test(html), true, 'time label kept');
-  assert.equal(/id="time-duration"/.test(html), true, 'duration label kept');
+  assert.equal(/id="time-current"/.test(html), false, 'current label removed with the row');
+  assert.equal(/id="time-duration"/.test(html), false, 'duration label removed');
+  assert.equal(/progress-row/.test(html), false, 'the whole progress row is gone');
   const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
   assert.equal(/\$\('seek-bar'\)/.test(app), false, 'no stale seek-bar wiring');
+  assert.equal(/time-duration/.test(app), false, 'duration label plumbing removed');
+  assert.equal(/updateProgress|resetProgress/.test(app), false, 'progress-row functions removed');
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
-  assert.equal(/progress-row__bar/.test(css), false, 'bar styles removed');
+  assert.equal(/progress-row/.test(css), false, 'row styles removed');
+  // The sync 'progress' event still drives the play/pause button + presence.
+  assert.match(app, /updatePlayerControls\(playing\)/);
+  assert.match(app, /state\.presence\) state\.presence\.syncProgress/);
 });

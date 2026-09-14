@@ -1030,21 +1030,7 @@ body.sidenav-collapsed .sidenav__search {
 }
 
 /* ---- Progress / seek bar ------------------------------------------------------------------ */
-.progress-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
-}
 
-.progress-row__time {
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: var(--text-dim);
-  min-width: 40px;
-  text-align: center;
-}
 
 * ============================================================================
    WatchParty — catalog / browse (YouTube-style) + modals + progress bar
@@ -2078,20 +2064,7 @@ body.sidenav-collapsed .sidenav__search {
 }
 
 /* ---- Progress / seek bar ------------------------------------------------------------------ */
-.progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
 
-.progress-row__time {
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: var(--text-dim);
-  min-width: 40px;
-  text-align: center;
-}
 
 
 

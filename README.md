@@ -725,3 +725,16 @@ miss.
   styles). The current/total time labels remain. Hosts still seek via
   the embedded player's own controls - the sync manager mirrors those
   clock jumps to the room exactly as before.
+
+## Progress row removed + dual-mode mini-map, persisted (ui-2026-09-13.42)
+
+- **The progress row under the player is GONE** (time labels included):
+  markup, updateProgress/resetProgress plumbing, and all CSS. The sync
+  'progress' event still drives the play/pause button and room presence.
+- **Mini-map has two modes with a toggle (⤢ full / ⏱ 60s):**
+  FULL (default) spans the whole subtitle file - every caption bar always
+  visible, head travelling with the clock. ZOOM is the 60-second window
+  with the head pinned mid-strip for precise sync work. The choice
+  persists in localStorage ('wp:subsmap:zoom') and is restored on load.
+  Both modes keep duration-sized bars, the alternating palette, the 2x
+  offset fix, thread-drag sync and Align/Reset.
