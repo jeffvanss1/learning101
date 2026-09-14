@@ -850,3 +850,29 @@ Tests 130/130, tsc clean. app.js v30 / catalog.js v18 / ui-2026-09-14.47.
 - Audit + pins: a scanner asserts no rule pairs `var(--bg-elev)` with a
   transparent border outside hover/selected states, and the palette test
   pins the distinct steps in both light blocks. Tests 132/132.
+
+## Stability audit: late-reply races + server error hardening (ui-2026-09-14.51)
+
+Full code-and-logic audit for daily-use stability. Verified sound: all
+localStorage `JSON.parse` sit in try blocks (corrupt storage degrades to
+defaults), `ensureSession` always resolves (network failures return
+`ok:false`, never throw), WS messages parse-guarded, room re-entry uses
+property-assignment wiring (no duplicate handlers), every `$('id')`
+reference resolves in the DOM, `getLikeIds` fails soft for guests.
+
+Fixed (all found by the audit):
+- **Stale-reply races on the like button** (4 paths): a slow
+  `getLikeIds`/`toggleLike` response for a video (or card) the user
+  already switched away from painted the WRONG heart onto the CURRENT
+  video/card. Every reply is now validated against the current video
+  before painting; detached catalog cards skip the paint.
+- **Hover trailer preview**: fetch failure raised an unhandled rejection
+  — now caught (preview just stays a poster).
+- **Worker**: `routeApi` had no top-level catch — one thrown handler
+  (D1 hiccup, edge case) took the request down as a raw error page. It
+  now returns a parseable JSON 500 with CORS headers.
+
+New tests/stability.test.mjs pins all three classes (4 guarded like
+paths, detached-card guard, trailer catch, worker try/catch + JSON 500,
+try-wrapped JSON.parse sweep). Tests 135/135, tsc + node --check clean.
+app.js v31 / catalog.js v20 / social.js v43 / ui-2026-09-14.51.

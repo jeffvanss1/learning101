@@ -458,8 +458,9 @@
     // Player LIKE: same taste signal as the catalog hearts, one tap away.
     // Element refs + painter are module-scope; only wiring lives here.
     if (WP.Social && WP.Social.getLikeIds) {
+      const vid0 = state.video && state.video.id ? String(state.video.id) : null;
       WP.Social.getLikeIds().then((set) => {
-        if (state.video && state.video.id) paintLike(set.has(String(state.video.id)));
+        if (vid0 && state.video && String(state.video.id) === vid0) paintLike(set.has(vid0));
       });
     }
     likeBtn.onclick = () => {
@@ -471,16 +472,21 @@
         return;
       }
       const was = likeBtn.classList.contains('is-liked');
+      const vid = String(v.id);
       paintLike(!was); // optimistic
       Social.toggleLike({
-        mediaId: String(v.id),
+        mediaId: vid,
         mediaType: v.type === 'tv' ? 'tv' : 'movie',
         mediaTitle: v.title || '',
         posterUrl: v.poster || '',
       })
-        .then((on) => paintLike(on))
+        .then((on) => {
+          // Late reply for a video we already switched away from: ignore it
+          // (the server state is hydrated on the next video change anyway).
+          if (state.video && String(state.video.id) === vid) paintLike(on);
+        })
         .catch(() => {
-          paintLike(was);
+          if (state.video && String(state.video.id) === vid) paintLike(was);
           toast('Could not save that like \u2014 try again.', true);
         });
     };
@@ -717,10 +723,15 @@
     // Like must be CLICKABLE whenever a video is loaded - the markup ships it
     // disabled, so updateVideoUI owns the enable/disable from here on.
     likeBtn.disabled = !(v && v.id);
-    // Like button follows the current video's liked state.
+    // Like button follows the current video's liked state. The reply is
+    // validated against the CURRENT video: a slow response for a video the
+    // user already switched away from must NOT paint the new video's heart.
     const Social0 = WP.Social;
-    if (Social0 && Social0.getLikeIds && v && v.id) {
-      Social0.getLikeIds().then((set) => paintLike(set.has(String(v.id))));
+    const vid = v && v.id ? String(v.id) : null;
+    if (Social0 && Social0.getLikeIds && vid) {
+      Social0.getLikeIds().then((set) => {
+        if (state.video && String(state.video.id) === vid) paintLike(set.has(vid));
+      });
     }
     // Episodes switcher: only for series/anime, and only once we have a video.
     const epBtn = $('episode-switch');

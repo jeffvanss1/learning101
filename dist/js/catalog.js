@@ -515,7 +515,8 @@
           iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
           iframe.setAttribute('allowfullscreen', '');
           media.appendChild(iframe);
-        });
+        })
+        .catch(() => {});
       }, 550);
     });
     card.addEventListener('mouseleave', scheduleClosePreview);
@@ -557,7 +558,10 @@
       likeBtn.textContent = on ? '\u2665' : '\u2661';
     };
     if (global.WP && global.WP.Social && global.WP.Social.getLikeIds) {
-      global.WP.Social.getLikeIds().then((set) => syncHeart(set.has(String(item.id))));
+      global.WP.Social.getLikeIds().then((set) => {
+        // Card may have been swapped out while the request was in flight.
+        if (likeBtn.isConnected) syncHeart(set.has(String(item.id)));
+      });
     }
     likeBtn.addEventListener('click', (e) => {
       e.stopPropagation();

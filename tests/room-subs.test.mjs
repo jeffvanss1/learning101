@@ -442,8 +442,11 @@ test('player like button + threaded episode rows (long seasons)', async () => {
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /id="like-video"/, 'player Like button exists');
   const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
-  assert.match(app, /Social\.toggleLike\(\{[\s\S]{0,120}mediaId: String\(v\.id\)/, 'player like wired to the current video');
-  assert.match(app, /paintLike\(set\.has\(String\(v\.id\)\)\)/, 'like state follows video changes');
+  assert.match(app, /const vid = String\(v\.id\);/, 'toggle captures the video id');
+  assert.match(app, /Social\.toggleLike\(\{[\s\S]{0,120}mediaId: vid/, 'player like wired to the current video');
+  assert.match(app, /paintLike\(set\.has\(vid\)\)/, 'like state follows video changes (stale-reply guarded)');
+  assert.equal((app.match(/String\(state\.video\.id\) === vid\b/g) || []).length, 3, 'hydrate + toggle then/catch all validate against the CURRENT video');
+  assert.match(app, /String\(state\.video\.id\) === vid0/, 'room-entry hydrate validates too');
   assert.equal((app.match(/const paintLike/g) || []).length, 1, 'ONE hoisted like painter (updateVideoUI shares it)');
   assert.match(app, /likeBtn\.disabled = !\(v && v\.id\)/, 'updateVideoUI ENABLES the like button (markup ships disabled)');
   const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');

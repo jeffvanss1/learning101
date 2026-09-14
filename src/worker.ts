@@ -221,7 +221,15 @@ export default {
 
     // --- Profile / search / presence API (D1 + KV) ---------------------------
     if (path.startsWith('/api/')) {
-      const routed = await routeApi(request, env, path);
+      // Belt-and-braces: one broken handler must never take the request down
+      // with a raw error page — API clients get a parseable JSON 500 (with
+      // CORS headers) instead.
+      let routed: Response | null = null;
+      try {
+        routed = await routeApi(request, env, path);
+      } catch (e) {
+        return json({ error: 'Internal error', detail: String(e) }, 500);
+      }
       if (routed) return routed;
     }
 
