@@ -2183,3 +2183,19 @@ body.sidenav-collapsed .sidenav__search {
   color: var(--red);
   background: rgba(0, 0, 0, 0.7);
 }
+
+/* ---- Room episode switcher modal -------------------------------------------------- */
+.episodes-modal {
+  width: min(460px, 94vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.episodes-modal .detail__body {
+  padding: 14px 18px 18px;
+}
+.ep-btn--current {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}

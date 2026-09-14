@@ -666,6 +666,17 @@
 
     // auto-load row
     const row1 = h('div', 'subs-panel__row');
+    // Master switch first: subtitles on/off (persists the explicit choice).
+    const toggle = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.toggle', 'On/Off')));
+    toggle.type = 'button';
+    toggle.addEventListener('click', () => {
+      const next = !enabled;
+      setEnabled(next);
+      try {
+        localStorage.setItem('wp:subs:pref', next ? 'on' : 'off'); // explicit choice wins over auto-load
+      } catch (_) {}
+    });
+    row1.appendChild(toggle);
     langSel = /** @type {HTMLSelectElement} */ (h('select', 'subs-panel__select'));
     LANGS.forEach(([code, label]) => {
       const opt = /** @type {HTMLOptionElement} */ (h('option', '', label));
@@ -703,13 +714,12 @@
       void autoLoad(video, { force: true });
     });
     row1.appendChild(loadBtn);
-    panel.appendChild(row1);
-
-    // upload row
-    const row2 = h('div', 'subs-panel__row');
+    // Upload on the same row (compact) - a whole row for one input
+    // crowded the panel.
     const file = /** @type {HTMLInputElement} */ (h('input', 'subs-panel__file'));
     file.type = 'file';
     file.accept = '.srt,.vtt,text/vtt';
+    file.title = 'Load from file (.srt / .vtt)';
     file.addEventListener('change', () => {
       const f = file.files && file.files[0];
       if (!f) return;
@@ -720,7 +730,7 @@
           setStatus(tr('subs.parseFailed', 'Could not read that subtitle file.'), true);
           return;
         }
-        loadCues(raw); // actually LOAD it (this used to only count the cues)
+        loadCues(raw);
         lastLoadedFileId = '';
         setStatus(f.name + ' \u00b7 ' + tr('subs.fromFile', 'from file'));
         if (onLoadedCb) {
@@ -731,8 +741,8 @@
       };
       reader.readAsText(f);
     });
-    row2.appendChild(file);
-    panel.appendChild(row2);
+    row1.appendChild(file);
+    panel.appendChild(row1);
 
     // offset row
     const row3 = h('div', 'subs-panel__row');
@@ -750,17 +760,14 @@
     row3.appendChild(offsetVal);
     row3.appendChild(mk('+¼s', 0.25, 'Advance subtitles a bit'));
     row3.appendChild(mk('+1s', 1, 'Advance subtitles'));
-    panel.appendChild(row3);
-
-    const row3a = h('div', 'subs-panel__row');
+    // One-press sync lives on the SAME row (hint as tooltip) - the panel
+    // had five button rows and felt crowded.
     syncBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.tapSync', '\u26a1 Sync')));
     syncBtn.type = 'button';
     syncBtn.title = tr('subs.snapHint', 'Press exactly when someone starts speaking \u2014 the next line snaps to now.');
     syncBtn.addEventListener('click', syncSnap); // ONE press = synced. No arming.
-    row3a.appendChild(syncBtn);
-    const snapHint = h('div', 'subs-panel__hint', tr('subs.snapHint', 'Press exactly when someone starts speaking \u2014 the next line snaps to now.'));
-    row3a.appendChild(snapHint);
-    panel.appendChild(row3a);
+    row3.appendChild(syncBtn);
+    panel.appendChild(row3);
 
     // mini timing editor: every cue as a tick on a strip; click = inspect,
     // Align = that line starts NOW (manual match, no mic, no arithmetic).
@@ -819,35 +826,18 @@
       buildEditorTicks();
     });
     rowEd.appendChild(zoomBtn);
-    panel.appendChild(rowEd);
-
-    const row3b = h('div', 'subs-panel__row');
-    const reset = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.reset', 'Reset offset')));
-    reset.type = 'button';
-    reset.addEventListener('click', () => {
-      applyOffsetValue(0); // single source of truth: persists + resets cueIdx + tells the room
-    });
-    row3b.appendChild(reset);
+    // Text size joins the zoom toggle (both are display controls).
     const sizeBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.size', 'Size')));
     sizeBtn.type = 'button';
+    sizeBtn.title = tr('subs.sizeHint', 'Cycle subtitle text size.');
     sizeBtn.addEventListener('click', () => {
       if (!overlay) return;
       SIZES.forEach(([cls]) => cls && overlay.classList.remove(cls));
       sizeIdx = (sizeIdx + 1) % SIZES.length;
       if (SIZES[sizeIdx][0]) overlay.classList.add(SIZES[sizeIdx][0]);
     });
-    row3b.appendChild(sizeBtn);
-    const toggle = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', tr('subs.toggle', 'On/Off')));
-    toggle.type = 'button';
-    toggle.addEventListener('click', () => {
-    const next = !enabled;
-    setEnabled(next);
-    try {
-      localStorage.setItem('wp:subs:pref', next ? 'on' : 'off'); // explicit choice wins over auto-load
-    } catch (_) {}
-  });
-    row3b.appendChild(toggle);
-    panel.appendChild(row3b);
+    rowEd.appendChild(sizeBtn);
+    panel.appendChild(rowEd);
 
     statusEl = h('div', 'subs-panel__status', '');
     panel.appendChild(statusEl);

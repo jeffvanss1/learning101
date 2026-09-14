@@ -397,3 +397,26 @@ test('progress row fully removed from the room UI', async () => {
   assert.match(app, /updatePlayerControls\(playing\)/);
   assert.match(app, /state\.presence\) state\.presence\.syncProgress/);
 });
+
+test('episode switcher modal in room + subs panel decluttered', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  // Catalog exposes the reusable modal.
+  const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  assert.match(cat, /function openEpisodes\(video, onPick\)/, 'openEpisodes exists');
+  assert.match(cat, /openEpisodes,/, 'exported');
+  // Room wiring: button + apply/request split + series-only visibility.
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /id="episode-switch"/, 'Episodes button exists');
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(app, /WP\.Catalog\.openEpisodes\(v,/, 'wired to the current video');
+  assert.match(app, /if \(canControl\(\)\) setRoomVideo\(video\);\s*else requestVideo\(video\);/, 'host applies, guest requests');
+  assert.match(app, /epBtn\.hidden = !isSeries/, 'hidden for movies');
+  // Subs panel: exactly 3 rows; one On/Off; ONE reset; sync on the offset row.
+  const subs = readFileSync(join(ROOT, 'dist/js/subs.js'), 'utf8');
+  assert.equal((subs.match(/subs-panel__row/g) || []).length, 3, 'three rows total: ' + (subs.match(/subs-panel__row/g) || []).length);
+  assert.equal((subs.match(/'On\/Off'/g) || []).length, 1, 'single On/Off');
+  assert.equal((subs.match(/Reset/g) || []).length, 1, 'single reset (dup removed)');
+  assert.match(subs, /row3\.appendChild\(syncBtn\)/, 'Sync merged into the offset row');
+  assert.equal(/panel\.appendChild\(row2\)/.test(subs), false, 'upload row2 gone');
+});

@@ -1431,6 +1431,121 @@
     };
   }
 
+  /**
+   * Room episode switcher: compact modal for the CURRENT video (tv/anime).
+   * Season chips + numbered episode grid; the current episode is marked;
+   * picking calls onPick(buildVideo(...)) - the room decides apply vs request.
+   * @param {{ id: string, type: string, anilistId?: string|null, title?: string, season?: number|null, episode?: number|null }} video
+   * @param {(video: ReturnType<typeof buildVideo>) => void} onPick
+   */
+  function openEpisodes(video, onPick) {
+    if (!video || !video.id || video.type === 'movie') return;
+    const overlay = h('div', 'modal');
+    const card = h('div', 'modal__card detail episodes-modal');
+    const head = h('div', 'modal__head');
+    head.appendChild(h('h2', 'modal__title', (video.title || 'Series') + ' \u00b7 episodes'));
+    const closeBtn = h('button', 'modal__close', '\u00d7');
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Close');
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+    const body = h('div', 'detail__body');
+    body.style.padding = '16px 20px 20px';
+    body.style.overflowY = 'auto';
+    body.appendChild(h('div', 'browse__empty', tr('feed.loading', 'Loading\u2026')));
+    card.appendChild(body);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    const isAnime = video.type === 'anime';
+    (async () => {
+      try {
+        const extra = await api('/tv/' + encodeURIComponent(String(video.id)));
+        const usable = ((extra && extra.seasons) || [])
+          .filter((s) => s && Number(s.season_number) > 0)
+          .map((s) => ({ season: Number(s.season_number), name: s.name || 'Season ' + s.season_number, episodes: Number(s.episode_count) || 0 }));
+        body.innerHTML = '';
+        if (!usable.length) {
+          body.appendChild(h('div', 'browse__empty', 'No season data available.'));
+          return;
+        }
+        const curSeason = Number(video.season) || usable[0].season;
+        const curEp = Number(video.episode) || 0;
+        const seasonChips = h('div', 'detail__seasons');
+        const epGrid = h('div', 'detail__episodes');
+        body.appendChild(seasonChips);
+        body.appendChild(epGrid);
+
+        function renderEpisodes(s) {
+          epGrid.innerHTML = '';
+          const count = s.episodes || 0;
+          if (count > 120) {
+            const wrap = h('div', 'detail__actions');
+            const num = h('input', 'field__input');
+            num.type = 'number';
+            num.min = '1';
+            num.max = String(count);
+            num.value = String(s.season === curSeason ? curEp || 1 : 1);
+            const go = h('button', 'btn btn--primary', 'Play episode');
+            go.addEventListener('click', () => {
+              const n = Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1)));
+              onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
+              close();
+            });
+            wrap.appendChild(num);
+            wrap.appendChild(go);
+            epGrid.appendChild(wrap);
+            return;
+          }
+          for (let n = 1; n <= count; n++) {
+            const b = h('button', 'ep-btn' + (s.season === curSeason && n === curEp ? ' ep-btn--current' : ''), String(n));
+            b.type = 'button';
+            b.addEventListener('click', () => {
+              onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
+              close();
+            });
+            epGrid.appendChild(b);
+          }
+          // Episode names (best effort).
+          api('/tv/' + encodeURIComponent(String(video.id)) + '/season/' + s.season)
+            .then((data) => {
+              if (!data || !data.episodes) return;
+              const byNum = new Map(data.episodes.map((e) => [e.episode_number, e]));
+              epGrid.querySelectorAll('.ep-btn').forEach((b) => {
+                const ep = byNum.get(Number(b.textContent));
+                if (ep && ep.name) b.title = 'E' + b.textContent + ' \u00b7 ' + ep.name;
+              });
+            })
+            .catch(() => {});
+        }
+
+        let active = usable[0];
+        usable.forEach((s) => {
+          const chip = h('button', 'chip' + (s.season === curSeason ? ' chip--active' : ''), s.name);
+          chip.type = 'button';
+          chip.dataset.season = String(s.season);
+          chip.addEventListener('click', () => {
+            active = s;
+            seasonChips.querySelectorAll('.chip').forEach((x) => x.classList.remove('chip--active'));
+            chip.classList.add('chip--active');
+            renderEpisodes(s);
+          });
+          seasonChips.appendChild(chip);
+          if (s.season === curSeason) active = s;
+        });
+        renderEpisodes(active);
+      } catch (e) {
+        body.innerHTML = '';
+        body.appendChild(h('div', 'browse__empty', 'Could not load episodes \u2014 try again.'));
+      }
+    })();
+  }
+
   global.WP.Catalog = {
     api,
     anilistApi,
@@ -1440,6 +1555,7 @@
     mountBrowse,
     mountDiscovery,
     openDetail,
+    openEpisodes,
     fetchRecommendations,
   };
 })(window);

@@ -750,3 +750,15 @@ miss.
   merged + deduped + ranked by seed overlap (`rankSuggestions`, unit
   tested), excluding seeds/liked/watched. Titled
   "For you · because you liked <seed>".
+
+## Room episode switcher + subs panel declutter (ui-2026-09-13.44)
+
+- **Episodes button in the room player** (hidden for movies): opens a
+  compact season/episode modal (WP.Catalog.openEpisodes) with the current
+  episode highlighted. Host picks apply room-wide via the normal
+  videoChange path; guests send a request, same as Browse.
+- **Subtitles panel: 5 button rows -> 3.** Row 1: On/Off, language,
+  Auto-load, file upload (compact). Row 2: offset stepper + one-press
+  Sync (hint is the tooltip). Row 3: mini-map, Align, Reset, 60s/full
+  zoom, text Size. The duplicate "Reset offset" button was removed
+  (Reset routes through the same room-sync path).

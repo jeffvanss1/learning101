@@ -601,7 +601,7 @@ test('AUDIT: Reset routes through the room-sync path (guests learn about it)', a
   };
   const panel = findClass(wrap, 'subs-panel');
   assert.ok(panel, 'panel rendered');
-  const resetBtn = findByText(panel, 'Reset offset');
+  const resetBtn = findByText(panel, 'Reset sync'); // the single reset (row3b dup removed)
   assert.ok(resetBtn && resetBtn._h && resetBtn._h.click, 'reset button present with a handler');
   resetBtn._h.click();
   assert.equal(Subs.__test.state().offset, 0, 'offset zeroed');

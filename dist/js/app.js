@@ -455,6 +455,14 @@
     $('leave-room').onclick = onLeaveRoom;
     $('toggle-play').onclick = onTogglePlay;
     $('change-video').onclick = onOpenBrowse;
+    $('episode-switch').onclick = () => {
+      const v = state.video;
+      if (!v || v.type === 'movie' || !WP.Catalog.openEpisodes) return;
+      WP.Catalog.openEpisodes(v, (video) => {
+        if (canControl()) setRoomVideo(video);
+        else requestVideo(video);
+      });
+    };
     $('recs-toggle').onclick = onToggleRecs;
 
     // The logo acts as a "back to home" button inside the room.
@@ -666,6 +674,13 @@
     const cv = $('change-video');
     cv.disabled = false;
     cv.querySelector('span').textContent = canControl() ? 'Change video' : 'Request video';
+    // Episodes switcher: only for series/anime, and only once we have a video.
+    const epBtn = $('episode-switch');
+    if (epBtn) {
+      const isSeries = !!(v && v.src && (v.type === 'tv' || v.type === 'anime'));
+      epBtn.hidden = !isSeries;
+      epBtn.disabled = !isSeries;
+    }
 
     if (v && v.src) {
       $('video-title').textContent = v.title || 'Now playing';
