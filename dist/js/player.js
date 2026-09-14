@@ -321,6 +321,12 @@
       const absDrift = Math.abs(target.time - this.localTime);
 
       if (this.isController) {
+        // WAR GUARD: right after OUR OWN command (play/pause/seek, or a drift
+        // correction), the embed's status lags behind what we commanded. The
+        // host got ping-ponged (seek war -> chat spam) because the very next
+        // poll "corrected" toward the room's stale projection while the
+        // embed was still catching up. Hold corrections briefly.
+        if (Date.now() - this._suppressed < 1500) return;
         // The controller's own player is the source of truth for play/pause,
         // so we never fight a user action made inside the player itself. While
         // the "don't force" window is open (the player just changed on its own

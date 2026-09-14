@@ -557,7 +557,9 @@ export class WatchRoom {
         // Dedupe scrub bursts: rapid seeks to ~the same spot stay silent,
         // a genuinely different target always logs.
         const lastSeek = this._lastSeekLog;
-        if (!lastSeek || now() - lastSeek.at > 1500 || Math.abs(t - lastSeek.time) > 2) {
+        // 4s window: a convergence fight re-seeks every 1-3s - the old 1.5s
+        // window let that flood the persisted chat.
+        if (!lastSeek || now() - lastSeek.at > 4000 || Math.abs(t - lastSeek.time) > 2) {
           this._lastSeekLog = { at: now(), time: t };
           this.logSystem('\u23e9 ' + (peer.name || 'Host') + ' seeked to ' + fmtClock(t));
         }

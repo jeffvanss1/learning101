@@ -38,7 +38,7 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-14.65';
+export const WORKER_BUILD = 'api-2026-09-14.67';
 
 /**
  * Coarse KV rate limiter (fail-open): counts hits per key inside a sliding

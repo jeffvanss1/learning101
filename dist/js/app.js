@@ -601,6 +601,7 @@
         state.myPeerId = msg.you.id;
         state.isOwner = !!msg.you.owner;
         state.amAllowed = !!msg.you.allowed;
+        if (state.isOwner || state.amAllowed) tryResume(); // ack arrived late
       } else if (msg.ownerId !== undefined && state.myPeerId) {
         state.isOwner = msg.ownerId === state.myPeerId;
       }
@@ -723,17 +724,7 @@
       if (!state.video || !state.video.src) showFallback();
       else hideFallback();
       updateHostUI();
-      // RESUME: the room creator continues where the history entry stopped.
-      // localPlay(position) = seek + play + ADOPT the snapshot + broadcast.
-      // The old raw seek() did NEITHER: the room stayed paused@0 and the
-      // convergence loop kept yanking the host back - an endless pause cycle.
-      const resumeAt = state._pendingResume;
-      state._pendingResume = null;
-      if (resumeAt && canControl()) {
-        setTimeout(() => {
-          if (state.sync) state.sync.localPlay(resumeAt);
-        }, 1200); // let the player surface settle before seeking in
-      }
+      tryResume();
     });
     sync.on('unavailable', () => {
       toast('The player does not expose remote control (Server 2 fallback). Sync may be limited.', true);
@@ -1523,6 +1514,27 @@
   // --------------------------------------------------------------------------
   // Watch history (+ resume + auto-advance)
   // --------------------------------------------------------------------------
+  // RESUME: the room creator continues where the history entry stopped.
+  // localPlay(position) = seek + play + ADOPT the snapshot + broadcast.
+  // The old version consumed the pending position on player-ready and
+  // gambled that canControl() was already true - on a slow host ack the
+  // broadcast was silently DROPPED, the room stayed at ~0, and convergence
+  // fought the host forever (the seek-spam war). Now it RETRIES until the
+  // room can actually be driven, and only ever fires ONCE.
+  function tryResume() {
+    const resumeAt = state._pendingResume;
+    if (resumeAt == null) return;
+    if (!state.sync || !state.video || !state.video.src || !canControl()) {
+      // Not drivable yet (host ack still in flight): retry shortly.
+      setTimeout(tryResume, 600);
+      return;
+    }
+    state._pendingResume = null; // consumed exactly once, successfully
+    setTimeout(() => {
+      if (state.sync && state._pendingResume == null) state.sync.localPlay(resumeAt);
+    }, 900); // let the player surface settle before seeking in
+  }
+
   // AUTO NEXT: a device preference (like the theme), NOT room state - each
   // viewer decides whether THEIR player advances. The host's toggle decides
   // whether the ROOM advances (only the controller can change the video).

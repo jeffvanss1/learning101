@@ -1079,3 +1079,23 @@ decision can actually change the room's video.
 Behavior-tested with the real sync manager (derived fire-once, no dupes
 on later polls, mid-video pause != end) + structural pins. Tests
 159/159, check clean. player v12 / app v40 / style v23 / ui-2026-09-14.66.
+
+## Seek-war hotfix: resume races the host ack; chat dedupe widened (ui/api-2026-09-14.67)
+
+USER EVIDENCE: resuming flooded the chat with 1-second seeks (0:03, 0:04,
+... 0:12) while the player snapped back. Root cause chain:
+1. The resume fired on player-ready and consumed the pending position
+   BEFORE knowing it could drive the room - on a slow host ack the
+   broadcast was silently dropped, the room stayed at ~0, and the
+   convergence loop fought the host forever (a seek WAR). The lines in
+   the chat were the host's own mirrored drags against the snap-back.
+2. The convergence loop re-"corrected" toward the room's stale projection
+   while the embed was still catching up to our own command.
+3. The DO's seek-log dedupe window (1.5s) was narrower than the war's
+   re-seek cadence, so the persisted chat flooded.
+
+Fix: resume is now a RETRYING helper (tryResume) - consumed exactly once,
+only when sync + video + canControl() are all true (re-armed by the late
+host ack too); the controller skips position corrections within 1.5s of
+its own command (WAR GUARD); the DO dedupe window is 4s. Pins for all
+three. Tests 160/160, check clean. player v13 / app v41 / ui+api .67.

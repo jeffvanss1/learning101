@@ -22,7 +22,9 @@ test('resume: playback position saved, history card resumes, red progress bar', 
   assert.match(a, /if \(now - \(state\._lastProgAt \|\| 0\) < 8000\) return;/, 'progress save is throttled (~8s)');
   assert.match(utilsSrc(), /function historySetProgress\(/, 'utils: progress writer');
   assert.match(a, /state\._pendingResume = video && Number\(video\.position\) > 60 \? Number\(video\.position\) : null;/, 'history click arms resume (>60s in only)');
-  assert.match(a, /if \(resumeAt && canControl\(\)\) \{\s*setTimeout\(\(\) => \{\s*if \(state\.sync\) state\.sync\.localPlay\(resumeAt\);/, 'resume = seek+play+adopt+broadcast (localPlay)');
+  assert.match(a, /function tryResume\(\)/, 'resume is a RETRYING helper');
+  assert.match(a, /state\._pendingResume = null; \/\/ consumed exactly once, successfully/, 'consumed only when the room is drivable');
+  assert.match(a, /if \(state\.isOwner \|\| state\.amAllowed\) tryResume\(\);/, 'late host ack re-triggers resume');
   assert.doesNotMatch(a, /state\.sync\.seek\(/, 'RAW seek() is BANNED in app.js - it never tells the room (endless-pause-cycle bug)');
   assert.match(readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8'), /\.history-card__progress-fill \{[^}]*background: var\(--red\)/, 'YouTube-style red progress bar');
 });
@@ -123,7 +125,7 @@ test('security headers: every page and API response is hardened', async () => {
   assert.match(w, /frame-ancestors 'self'/, 'no third-party framing');
   assert.match(w, /\.\.\.securityHeaders\(\),/, 'json() inherits them');
   assert.match(w, /for \(const \[k, v\] of Object\.entries\(securityHeaders\(\)\)\) res\.headers\.set\(k, v\);/, 'static assets are wrapped');
-  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.65';/, 'api stamp bumped');
+  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.67';/, 'api stamp bumped');
 });
 
 
@@ -193,4 +195,11 @@ test('derived end: poll-based detection with once-per-load dedupe', () => {
   assert.match(p, /DERIVED END: some embeds never post an 'ended' event/, 'derived detector present');
   assert.match(p, /this\.duration - d\.currentTime <= 2\.5/, 'within 2.5s of the end');
   assert.match(p, /if \(!this\._endedFired\) \{\s*this\._endedFired = true;\s*this\.emit\('ended'/, 'explicit event deduped against the derived one');
+});
+
+test('seek-war guards: convergence self-suppression + DO log dedupe window', () => {
+  const p = readFileSync(join(ROOT, 'dist/js/player.js'), 'utf8');
+  assert.match(p, /if \(this\.isController\) \{\s*\/\/ WAR GUARD:[^]*?if \(Date\.now\(\) - this\._suppressed < 1500\) return;/, 'controller skips corrections within 1.5s of its own command');
+  const wr = readFileSync(join(ROOT, 'src/WatchRoom.js'), 'utf8');
+  assert.match(wr, /now\(\) - lastSeek\.at > 4000/, 'seek-log dedupe window 4s (the 1.5s window let wars flood the chat)');
 });
