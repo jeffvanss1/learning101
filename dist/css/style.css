@@ -814,6 +814,28 @@ button {
   color: #f5d76a;
 }
 
+/* ---- Up-next auto-advance overlay (in the player) -------------------------- */
+.up-next {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px);
+}
+.up-next__label {
+  font-size: 13px;
+  color: #f1f1f1;
+  white-space: nowrap;
+}
+
 /* ---- Video info (YouTube-style, under the player) ------------------------- */
 .stage__under {
   flex: 0 0 auto;

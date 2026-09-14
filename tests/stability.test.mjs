@@ -96,7 +96,8 @@ test('history: dedicated /history page; home page no longer hosts it', async () 
 
   // Routing: /history is a real route with proper teardown symmetry.
   assert.match(app, /const HISTORY_RE = /, 'HISTORY_RE route');
-  assert.equal((app.match(/renderHistory\(\);/g) || []).length, 2, 'renderHistory: boot + history page only (NOT mountHome)');
+  assert.doesNotMatch(app.match(/function mountHome[\s\S]{0,2500}/)[0], /renderHistory/, 'mountHome never renders history');
+  assert.equal((app.match(/function renderHistory\(/g) || []).length, 1, 'single renderer (re-rendered by merge/filter/remove)');
   assert.match(app, /function showHistoryView\(\)/, 'view renderer exists');
   assert.match(app, /function teardownHistoryView\(\)/, 'teardown exists');
   assert.equal((app.match(/teardownHistoryView\(\);/g) || []).length, 3, 'torn down from routeCurrent fall-through + profile + discovery views (history view itself tears those down instead)');

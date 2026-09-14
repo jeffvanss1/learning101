@@ -70,12 +70,32 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
+/** Hardening headers on EVERY response (pages + API). */
+function securityHeaders(): Record<string, string> {
+  return {
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    // Measured CSP: the player embeds bingr.one, trailer previews embed
+    // youtube.com; posters come from TMDB, avatars from DiceBear; the anime
+    // fallback talks to AniList's GraphQL directly. 'unsafe-inline' scripts
+    // stay (the pre-paint theme bootstrap is inline by design).
+    'Content-Security-Policy':
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data: https://image.tmdb.org https://api.dicebear.com; " +
+      "media-src 'self' https:; frame-src https://bingr.one https://www.youtube.com; " +
+      "connect-src 'self' wss: https://graph.anilist.org; font-src 'self' data:; " +
+      "base-uri 'self'; frame-ancestors 'self'",
+  };
+}
+
 function json(data: unknown, status = 200, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       ...corsHeaders(),
+      ...securityHeaders(),
       ...extra,
     },
   });
@@ -586,7 +606,11 @@ export default {
 
     // --- Static assets (Workers Static Assets) -------------------------------
     if (request.method === 'GET' || request.method === 'HEAD') {
-      const res = await env.ASSETS.fetch(request);
+      const upstream = await env.ASSETS.fetch(request);
+      // Headers from ASSETS are immutable — rewrap so the security headers
+      // can be applied to pages AND static assets alike.
+      const res = new Response(upstream.body, upstream);
+      for (const [k, v] of Object.entries(securityHeaders())) res.headers.set(k, v);
       // Tell the UI its locale with zero extra round-trips: inject
       // window.WP_GEO into every HTML response (GET only — HEAD has no body;
       // any injection failure must never break serving).

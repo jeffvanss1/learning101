@@ -89,6 +89,47 @@
     } catch (_) {}
   }
 
+  /**
+   * Update the playback position of an existing history entry (RESUME).
+   * Does NOT reorder the list (the entry was already moved to front when
+   * playback started) and never creates an entry.
+   * @param {{ id: string|number, season?: number|null, episode?: number|null }} video
+   * @param {number} positionSeconds
+   * @param {number} [durationSeconds]
+   */
+  function historySetProgress(video, positionSeconds, durationSeconds) {
+    if (!video || !video.id) return historyGet();
+    const pos = Math.max(0, Math.floor(Number(positionSeconds) || 0));
+    const dur = Math.max(0, Math.floor(Number(durationSeconds) || 0));
+    if (!pos) return historyGet();
+    let arr = historyGet();
+    const key = historyKey(video);
+    for (const e of arr) {
+      if (historyKey(e) === key) {
+        e.position = pos;
+        if (dur) e.duration = dur;
+        break;
+      }
+    }
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr));
+    } catch (_) {}
+    return arr;
+  }
+
+  /**
+   * Remove ONE entry (per-item delete on the history page).
+   * @param {string} key historyKey of the entry
+   */
+  function historyRemove(key) {
+    let arr = historyGet();
+    arr = arr.filter((e) => historyKey(e) !== key);
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr));
+    } catch (_) {}
+    return arr;
+  }
+
   function timeAgo(ts) {
     const s = Math.max(0, Math.floor((Date.now() - (ts || 0)) / 1000));
     if (s < 60) return 'just now';
@@ -452,6 +493,9 @@
     randomName,
     historyGet,
     historyAdd,
+    historySetProgress,
+    historyRemove,
+    historyKey,
     historyClear,
     timeAgo,
   };

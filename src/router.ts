@@ -16,6 +16,7 @@ import {
   handleGetProfile,
   handleUpdateProfile,
   handleRecordHistory,
+  handleGetHistory,
   handleListFriends,
   handleFriendRequest,
   handleFriendAccept,
@@ -37,7 +38,50 @@ async function requireUser(request: Request, env: Env): Promise<AuthedUser | Res
 }
 
 /** Worker build marker — bump alongside the UI stamp (social.js WP.build). */
-export const WORKER_BUILD = 'api-2026-09-13.41';
+export const WORKER_BUILD = 'api-2026-09-14.57';
+
+/**
+ * Coarse KV rate limiter (fail-open): counts hits per key inside a sliding
+ * window. KV is eventually consistent, so this is a damper against abuse
+ * (code guessing, signup floods), not an exact quota — good enough and it
+ * can NEVER take the API down when KV misbehaves.
+ * @returns true when the request is ALLOWED
+ */
+export async function kvRateLimit(
+  env: Env,
+  bucket: string,
+  limit: number,
+  windowSec: number
+): Promise<boolean> {
+  const kv = env.PRESENCE_KV;
+  if (!kv) return true;
+  try {
+    const key = `rl:${bucket}`;
+    const raw = await kv.get(key);
+    const now = Date.now();
+    let count = 0;
+    let exp = 0;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { c?: number; exp?: number };
+      count = Number(parsed.c) || 0;
+      exp = Number(parsed.exp) || 0;
+    }
+    if (exp <= now) {
+      count = 0;
+      exp = now + windowSec * 1000;
+    }
+    count += 1;
+    if (count > limit) return false;
+    await kv.put(key, JSON.stringify({ c: count, exp }), { expirationTtl: Math.max(60, windowSec) });
+    return true;
+  } catch (_) {
+    return true; // fail open, always
+  }
+}
+
+function clientIp(request: Request): string {
+  return request.headers.get('CF-Connecting-IP') || 'unknown';
+}
 
 /** Routes that require the D1/KV bindings (the profile/presence surface). */
 const STORAGE_ROUTES_RE = /^\/api\/(auth|user|search|friends|presence)(\/|$)/;
@@ -89,15 +133,25 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
 
   // ---- Auth -----------------------------------------------------------------
   if (path === '/api/auth/session' && method === 'POST') {
+    if (!(await kvRateLimit(env, 'auth:' + clientIp(request), 30, 300))) {
+      return errorJson(429, 'Too many attempts — slow down.');
+    }
     return handleSessionCreate(request, env);
   }
   if (path === '/api/auth/me' && method === 'GET') {
     return handleMe(request, env);
   }
   if (path === '/api/auth/claim' && method === 'POST') {
+    // Access-code guessing damper: the code space is huge, but be explicit.
+    if (!(await kvRateLimit(env, 'claim:' + clientIp(request), 20, 300))) {
+      return errorJson(429, 'Too many attempts — slow down.');
+    }
     return handleClaim(request, env);
   }
   if (path === '/api/auth/code' && method === 'POST') {
+    if (!(await kvRateLimit(env, 'code:' + clientIp(request), 10, 300))) {
+      return errorJson(429, 'Too many attempts — slow down.');
+    }
     return handleRotateCode(request, env);
   }
 
@@ -120,6 +174,9 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
 
   // ---- Admin (deployment-owner monitoring) -----------------------------------
   if (path === '/api/admin/overview' && method === 'GET') {
+    if (!(await kvRateLimit(env, 'admin:' + clientIp(request), 60, 60))) {
+      return errorJson(429, 'Too many requests — slow down.');
+    }
     return handleAdminOverview(request, env);
   }
 
@@ -138,6 +195,11 @@ export async function routeApi(request: Request, env: Env, path: string): Promis
     const me = await requireUser(request, env);
     if (me instanceof Response) return me;
     return handleRecordHistory(request, env, me);
+  }
+  if (path === '/api/user/history' && method === 'GET') {
+    const me = await requireUser(request, env);
+    if (me instanceof Response) return me;
+    return handleGetHistory(request, env, me);
   }
 
   const profileMatch = path.match(/^\/api\/user\/([^/]+)\/?$/);

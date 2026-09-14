@@ -365,6 +365,19 @@
     return api('/api/user/profile', { method: 'PUT', body: JSON.stringify(patch) });
   }
 
+  /**
+   * Server history for the signed-in user (the /history page merges it with
+   * the local list; local entries win because they carry resume positions).
+   * @returns {Promise<Array | null>} null when signed out / on failure
+   */
+  function getServerHistory() {
+    const s0 = loadSession();
+    if (!s0) return Promise.resolve(null);
+    return api('/api/user/history')
+      .then((d) => (d && Array.isArray(d.items) ? d.items : []))
+      .catch(() => null);
+  }
+
   /** Fire-and-forget server-side history record for signed-in viewers. */
   /** @param {any} video */
   function recordHistoryFor(video) {
@@ -2200,7 +2213,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.56';
+  global.WP.build = 'ui-2026-09-14.57';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2441,6 +2454,7 @@
   global.WP.Social = {
     themePref,
     applyThemePref,
+    getServerHistory,
     ensureSession,
     claimWithCode,
     rotateAccessCode,

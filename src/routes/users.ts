@@ -466,6 +466,35 @@ export async function handleRecordHistory(
   return json({ ok: true }, 201);
 }
 
+/**
+ * GET /api/user/history — the signed-in user's history (newest first).
+ * The /history page merges this with the local list (local wins: it carries
+ * resume positions); this keeps phone and desktop consistent on titles.
+ */
+export async function handleGetHistory(_request: Request, env: Env, me: AuthedUser): Promise<Response> {
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT media_id, media_type, media_title, poster_url, season, episode, completed, watched_at
+       FROM watch_history WHERE user_id = ?1 ORDER BY watched_at DESC LIMIT 100`
+    )
+      .bind(me.id)
+      .all();
+    const items = (results || []).map((r: Record<string, unknown>) => ({
+      mediaId: String(r.media_id),
+      mediaType: String(r.media_type),
+      mediaTitle: String(r.media_title),
+      posterUrl: r.poster_url ? String(r.poster_url) : '',
+      season: Number(r.season) || null,
+      episode: Number(r.episode) || null,
+      completed: Number(r.completed) === 1,
+      watchedAt: Number(r.watched_at) || 0,
+    }));
+    return json({ items });
+  } catch (e) {
+    return errorJson(500, 'Could not load history', String(e));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // /api/friends
 // ---------------------------------------------------------------------------

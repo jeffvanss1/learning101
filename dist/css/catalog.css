@@ -343,6 +343,54 @@ body.room-focus.rail-peek .sidenav {
   padding: 40px 16px;
 }
 
+.history__filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 2px;
+}
+
+/* Per-item remove (top-right of the card, appears on hover like YouTube). */
+.history-card {
+  position: relative;
+}
+.history-card__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.history-card:hover .history-card__remove,
+.history-card__remove:focus-visible {
+  opacity: 1;
+}
+
+/* Resume progress: thin red bar hugging the poster bottom. */
+.history-card__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+}
+.history-card__progress-fill {
+  height: 100%;
+  background: var(--red);
+}
+
 .history__scroller {
   display: flex;
   gap: 12px;

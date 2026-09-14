@@ -301,6 +301,7 @@
 
     $('history-clear').addEventListener('click', () => {
       WP.historyClear();
+      state._historyServer = []; // server merge stays out for this session too
       renderHistory();
     });
 
@@ -345,6 +346,8 @@
   }
 
   async function startRoomWithVideo(video) {
+    // History card with a saved position (>60s in): resume on ready.
+    state._pendingResume = video && Number(video.position) > 60 ? Number(video.position) : null;
     // A saved identity is reused silently — no re-login every time.
     if (!state.name) state.name = await promptName();
     if (!state.name) return;
@@ -571,7 +574,21 @@
   // WebSocket client wiring
   // --------------------------------------------------------------------------
   function wireClient(client) {
-    client.on('open', () => setConnStatus('In sync', false));
+    client.on('open', () => {
+      setConnStatus('In sync', false);
+      if (state._connDropped) {
+        state._connDropped = false;
+        toast('Connection restored.');
+      }
+    });
+    client.on('reconnecting', () => {
+      // The status chip already shows "Reconnecting\u2026" - the toast makes a
+      // drop unmissable (deduped per drop, not per retry).
+      if (!state._connDropped) {
+        state._connDropped = true;
+        toast('Connection lost \u2014 reconnecting\u2026', true);
+      }
+    });
 
     client.on('state', (msg) => {
       if (msg.you) {
@@ -670,7 +687,11 @@
   // Playback sync wiring
   // --------------------------------------------------------------------------
   function wireSync(sync) {
-    sync.on('video', () => updateVideoUI());
+    sync.on('video', () => {
+      clearUpNext();
+      state._lastProgAt = 0;
+      updateVideoUI();
+    });
 
     // A controller action (play / pause / seek) is applied locally by the
     // sync manager and broadcast here. The room's playback state only changes
@@ -683,16 +704,28 @@
       else if (action === 'seek') state.client.send({ type: 'seek', time });
     });
 
-    sync.on('progress', ({ time, playing }) => {
+    sync.on('progress', ({ time, playing, duration }) => {
       updatePlayerControls(playing);
       if (state.presence) state.presence.syncProgress(time);
+      saveWatchProgress({ time, playing, duration });
     });
+    // Unambiguous end-of-episode signal (see player.js 'ended').
+    sync.on('ended', () => onEpisodeEnded());
 
     sync.on('buffering', () => setConnStatus('Buffering\u2026', true));
     sync.on('ready', () => {
       if (!state.video || !state.video.src) showFallback();
       else hideFallback();
       updateHostUI();
+      // RESUME: the room creator continues where the history entry stopped.
+      // (The seek broadcasts, so everyone in the room lands there too.)
+      const resumeAt = state._pendingResume;
+      state._pendingResume = null;
+      if (resumeAt && canControl()) {
+        setTimeout(() => {
+          if (state.sync) state.sync.seek(resumeAt);
+        }, 1200); // let the player surface settle before seeking
+      }
     });
     sync.on('unavailable', () => {
       toast('The player does not expose remote control (Server 2 fallback). Sync may be limited.', true);
@@ -1277,6 +1310,10 @@
     // Leaving the room hands the rail back exactly as the user had it -
     // unless they expanded it themselves inside the room (last explicit
     // action wins).
+    clearUpNext();
+    state._lastProgAt = 0;
+    state._pendingResume = null;
+    state._connDropped = false;
     if (state._sidenavAuto && !state._sidenavTouched) setSidenav(false);
     document.body.classList.remove('room-focus');
     document.body.classList.remove('rail-peek');
@@ -1389,6 +1426,8 @@
     }
     const page = $('history-page');
     if (page) page.hidden = false;
+    state._historyServer = null;
+    state._historyServerTried = false;
     renderHistory();
     window.dispatchEvent(new CustomEvent('wp:view-changed'));
   }
@@ -1469,15 +1508,163 @@
   }
 
   // --------------------------------------------------------------------------
-  // Watch history
+  // Watch history (+ resume + auto-advance)
   // --------------------------------------------------------------------------
+  // Resume: playback position is saved into the local history entry every ~8s
+  // (sync 'progress'). Starting that item again seeks to it (see _pendingResume).
+
+  /** @param {{ time: number, playing: boolean, duration?: number }} p */
+  function saveWatchProgress(p) {
+    const v = state.video;
+    if (!v || !v.id || !WP.historySetProgress) return;
+    if (!p || !Number(p.time)) return;
+    const now = Date.now();
+    if (now - (state._lastProgAt || 0) < 8000) return; // throttle
+    state._lastProgAt = now;
+    WP.historySetProgress(v, p.time, p.duration || 0);
+  }
+
+  function clearUpNext() {
+    if (state._upNextTimer) {
+      clearInterval(state._upNextTimer);
+      state._upNextTimer = null;
+    }
+    const el = $('up-next');
+    if (el) el.remove();
+    state._upNextShown = false;
+    state._endedToasted = false;
+  }
+
+  /** Auto-advance: what happens when the episode ends. */
+  function onEpisodeEnded() {
+    const v = state.video;
+    if (!v || v.type === 'movie') return;
+    if (!canControl()) {
+      if (!state._endedToasted) {
+        state._endedToasted = true;
+        toast('Episode ended \u2014 ask the host to play the next one.');
+      }
+      return;
+    }
+    if (state._upNextShown) return;
+    state._upNextShown = true;
+    const curEp = Number(v.episode) || 1;
+    // Verify the next episode exists in THIS season before offering it
+    // (TMDB season counts; cross-season is intentionally not auto-jumped).
+    WP.Catalog.api('/tv/' + encodeURIComponent(String(v.id)))
+      .then((data) => {
+        const seasons = (data && data.seasons) || [];
+        const s = seasons.find((x) => Number(x.season_number) === Number(v.season));
+        if (!s || curEp + 1 > Number(s.episode_count || 0)) {
+          state._upNextShown = false;
+          return;
+        }
+        showUpNext(curEp + 1);
+      })
+      .catch(() => {
+        state._upNextShown = false;
+      });
+  }
+
+  /** Countdown overlay in the player: "Up next: E<n>" with Play now / Cancel. */
+  function showUpNext(nextEp) {
+    clearUpNext();
+    const host = document.querySelector('.player');
+    if (!host) return;
+    const v = state.video;
+    const bar = document.createElement('div');
+    bar.id = 'up-next';
+    bar.className = 'up-next';
+    const label = document.createElement('span');
+    label.className = 'up-next__label';
+    label.textContent = 'Up next: E' + nextEp;
+    const playNow = document.createElement('button');
+    playNow.type = 'button';
+    playNow.className = 'btn btn--primary btn--sm';
+    playNow.textContent = 'Play now';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn btn--ghost btn--sm';
+    cancel.textContent = 'Cancel';
+    bar.appendChild(label);
+    bar.appendChild(playNow);
+    bar.appendChild(cancel);
+    host.appendChild(bar);
+
+    const advance = () => {
+      clearUpNext();
+      if (!state.video || !state.sync) return;
+      setRoomVideo(WP.Catalog.buildVideo(state.video, { season: state.video.season, episode: nextEp }));
+    };
+    let left = 5;
+    label.textContent = 'Up next: E' + nextEp + ' in ' + left + 's';
+    state._upNextTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        advance();
+        return;
+      }
+      label.textContent = 'Up next: E' + nextEp + ' in ' + left + 's';
+    }, 1000);
+    playNow.addEventListener('click', advance);
+    cancel.addEventListener('click', clearUpNext);
+  }
+
   function renderHistory() {
     const sec = $('history');
     const scroller = $('history-scroller');
     const empty = $('history-empty');
     if (!sec || !scroller) return;
-    const items = WP.historyGet();
-    // Dedicated page: an EMPTY history shows a friendly note, not a blank page.
+
+    // LOCAL history is the source of truth for resume positions; the server
+    // list (signed-in) fills gaps so phone and desktop agree on titles.
+    const local = WP.historyGet();
+    const kOf = (id, s, e) => `${id}|${s != null ? s : ''}|${e != null ? e : ''}`;
+    const seen = new Set();
+    let merged = local.map((v) => {
+      seen.add(kOf(v.id, v.season, v.episode));
+      return v;
+    });
+    const server = state._historyServer;
+    if (server && server.length) {
+      const extras = server
+        .filter((h) => !seen.has(kOf(String(h.mediaId), h.season || null, h.episode || null)))
+        .map((h) => ({
+          type: h.mediaType === 'tv' ? 'tv' : h.mediaType === 'anime' ? 'anime' : 'movie',
+          id: String(h.mediaId),
+          src: '',
+          title: h.mediaTitle || 'Untitled',
+          year: '',
+          poster: h.posterUrl || '',
+          backdrop: '',
+          season: h.season || null,
+          episode: h.episode || null,
+          watchedAt: h.watchedAt || 0,
+          completed: !!h.completed,
+        }));
+      merged = merged.concat(extras);
+      merged.sort((x, y) => (y.watchedAt || 0) - (x.watchedAt || 0));
+    } else if (!state._historyServerTried && WP.Social && WP.Social.getServerHistory && WP.Social.getSession && WP.Social.getSession()) {
+      // One fetch per page visit; re-render merges it in when it arrives.
+      state._historyServerTried = true;
+      WP.Social.getServerHistory().then((items) => {
+        state._historyServer = items || [];
+        const page = $('history-page');
+        if (page && !page.hidden) renderHistory();
+      });
+    }
+
+    // Filter chips (All / Movies / Series / Anime).
+    const f = state._historyFilter || 'all';
+    const items = merged.filter((v) => {
+      if (f === 'all') return true;
+      if (f === 'movie') return v.type === 'movie';
+      if (f === 'tv') return v.type === 'tv';
+      if (f === 'anime') return v.type === 'anime';
+      return true;
+    });
+
+    renderHistoryChips(merged.length);
     if (empty) empty.hidden = !!items.length;
     if (!items.length) {
       scroller.innerHTML = '';
@@ -1501,6 +1688,16 @@
         im.onerror = () => im.remove();
         poster.appendChild(im);
       }
+      // Resume position: YouTube-style red progress bar under the artwork.
+      if (v.position > 15 && v.duration && v.position < v.duration - 30) {
+        const prog = document.createElement('div');
+        prog.className = 'history-card__progress';
+        const fill = document.createElement('div');
+        fill.className = 'history-card__progress-fill';
+        fill.style.width = Math.min(100, Math.round((v.position / v.duration) * 100)) + '%';
+        prog.appendChild(fill);
+        poster.appendChild(prog);
+      }
       const body = document.createElement('div');
       body.className = 'history-card__body';
       const title = document.createElement('div');
@@ -1509,15 +1706,63 @@
       const meta = document.createElement('div');
       meta.className = 'history-card__meta';
       const ep = v.season != null ? `S${v.season} E${v.episode} · ` : '';
-      meta.textContent = ep + WP.timeAgo(v.watchedAt);
+      const when = v.completed ? 'Watched' : WP.timeAgo(v.watchedAt);
+      meta.textContent = ep + when;
       body.appendChild(title);
       body.appendChild(meta);
 
-      card.appendChild(poster);
-      card.appendChild(body);
-      card.addEventListener('click', () => startRoomWithVideo(v));
+      // Per-item remove (does not nuke the whole history).
+      const rm = document.createElement('span');
+      rm.className = 'history-card__remove';
+      rm.textContent = '\u00d7';
+      rm.title = 'Remove from history';
+      rm.setAttribute('role', 'button');
+      rm.setAttribute('aria-label', 'Remove ' + v.title + ' from history');
+      rm.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        WP.historyRemove(WP.historyKey(v));
+        state._historyServer = (state._historyServer || []).filter(
+          (h) => kOf(String(h.mediaId), h.season || null, h.episode || null) !== kOf(v.id, v.season, v.episode)
+        );
+        renderHistory();
+      });
+      card.appendChild(rm);
+
+      // Server-only entries have no src - they link to a fresh start (and
+      // still resume if a local position exists for them later).
+      card.addEventListener('click', () => {
+        if (v.src) startRoomWithVideo(v);
+        else startRoomWithVideo({ ...v, src: undefined, position: undefined });
+      });
       scroller.appendChild(card);
     });
+  }
+
+  /** Filter chip row (All / Movies / Series / Anime) for the history page. */
+  function renderHistoryChips(total) {
+    const host = $('history-filters');
+    if (!host) return;
+    const opts = [
+      ['all', 'All'],
+      ['movie', 'Movies'],
+      ['tv', 'Series'],
+      ['anime', 'Anime'],
+    ];
+    const f = state._historyFilter || 'all';
+    host.innerHTML = '';
+    opts.forEach(([val, label]) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip' + (f === val ? ' chip--active' : '');
+      chip.textContent = label;
+      chip.addEventListener('click', () => {
+        state._historyFilter = val;
+        renderHistory();
+      });
+      host.appendChild(chip);
+    });
+    host.hidden = !total;
   }
 
   // --------------------------------------------------------------------------

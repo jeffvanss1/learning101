@@ -543,6 +543,9 @@
             playing: false,
             duration: this.duration,
           });
+          // Distinct signal for auto-advance (a PAUSE near the end looks
+          // identical in 'progress' - 'ended' is unambiguous).
+          this.emit('ended', { time: this.localTime, duration: this.duration });
           break;
 
         case 'buffering':
