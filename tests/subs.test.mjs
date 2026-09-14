@@ -828,6 +828,46 @@ test('mini timing editor: click a tick shows its timestamp; Align snaps it to no
   assert.equal(Subs.__test.state().offset, 1.3, 'manual match is exact');
 });
 
+test('mini-map sync: the block under the head is EXACTLY the displayed caption (no 2x offset)', async () => {
+  const { Subs, listeners, rafQueue } = await freshSubs();
+  const wrap = new El2();
+  Subs.mount(wrap);
+  Subs.loadCues(FRESH_SRT); // one caption 10s..12s
+
+  const findBy = (root, cls) => {
+    if (String(root.className || '').split(/\s+/).indexOf(cls) !== -1) return root;
+    for (const c of root.children || []) {
+      const hit = findBy(c, cls);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const row = findBy(wrap, 'subs-editor');
+  const bar = row.children[0];
+  const ticksWrap = bar.children[0];
+  const block = ticksWrap.children[0];
+
+  const pxOfHeadOnBlock = (offset) => {
+    // Block center in strip px = (blockLeft + width/2) + translateX.
+    Subs.__test.setOffset(offset);
+    return parseFloat(block.style.left) + parseFloat(block.style.width) / 2 +
+      parseFloat(String(ticksWrap.style.transform).replace(/[^-0-9.]/g, ''));
+  };
+
+  // At offset 0, caption 10-12s displayed at t=11 => block center under the head (300px).
+  fireClock(listeners, rafQueue, 11);
+  rafQueue.splice(0).forEach((cb) => cb());
+  assert.equal(Subs.__test.state().offset, 0);
+  assert.ok(Math.abs(pxOfHeadOnBlock(0) - 300) < 1, 'offset 0: speaking block sits under the head: ' + pxOfHeadOnBlock(0));
+
+  // THE 2X BUG PIN: offset +5 => the SAME caption (now shown at t=11 video
+  // = sub-time 6... use video 16: sub-time 11, same cue) must STILL be
+  // under the head. With the old double-count it sat 100px away.
+  fireClock(listeners, rafQueue, 16);
+  rafQueue.splice(0).forEach((cb) => cb());
+  assert.ok(Math.abs(pxOfHeadOnBlock(5) - 300) < 1, 'offset +5: block still under the head (no double-count): ' + pxOfHeadOnBlock(5));
+});
+
 test('auto-load iterates candidates when the top one fails to download', async () => {
   // Live scenario (2026-09-13): the ranked-best record sat on a gated host
   // (dl.opensubtitles.org -> 401). Auto-load must skip it and load #2.

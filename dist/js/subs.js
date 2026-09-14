@@ -586,9 +586,11 @@
       edPlay.style.left = '50%';
       edPlay.style.display = t >= 0 ? 'block' : 'none';
     }
-    // Center the window on the playhead; the offset drags the thread with
-    // it. Pre-clock: center on a virtual t=0 so dragging STILL slides.
-    const x = edBarWidth() / 2 - (t >= 0 ? t : 0) * edPps + offset * edPps;
+    // Center the window on the playhead. now() ALREADY subtracts the offset
+    // (sub-timeline time), so NO extra offset term here - double-counting
+    // it rendered bars at 2x the offset ("bar not sync with the subs").
+    // Pre-clock: virtual V=0 (x = center + offset*pps) so drags still slide.
+    const x = edBarWidth() / 2 - (t >= 0 ? t : -offset) * edPps;
     edTicks.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
   }
 
@@ -942,6 +944,10 @@
       },
       state() {
         return { cues: cues.length, offset: offset, status: statusEl ? statusEl.textContent : '' };
+      },
+      /** Test hook: apply an offset as the UI would (repaints the thread). */
+      setOffset(/** @type {number} */ v) {
+        applyOffsetValue(v);
       },
     },
   };
