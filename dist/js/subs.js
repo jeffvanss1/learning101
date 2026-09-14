@@ -274,6 +274,13 @@
   let edAlign = /** @type {HTMLButtonElement | null} */ (null);
   let edSelected = /** @type {number | null} */ (null);
   const EDITOR_MAX_TICKS = 500;
+  // Caption-bar palette (user-supplied): consecutive bars always alternate.
+  const SUBS_PALETTE = [
+    { fill: 'rgba(80, 3, 192, 0.55)', edge: '#5003C0' },   // violet
+    { fill: 'rgba(171, 3, 169, 0.55)', edge: '#AB03A9' },  // magenta
+    { fill: 'rgba(255, 70, 122, 0.55)', edge: '#FF467A' }, // pink/red
+    { fill: 'rgba(255, 213, 30, 0.55)', edge: '#FFD51E' }, // yellow
+  ];
   // ZOOM: the strip shows a 5-minute window around the playhead, not the
   // whole movie (a 2h film compressed into one bar is unreadable). The
   // window slides forward as playback approaches its right edge.
@@ -320,6 +327,12 @@
       tick.style.left = (cue.start * edPps).toFixed(1) + 'px'; // absolute time -> px
       // BAR LENGTH = CAPTION LENGTH: width mirrors the cue's own duration.
       tick.style.width = Math.max(2, (cue.end - cue.start) * edPps).toFixed(1) + 'px';
+      // ALTERNATING PALETTE: adjacent bars always differ (4-color cycle;
+      // same-color neighbors are impossible since consecutive bars cycle
+      // through 4 distinct hues - even sampled files keep k and k+1 apart).
+      const pal = SUBS_PALETTE[ix % SUBS_PALETTE.length];
+      tick.style.background = pal.fill;
+      tick.style.borderLeftColor = pal.edge;
       tick.title = fmtTS(cue.start) + ' \u00b7 ' + String(cue.text).split('\n')[0].slice(0, 60);
       ((/** @type {number} */ idx, /** @type {any} */ c, /** @type {HTMLElement} */ el) => {
         el.addEventListener('click', () => {

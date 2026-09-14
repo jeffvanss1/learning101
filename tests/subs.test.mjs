@@ -682,6 +682,14 @@ test('mini-map: the strip spans the WHOLE subtitle timeline; head travels it', a
   assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.left) - 2400 * pps) < 0.5, 'caption 2 starts at 40:00 proportionally');
   assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[1].style.width) === 2, 'caption 2 length = its 1s duration');
 
+  // ALTERNATING PALETTE: adjacent bars always differ; the four hues are the
+  // user's exact palette.
+  assert.notEqual(ticksWrap.children[0].style.background, ticksWrap.children[1].style.background, 'adjacent bars differ in color');
+  const sub = (await import('node:fs')).readFileSync(join(ROOT, 'dist/js/subs.js'), 'utf8');
+  for (const hex of ['#5003C0', '#AB03A9', '#FF467A', '#FFD51E']) {
+    assert.ok(sub.includes(hex), 'palette carries ' + hex);
+  }
+
   // Head travels: hidden before any clock, then moves with it.
   assert.equal(play.style.display, 'none', 'no clock yet -> head hidden (no garbage position)');
   fireClock(listeners, rafQueue, 1200); // mid-timeline
@@ -1270,6 +1278,7 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   assert.ok(block, 'caption block rendered');
   assert.equal(block.style.width, '100.0px', 'caption block width == its timestamp duration (2s x 50px/s)');
   assert.equal(Math.round(parseFloat(block.style.left)), 500, 'caption block positioned at its 10s start');
+
   // NO floating pill anywhere.
   assert.ok(!doc3.body.children.some((c) => String(c.className).indexOf('subs-syncbar') !== -1), 'no floating pill');
 
