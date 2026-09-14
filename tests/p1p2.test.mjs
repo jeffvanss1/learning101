@@ -301,7 +301,7 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /else startRoomWithVideo\(\{ \.\.\.v, src: undefined \}\);/, 'server-only cards keep their position on click');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=44/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=45/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -313,7 +313,7 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=44/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=45/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=22/, 'catalog css cache-bumped');
 });
 
@@ -341,4 +341,15 @@ test('/history never-silent guarantees: error surface + self-explanatory empty',
   assert.match(a, /'History failed to load: ' \+ \(\(e && e\.message\) \|\| e\)/, 'the error lands in the page');
   assert.match(a, /Sign in and your watch history follows you across every device/, 'signed-out hint');
   assert.match(a, /Nothing watched on your account yet/, 'account-empty hint');
+});
+
+test('history nav dead-end fixed + never-blank view setup + global error surface', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /!\$\('history-page'\)\.hidden \/\/ DEAD END FIX/, 'Home nav handles /history (previously no branch = stuck)');
+  assert.match(a, /NEVER-BLANK GUARANTEE/, 'showHistoryView isolates teardown steps');
+  assert.match(a, /console\.error\('\[history\] view setup step failed', e\);/, 'setup failures logged, page still renders');
+  assert.match(a, /window\.addEventListener\('error', \(ev\) =>/, 'uncaught errors surface as a visible toast');
+  assert.match(a, /window\.addEventListener\('unhandledrejection', \(ev\) =>/, 'rejections surface too');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/app\.js\?v=45/, 'app cache-bumped');
 });

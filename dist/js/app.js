@@ -1438,24 +1438,42 @@
   }
 
   function showHistoryView() {
-    if (state.client || state.sync) teardownRoomSession();
-    teardownProfileView();
-    teardownDiscoveryView();
+    // NEVER-BLANK GUARANTEE: a throw in ANY teardown must not leave the user
+    // on a blank stuck page (home hidden, history hidden). Each step is
+    // isolated; the page + render always happen; failures surface in-page.
+    const steps = [
+      () => {
+        if (state.client || state.sync) teardownRoomSession();
+      },
+      () => teardownProfileView(),
+      () => teardownDiscoveryView(),
+      () => {
+        if (state.browseHandle) {
+          // Pause browse work while the history page owns the screen.
+          state.browseHandle.destroy();
+          state.browseHandle = null;
+        }
+      },
+    ];
+    for (const step of steps) {
+      try {
+        step();
+      } catch (e) {
+        console.error('[history] view setup step failed', e);
+      }
+    }
     $('room').hidden = true;
     $('home').hidden = true;
     $('home-nav').hidden = false;
     clearSearchInputs();
-    if (state.browseHandle) {
-      // Pause browse work while the history page owns the screen.
-      state.browseHandle.destroy();
-      state.browseHandle = null;
-    }
     const page = $('history-page');
     if (page) page.hidden = false;
     state._historyServer = null;
     state._historyServerTried = false;
     renderHistory();
-    window.dispatchEvent(new CustomEvent('wp:view-changed'));
+    try {
+      window.dispatchEvent(new CustomEvent('wp:view-changed'));
+    } catch (_) {}
   }
 
   // Render whichever surface the current URL asks for (boot + popstate).
@@ -1519,6 +1537,19 @@
     if (!$('room').hidden || state.client || state.sync) teardownRoomSession();
     routeCurrent();
   }
+
+  // GLOBAL ERROR SURFACE: an uncaught error or rejection used to be console-
+  // only — the user saw a blank/broken UI with no explanation and we got
+  // "it's blank" with nothing to debug. Now it toasts (10s) with the cause.
+  window.addEventListener('error', (ev) => {
+    const msg = ev && ev.error && ev.error.message ? ev.error.message : ev && ev.message;
+    if (msg) toast('Error: ' + String(msg).slice(0, 160), true);
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    const r = ev && ev.reason;
+    const msg = r && r.message ? r.message : String(r || 'unknown');
+    toast('Error: ' + msg.slice(0, 160), true);
+  });
 
   // --------------------------------------------------------------------------
   // Toasts
@@ -1990,8 +2021,12 @@
             goHome();
             return;
           }
-          if (!$('profile').hidden || !$('discovery').hidden) {
-            // Leaving the profile/discovery page: push '/' so Back returns to it.
+          if (
+            !$('profile').hidden ||
+            !$('discovery').hidden ||
+            !$('history-page').hidden // DEAD END FIX: leaving /history had NO branch — Home did nothing.
+          ) {
+            // Leaving the profile/discovery/history page: push '/' so Back returns to it.
             history.pushState(null, '', '/');
             routeCurrent();
             return;

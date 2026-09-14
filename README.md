@@ -1239,3 +1239,20 @@ blank again:
   your watch history follows you across every device"; signed-in users
   see the account-empty hint.
 app v44 / ui-2026-09-14.74. Tests 178/178, check clean.
+
+## /history round 3: nav dead-end fixed + never-blank setup + global error surface (ui-2026-09-14.75)
+
+User at stamp .74: still blank + "cannot redirect to homepage after
+clicking history". Full route chain (routeCurrent → showHistoryView →
+teardowns → render, signed-in, server payload) EXECUTES clean in the
+harness — so the blank lives in their runtime. Shipped:
+
+- PROVEN NAV BUG: the Home nav branch handled room/profile/discovery
+  but had NO /history case — from /history, Home did nothing. Fixed
+  (push '/' + routeCurrent).
+- NEVER-BLANK SETUP: showHistoryView now isolates every teardown step;
+  a throw can no longer leave home hidden + history hidden (blank +
+  stuck). The page always unhides and renders; failures log.
+- GLOBAL ERROR SURFACE: uncaught errors/rejections now toast on screen
+  for 10s with the cause — "it's blank" reports come with evidence.
+app v45 / ui-2026-09-14.75. Tests 179/179, check clean.
