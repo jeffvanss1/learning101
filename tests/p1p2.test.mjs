@@ -22,7 +22,8 @@ test('resume: playback position saved, history card resumes, red progress bar', 
   assert.match(a, /if \(now - \(state\._lastProgAt \|\| 0\) < 8000\) return;/, 'progress save is throttled (~8s)');
   assert.match(utilsSrc(), /function historySetProgress\(/, 'utils: progress writer');
   assert.match(a, /state\._pendingResume = video && Number\(video\.position\) > 60 \? Number\(video\.position\) : null;/, 'history click arms resume (>60s in only)');
-  assert.match(a, /if \(resumeAt && canControl\(\)\) \{\s*setTimeout\(\(\) => \{\s*if \(state\.sync\) state\.sync\.seek\(resumeAt\);/, 'resume seeks on player ready (controller broadcasts it)');
+  assert.match(a, /if \(resumeAt && canControl\(\)\) \{\s*setTimeout\(\(\) => \{\s*if \(state\.sync\) state\.sync\.localPlay\(resumeAt\);/, 'resume = seek+play+adopt+broadcast (localPlay)');
+  assert.doesNotMatch(a, /state\.sync\.seek\(/, 'RAW seek() is BANNED in app.js - it never tells the room (endless-pause-cycle bug)');
   assert.match(readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8'), /\.history-card__progress-fill \{[^}]*background: var\(--red\)/, 'YouTube-style red progress bar');
 });
 

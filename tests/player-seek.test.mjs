@@ -209,6 +209,8 @@ test('AUDIT: a pause swallowed by a buffering player is re-asserted within ~1s',
 test('controller actions adopt the local snapshot - no stale re-assert', async () => {
   const { sync, fire } = await freshPlayer();
   const posted = [];
+  const events = [];
+  sync.on('control', (e) => events.push(e));
   sync.iframe.contentWindow.postMessage = (m) => posted.push(m);
   sync.isController = true;
 
@@ -242,6 +244,23 @@ test('controller actions adopt the local snapshot - no stale re-assert', async (
   // Seek adopts the position (no yank-back to the stale position).
   sync.localSeek(250);
   assert.equal(sync._lastMsg.time, 250, 'snapshot adopted the seek position');
+
+  // RESUME via localPlay(position): seek in + PLAY + adopt + broadcast.
+  // (The old resume used RAW seek() - no broadcast, no adopt - so the room
+  // stayed paused@0 and convergence yanked the host back forever.)
+  events.length = 0;
+  posted.length = 0;
+  sync.applyRemote({ isPlaying: false, time: 0, timestamp: Date.now() }); // room: paused at the start
+  sync.localPlay(600); // "continue watching" from 10:00
+  assert.ok(posted.some((m) => m.command === 'seek'), 'seek went to the player');
+  assert.ok(posted.some((m) => m.command === 'play'), 'play went to the player');
+  assert.ok(events.some((e) => e.action === 'play'), 'play BROADCAST to the room');
+  assert.equal(sync._lastMsg.isPlaying, true, 'snapshot adopted playing');
+  assert.equal(sync._lastMsg.time, 600, 'snapshot adopted the resume position');
+  posted.length = 0;
+  fire(600.3, true);
+  sync._syncToTarget(true);
+  assert.ok(!posted.some((m) => m.command === 'seek'), 'NO yank-back to the room stale position');
   sync.destroy(); // stop the status poller so the test process can exit
 });
 

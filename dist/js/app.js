@@ -718,13 +718,15 @@
       else hideFallback();
       updateHostUI();
       // RESUME: the room creator continues where the history entry stopped.
-      // (The seek broadcasts, so everyone in the room lands there too.)
+      // localPlay(position) = seek + play + ADOPT the snapshot + broadcast.
+      // The old raw seek() did NEITHER: the room stayed paused@0 and the
+      // convergence loop kept yanking the host back - an endless pause cycle.
       const resumeAt = state._pendingResume;
       state._pendingResume = null;
       if (resumeAt && canControl()) {
         setTimeout(() => {
-          if (state.sync) state.sync.seek(resumeAt);
-        }, 1200); // let the player surface settle before seeking
+          if (state.sync) state.sync.localPlay(resumeAt);
+        }, 1200); // let the player surface settle before seeking in
       }
     });
     sync.on('unavailable', () => {
