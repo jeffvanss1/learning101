@@ -141,7 +141,8 @@ test('/history SERVER-FIRST: account rows render as playable cards with position
   });
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(els['history-scroller'].kids.length, 1, 'server row rendered');
-  assert.match(els['history-status'].textContent, /Account: 1 titles/, 'status line shows the account count');
+  assert.match(els['history-status'].textContent, /All Titles: 1/, 'total shown');
+  assert.match(els['history-status'].textContent, /Series: 1/, 'type breakdown shown');
   assert.equal(els['history-empty'].hidden, true);
 });
 

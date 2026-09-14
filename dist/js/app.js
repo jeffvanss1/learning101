@@ -1843,7 +1843,7 @@
       });
 
       renderHistoryChips(merged.length);
-      paintHistoryStatus(sess, server, local.length);
+      paintHistoryStatus(items);
       if (empty) empty.hidden = !!items.length;
       if (!items.length) {
         scroller.innerHTML = '';
@@ -1953,11 +1953,6 @@
       // Cards: 75 (DOM: 75)". A mismatch pinpoints the failing layer
       // instantly (0 built = logic, built-but-absent = environment).
       try {
-        const st = $('history-status');
-        if (st && st.textContent) {
-          st.textContent +=
-            ' \u00b7 Cards: ' + items.length + ' (DOM: ' + scroller.children.length + ')';
-        }
         console.log('[history] rendered', items.length, 'cards,', scroller.children.length, 'in DOM');
       } catch (_) {}
       } catch (e) {
@@ -1997,10 +1992,7 @@
   function healHistoryPosters(items) {
     const missing = items.filter((v) => !v.poster && !v.backdrop && v.id);
     if (!missing.length) return;
-    const st = $('history-status');
-    if (st && st.textContent) {
-      st.textContent += ' \u00b7 healing posters: ' + missing.length;
-    }
+    console.log('[history] healing posters:', missing.length);
     let idx = 0;
     const run = () => {
       if (idx >= missing.length) return;
@@ -2032,15 +2024,16 @@
     run();
   }
 
-  /** Visible status line: WHICH side has data (ends the blank-page guessing). */
-  function paintHistoryStatus(signedIn, serverRows, localCount) {
+  /** Status line: clean type breakdown (All / Movies / Series / Anime). */
+  function paintHistoryStatus(items) {
     const el = $('history-status');
     if (!el) return;
+    const signedIn = !!(WP.Social && WP.Social.getSession && WP.Social.getSession());
     if (!signedIn || !state._historyServerTried) {
       el.hidden = true;
       return;
     }
-    if (!serverRows && state._historyStatusError) {
+    if (!state._historyServer && state._historyStatusError) {
       el.hidden = false;
       el.classList.add('history__status--err');
       el.textContent = 'Account history unavailable: ' + state._historyStatusError + ' - showing this device only.';
@@ -2048,9 +2041,17 @@
     }
     el.classList.remove('history__status--err');
     el.hidden = false;
-    el.textContent = serverRows
-      ? 'Account: ' + serverRows.length + ' titles \u00b7 This device: ' + localCount
-      : 'Loading your account history\u2026';
+    const byType = { movie: 0, tv: 0, anime: 0 };
+    (items || []).forEach((v) => {
+      if (v.type === 'movie') byType.movie++;
+      else if (v.type === 'anime') byType.anime++;
+      else if (v.type === 'tv') byType.tv++;
+    });
+    el.textContent =
+      'All Titles: ' + (items ? items.length : 0) +
+      ' \u00b7 Movies: ' + byType.movie +
+      ' \u00b7 Series: ' + byType.tv +
+      ' \u00b7 Anime: ' + byType.anime;
   }
 
   /** Filter chip row (All / Movies / Series / Anime) for the history page. */

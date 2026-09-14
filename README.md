@@ -1327,3 +1327,12 @@ title text, remove control) - counting alone is banned by this pin.
 Status "healing posters: 1" confirmed 62 rows already carry poster URLs
 - with the appends restored those images finally display.
 app v49 / ui-2026-09-14.79. Tests 185/185, check clean.
+
+## Clean status line: type breakdown (ui-2026-09-14.80)
+
+USER: replace "Account: N · Device: M · healing: K · Cards: X (DOM: Y)"
+with a clean breakdown. The status line now reads:
+"All Titles: 63 · Movies: 20 · Series: 30 · Anime: 13".
+Debug counts (cards/DOM/healing) moved to the console only; the red
+account-error and loading variants remain. app v50 / ui-2026-09-14.80.
+Tests 185/185.
