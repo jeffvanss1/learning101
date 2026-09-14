@@ -366,6 +366,20 @@
     if (WP.Subs) WP.Subs.setVideo(state.video);
   }
 
+  // ---- Sidenav auto-collapse in rooms ---------------------------------------
+  // The room needs the space: entering a room auto-collapses the guide rail to
+  // the 72px icon strip; leaving restores EXACTLY the pre-room state. The auto
+  // move is NEVER persisted (it is contextual, not a preference), and a manual
+  // toggle inside the room wins - we never fight an explicit click.
+  function sidenavCollapsed() {
+    return document.body.classList.contains('sidenav-collapsed');
+  }
+  function setSidenav(collapsed) {
+    document.body.classList.toggle('sidenav-collapsed', collapsed);
+    const t = $('nav-toggle-sidenav');
+    if (t) t.setAttribute('aria-expanded', String(!collapsed));
+  }
+
   function enterRoom(roomId, video) {
     state.roomId = roomId;
     state.video = video || null;
@@ -377,6 +391,14 @@
     state.chatLoaded = false;
     state._lastRecKey = null;
     resetRecs();
+
+    // Room focus: collapse the guide rail to icons. Remember only whether WE
+    // collapsed it, so leaving restores the user's pre-room state faithfully.
+    if (!sidenavCollapsed()) {
+      setSidenav(true);
+      state._sidenavAuto = true;
+      state._sidenavTouched = false;
+    }
 
     // Tear down any previous session so listeners/commands never stack.
     if (state.sync) {
@@ -1241,6 +1263,12 @@
     state._lastRecKey = null;
     resetRecs();
     $('browse-modal').hidden = true;
+    // Leaving the room hands the rail back exactly as the user had it -
+    // unless they expanded it themselves inside the room (last explicit
+    // action wins).
+    if (state._sidenavAuto && !state._sidenavTouched) setSidenav(false);
+    state._sidenavAuto = false;
+    state._sidenavTouched = false;
   }
 
   // Show the home surface. Idempotent: re-mounts the browse UI only when we
@@ -1550,6 +1578,9 @@
           localStorage.setItem('wp:sidenav', collapsed ? 'collapsed' : 'open');
         } catch (_) {}
         toggle.setAttribute('aria-expanded', String(!collapsed));
+        // Expanded BY HAND inside a room: the user owns the rail state now -
+        // leaving the room must not re-collapse it behind their back.
+        if (state.roomId && !collapsed) state._sidenavTouched = true;
       });
     }
   }

@@ -920,3 +920,15 @@ classified):
   structural var pins, and the duplication detector.
 
 Tests 139/139, check clean. style v20 / catalog v14 / social v16 / ui .53.
+
+## Room focus: sidenav auto-collapses in rooms (ui-2026-09-14.54)
+
+- Entering a room auto-collapses the guide rail to the 72px icon strip
+  (video + chat get the space); leaving restores EXACTLY the pre-room
+  state. The auto move is contextual only - it NEVER writes
+  `wp:sidenav` (that stays the manual toggle's pref), and a manual
+  expansion inside the room wins (leaving won't re-collapse behind the
+  user's back). Mobile is unaffected (already icon-only ≤720px).
+- Pinned in tests/stability.test.mjs (setter/reader singletons, restore
+  conditional, manual-win rule, no-persistence). Tests 140/140.
+  app.js v32 / ui-2026-09-14.54.

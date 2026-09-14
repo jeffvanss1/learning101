@@ -45,3 +45,24 @@ test('stability: no unguarded JSON.parse on localStorage/boot paths', async () =
     }
   }
 });
+
+test('stability: room auto-collapses the sidenav; leaving restores pre-room state', async () => {
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+
+  assert.equal((app.match(/function setSidenav\(/g) || []).length, 1, 'single rail-state setter');
+  assert.equal((app.match(/function sidenavCollapsed\(/g) || []).length, 1, 'single rail-state reader');
+
+  // Enter: collapse only when the rail was open (never fight a saved pref).
+  assert.match(app, /if \(!sidenavCollapsed\(\)\) \{\s*setSidenav\(true\);\s*state\._sidenavAuto = true;/, 'room entry auto-collapses + records that IT collapsed the rail');
+
+  // Leave: restore exactly the pre-room state, unless the user expanded the
+  // rail by hand inside the room (last explicit action wins).
+  assert.match(app, /if \(state\._sidenavAuto && !state\._sidenavTouched\) setSidenav\(false\);/, 'teardown restores pre-room rail state');
+  assert.match(app, /if \(state\.roomId && !collapsed\) state\._sidenavTouched = true;/, 'manual in-room expansion wins');
+
+  // The AUTO move is contextual only - it must never touch localStorage
+  // (the persistent pref is written exclusively by the manual toggle).
+  const m = app.indexOf('Room focus: collapse the guide rail');
+  const end = app.indexOf('Tear down any previous session', m);
+  assert.doesNotMatch(app.slice(m, end), /localStorage/, 'auto-collapse never persists');
+});
