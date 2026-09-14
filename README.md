@@ -1123,3 +1123,16 @@ Behavior-tested against the real manager: boot-lag resume never pauses
 (#1/#2), a single stalled status cannot pause (#3/#4), buffering blocks
 the mirror, a REAL persistent pause still lands (exactly once), new-load
 hygiene. Tests 166/166, check clean. player v14 / ui+api-2026-09-14.68.
+
+## Minimal shape pass: the ovals are gone (ui-2026-09-14.69)
+
+User direction: minimalism — "remove the oval on the button". The pill
+radius (999px) was applied to 21 button/chip/input/badge surfaces across
+style.css, catalog.css and social.css. Flattened to a consistent scale:
+8px for buttons, chips, search/chat inputs, toasts, presence pills;
+6px for small count badges; 10px for the large up-next overlay.
+Circles kept where a circle MEANS circle: avatars (50%), scrollbar
+thumb. Focus rings kept (a11y). Skeleton shimmer / avatar-cosmetics
+gradients untouched (functional or paid features). style.css v24 /
+catalog.css v19 / social.css v18. Tests 167/167 (shape pinned: no
+999px outside the scrollbar, .btn flat 8px).

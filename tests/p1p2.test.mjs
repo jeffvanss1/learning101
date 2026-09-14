@@ -224,3 +224,21 @@ test('DO hardening: play/pause/seek without a usable time keep the current posit
   const wr = readFileSync(join(ROOT, 'src/WatchRoom.js'), 'utf8');
   assert.equal(wr.match(/Number\.isFinite\(rawT\) \? this\.clampTime\(rawT\) : this\.playback\.time/g)?.length, 3, 'guard on all three: PLAY, PAUSE, SEEK');
 });
+
+test('minimal shape pass: no oval buttons — flat radii, circles only where they mean circle', () => {
+  const style = readFileSync(join(ROOT, 'dist/css/style.css'), 'utf8');
+  const catalog = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  const social = readFileSync(join(ROOT, 'dist/css/social.css'), 'utf8');
+  const btn = style.slice(style.indexOf('.btn {'), style.indexOf('.btn:active'));
+  assert.match(btn, /border-radius: 8px;/, '.btn is flat 8px (the pill/oval is gone)');
+  assert.match(catalog.slice(catalog.indexOf('.chip {')), /border-radius: 8px;/, 'catalog chips flat');
+  assert.match(style.slice(style.indexOf('.room-chip {')), /border-radius: 8px;/, 'room chip flat');
+  const remaining = [...style.matchAll(/border-radius: 999px/g)].length;
+  assert.equal(remaining, 1, 'style.css keeps exactly one 999px: the scrollbar thumb');
+  assert.doesNotMatch(catalog + social, /border-radius: 999px/, 'catalog/social have no pills left');
+  assert.match(social, /\.avatar-frame \{[^}]*border-radius: 50%;/, 'avatars stay circular');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /css\/style\.css\?v=24/, 'style cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=19/, 'catalog cache-bumped');
+  assert.match(html, /css\/social\.css\?v=18/, 'social cache-bumped');
+});
