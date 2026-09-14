@@ -444,10 +444,15 @@ test('player like button + threaded episode rows (long seasons)', async () => {
   const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
   assert.match(app, /Social\.toggleLike\(\{[\s\S]{0,120}mediaId: String\(v\.id\)/, 'player like wired to the current video');
   assert.match(app, /paintLike\(set\.has\(String\(v\.id\)\)\)/, 'like state follows video changes');
+  assert.equal((app.match(/const paintLike/g) || []).length, 1, 'ONE hoisted like painter (updateVideoUI shares it)');
+  assert.match(app, /likeBtn\.disabled = !\(v && v\.id\)/, 'updateVideoUI ENABLES the like button (markup ships disabled)');
   const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
   assert.match(cat, /function buildThreadedEpisodes\(/, 'threaded builder exists');
   assert.equal((cat.match(/count > 120/g) || []).length, 0, 'numeric-input branches GONE');
-  assert.equal((cat.match(/count > 50/g) || []).length, 3, 'all three episode surfaces thread at >50');
+  assert.equal((cat.match(/count > 50/g) || []).length, 1, 'exactly ONE >50 decision (the shared component)');
+  assert.equal((cat.match(/function renderEpisodeGrid/g) || []).length, 1, 'ONE episode-grid component');
+  assert.equal((cat.match(/renderEpisodeGrid\(epGrid/g) || []).length, 4, 'component def + all three surfaces (detail, anime, room modal)');
+  assert.equal((cat.match(/buildThreadedEpisodes\(/g) || []).length, 2, 'builder called ONLY from the component (def + 1 call)');
   assert.match(cat, /ep-btn--current/, 'current episode still highlighted');
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.detail__ep-row/, 'thread row styles present');

@@ -265,6 +265,54 @@
     };
   }
 
+  /** Episode-name tooltips cache (showId:season -> Map(ep -> name)). */
+  const epNamesCache = new Map();
+
+  /**
+   * THE episode grid component - used by EVERY episode surface (detail
+   * picker, anime flat picker, room episodes modal) so long seasons thread
+   * identically everywhere. <=50 episodes: flat grid. >50: threaded rows.
+   * Episode names enrich tooltips in both shapes (cached per show+season).
+   * @param {HTMLElement} epGrid
+   * @param {{ count: number, pick: (n: number) => void, currentEp?: number, showId?: string|number|null, season?: number|null }} o
+   */
+  function renderEpisodeGrid(epGrid, o) {
+    const applyNames = (/** @type {HTMLElement} */ root) => {
+      if (!o.showId || !o.season) return;
+      const key = o.showId + ':' + o.season;
+      const paint = (/** @type {Map<number, {name: string}>} */ byNum) => {
+        root.querySelectorAll('.ep-btn').forEach((b) => {
+          const ep = byNum.get(Number(b.textContent));
+          if (ep && ep.name) b.title = 'E' + b.textContent + ' \u00b7 ' + ep.name;
+        });
+      };
+      const cached = epNamesCache.get(key);
+      if (cached) {
+        paint(cached);
+        return;
+      }
+      api('/tv/' + encodeURIComponent(String(o.showId)) + '/season/' + o.season)
+        .then((data) => {
+          if (!data || !data.episodes) return;
+          const byNum = new Map(data.episodes.map((e) => [e.episode_number, e]));
+          epNamesCache.set(key, byNum);
+          paint(byNum);
+        })
+        .catch(() => {});
+    };
+    if (o.count > 50) {
+      buildThreadedEpisodes(epGrid, o.count, o.pick, o.currentEp || 0, applyNames);
+    } else {
+      for (let n = 1; n <= o.count; n++) {
+        const b = h('button', 'ep-btn' + (n === o.currentEp ? ' ep-btn--current' : ''), String(n));
+        b.type = 'button';
+        b.addEventListener('click', () => o.pick(n));
+        epGrid.appendChild(b);
+      }
+      applyNames(epGrid);
+    }
+  }
+
   /**
    * Threaded episode grid for LONG seasons (> THREAD_ROW_MAX episodes):
    * every episode is available, chunked into collapsible rows of ~50 with
@@ -274,8 +322,9 @@
    * @param {number} count
    * @param {(n: number) => void} pick
    * @param {number} [currentEp] highlight + auto-open its thread row
+   * @param {(root: HTMLElement) => void} [applyNames] name enrichment per row
    */
-  function buildThreadedEpisodes(epGrid, count, pick, currentEp) {
+  function buildThreadedEpisodes(epGrid, count, pick, currentEp, applyNames) {
     const THREAD_ROW_MAX = 50;
     const rows = Math.ceil(count / THREAD_ROW_MAX);
     /** @type {HTMLElement[]} */ const rowEls = [];
@@ -298,6 +347,7 @@
             b.addEventListener('click', () => pick(n));
             body.appendChild(b);
           }
+          if (applyNames) applyNames(body);
         }
         rowEl.classList.toggle('is-open');
       });
@@ -731,55 +781,31 @@
     section.appendChild(epGrid);
     body.appendChild(section);
 
-    function renderSeason(s, autoFirst) {
+    function renderSeason(s) {
       seasonChips.querySelectorAll('.chip').forEach((c) => c.classList.remove('chip--active'));
       seasonChips.querySelectorAll('.chip').forEach((c) => {
         if (Number(c.dataset.season) === s.season) c.classList.add('chip--active');
       });
-      renderEpisodes(s, autoFirst);
+      renderEpisodes(s);
     }
 
-    function renderEpisodes(s, autoFirst) {
+    function renderEpisodes(s) {
       epGrid.innerHTML = '';
       const count = s.episodes || 0;
-
-      if (count > 50) {
-        // Long season: EVERY episode available, threaded into collapsible
-        // rows (the old numeric input hid the catalog entirely).
-        buildThreadedEpisodes(epGrid, count, (n) => {
-          onPick(buildVideo(item, { season: s.season, episode: n }));
-          close();
-        });
+      if (!count) {
+        epGrid.appendChild(h('div', 'browse__empty', 'No episode data.'));
         return;
       }
-
-      if (count) {
-        for (let n = 1; n <= count; n++) {
-          const b = h('button', 'ep-btn', String(n));
-          b.type = 'button';
-          b.addEventListener('click', () => {
-            onPick(buildVideo(item, { season: s.season, episode: n }));
-            close();
-          });
-          epGrid.appendChild(b);
-        }
-      } else {
-        epGrid.appendChild(h('div', 'browse__empty', 'No episode data.'));
-      }
-
-      // Enrich with episode names when available.
-      if (autoFirst !== false) {
-        api('/tv/' + encodeURIComponent(item.id) + '/season/' + s.season)
-          .then((data) => {
-            if (!data || !data.episodes) return;
-            const byNum = new Map(data.episodes.map((e) => [e.episode_number, e]));
-            epGrid.querySelectorAll('.ep-btn').forEach((b) => {
-              const ep = byNum.get(Number(b.textContent));
-              if (ep && ep.name) b.title = ep.name;
-            });
-          })
-          .catch(() => {});
-      }
+      // ONE component everywhere: flat <=50, threaded >50, names in both.
+      renderEpisodeGrid(epGrid, {
+        count: count,
+        pick: (n) => {
+          onPick(buildVideo(item, { season: s.season, episode: n }));
+          close();
+        },
+        showId: item.id,
+        season: s.season,
+      });
     }
 
     if (!usable.length) {
@@ -791,10 +817,10 @@
       const chip = h('button', 'chip' + (i === 0 ? ' chip--active' : ''), s.name || `Season ${s.season}`);
       chip.type = 'button';
       chip.dataset.season = String(s.season);
-      chip.addEventListener('click', () => renderSeason(s, false));
+      chip.addEventListener('click', () => renderSeason(s));
       seasonChips.appendChild(chip);
     });
-    renderEpisodes(usable[0], true);
+    renderEpisodes(usable[0]);
   }
 
   // Anime detail: episode-only picker (absolute numbering, AniList total).
@@ -839,16 +865,7 @@
       close();
     };
 
-    if (count > 50) {
-      buildThreadedEpisodes(epGrid, count, pick);
-    } else {
-      for (let n = 1; n <= count; n++) {
-        const b = h('button', 'ep-btn', String(n));
-        b.type = 'button';
-        b.addEventListener('click', () => pick(n));
-        epGrid.appendChild(b);
-      }
-    }
+    renderEpisodeGrid(epGrid, { count: count, pick: pick, showId: item.id, season: null });
     section.appendChild(epGrid);
     body.appendChild(section);
   }
@@ -1509,35 +1526,16 @@
         function renderEpisodes(s) {
           epGrid.innerHTML = '';
           const count = s.episodes || 0;
-          const modalPick = (/** @type {number} */ n) => {
-            onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
-            close();
-          };
-          if (count > 50) {
-            // Threaded rows; the current episode's row auto-opens + scrolls.
-            buildThreadedEpisodes(epGrid, count, modalPick, s.season === curSeason ? curEp : 0);
-            return;
-          }
-          for (let n = 1; n <= count; n++) {
-            const b = h('button', 'ep-btn' + (s.season === curSeason && n === curEp ? ' ep-btn--current' : ''), String(n));
-            b.type = 'button';
-            b.addEventListener('click', () => {
+          renderEpisodeGrid(epGrid, {
+            count: count,
+            pick: (n) => {
               onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
               close();
-            });
-            epGrid.appendChild(b);
-          }
-          // Episode names (best effort).
-          api('/tv/' + encodeURIComponent(String(video.id)) + '/season/' + s.season)
-            .then((data) => {
-              if (!data || !data.episodes) return;
-              const byNum = new Map(data.episodes.map((e) => [e.episode_number, e]));
-              epGrid.querySelectorAll('.ep-btn').forEach((b) => {
-                const ep = byNum.get(Number(b.textContent));
-                if (ep && ep.name) b.title = 'E' + b.textContent + ' \u00b7 ' + ep.name;
-              });
-            })
-            .catch(() => {});
+            },
+            currentEp: s.season === curSeason ? curEp : 0,
+            showId: video.id,
+            season: s.season,
+          });
         }
 
         let active = usable[0];

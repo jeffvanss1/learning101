@@ -785,3 +785,22 @@ file - fresh joiners auto-load fresh subs).
   button materialization; the current episode's row auto-opens and
   scrolls into view. Applies to the detail picker, the anime flat picker
   and the room episode-switcher modal.
+
+## One episode grid everywhere + Like button fixed (ui-2026-09-14.47)
+
+- **Consistency**: `renderEpisodeGrid()` is now THE episode grid component.
+  All three surfaces (detail picker, anime flat picker, room
+  episode-switcher modal) route through it: flat grid <=50 episodes,
+  collapsible thread rows >50 - one single `>50` decision in the code, so
+  threading can never drift between surfaces again. Episode-name tooltips
+  now enrich BOTH shapes (cached per show+season), including thread rows
+  built lazily when opened.
+- **Like button on the watching page actually works now**: the markup
+  ships `#like-video` disabled and `updateVideoUI` never enabled it (its
+  painter was also scoped inside `initRoomUI`, out of `updateVideoUI`'s
+  reach). The painter is hoisted to module scope and `updateVideoUI` sets
+  `likeBtn.disabled = !(v && v.id)` - Like sits between Browse and
+  Episodes, is clickable whenever a video is loaded, and re-hydrates its
+  ♡/♥ state on every video change. Sign-in gated with a toast.
+
+Tests 130/130, tsc clean. app.js v30 / catalog.js v18 / ui-2026-09-14.47.

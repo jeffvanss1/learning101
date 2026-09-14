@@ -456,14 +456,7 @@
     $('toggle-play').onclick = onTogglePlay;
     $('change-video').onclick = onOpenBrowse;
     // Player LIKE: same taste signal as the catalog hearts, one tap away.
-    const likeBtn = $('like-video');
-    const likeIcon = $('like-video-icon');
-    const likeLabel = $('like-video-label');
-    const paintLike = (/** @type {boolean} */ on) => {
-      if (likeIcon) likeIcon.textContent = on ? '\u2665' : '\u2661';
-      if (likeLabel) likeLabel.textContent = on ? 'Liked' : 'Like';
-      if (likeBtn) likeBtn.classList.toggle('is-liked', on);
-    };
+    // Element refs + painter are module-scope; only wiring lives here.
     if (WP.Social && WP.Social.getLikeIds) {
       WP.Social.getLikeIds().then((set) => {
         if (state.video && state.video.id) paintLike(set.has(String(state.video.id)));
@@ -701,6 +694,17 @@
     return parts.filter(Boolean).join(' \u00b7 ');
   }
 
+  // Player LIKE: hoisted so initRoomUI (wiring) and updateVideoUI (enable +
+  // re-hydrate) share one painter instead of two disconnected copies.
+  const likeBtn = $('like-video');
+  const likeIcon = $('like-video-icon');
+  const likeLabel = $('like-video-label');
+  const paintLike = (/** @type {boolean} */ on) => {
+    if (likeIcon) likeIcon.textContent = on ? '\u2665' : '\u2661';
+    if (likeLabel) likeLabel.textContent = on ? 'Liked' : 'Like';
+    if (likeBtn) likeBtn.classList.toggle('is-liked', on);
+  };
+
   function updateVideoUI() {
     const v = state.video;
     const thumb = $('video-thumb');
@@ -710,6 +714,9 @@
     const cv = $('change-video');
     cv.disabled = false;
     cv.querySelector('span').textContent = canControl() ? 'Change video' : 'Request video';
+    // Like must be CLICKABLE whenever a video is loaded - the markup ships it
+    // disabled, so updateVideoUI owns the enable/disable from here on.
+    likeBtn.disabled = !(v && v.id);
     // Like button follows the current video's liked state.
     const Social0 = WP.Social;
     if (Social0 && Social0.getLikeIds && v && v.id) {
