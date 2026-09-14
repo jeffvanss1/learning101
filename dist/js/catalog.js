@@ -286,6 +286,87 @@
   /** Episode-name tooltips cache (showId:season -> Map(ep -> name)). */
   const epNamesCache = new Map();
 
+  // ---- Watched episodes (faded in the episode selectors) ---------------------
+  // WATCHED FADE: episodes already watched render faded + a check; partially
+  // watched ones carry a mini progress bar. Sources: local history (sync
+  // baseline) + the server history (cross-device, cached per show).
+  /** showId -> Promise<Map<ep, {pos, dur, completed}>> (server view). */
+  const watchedServerCache = new Map();
+
+  /**
+   * Episodes of ONE show/season the user already watched.
+   * @param {string|number} showId
+   * @param {number|null} season tv: the season number; anime: null (absolute)
+   * @returns {{ local: Map<number, {pos: number, dur: number, completed: boolean}>, server: Promise<Map<number, any>> | null }}
+   */
+  function watchedEpisodesFor(showId, season) {
+    const wantSeason = season == null ? null : Number(season);
+    const local = new Map();
+    const merge = (m, ep, pos, dur, completed) => {
+      const prev = m.get(ep) || { pos: 0, dur: 0, completed: false };
+      m.set(ep, {
+        pos: Math.max(prev.pos, pos),
+        dur: Math.max(prev.dur, dur),
+        completed: prev.completed || completed,
+      });
+    };
+    try {
+      (global.WP.historyGet() || []).forEach((e) => {
+        if (!e || String(e.id) !== String(showId) || e.episode == null) return;
+        const es = e.season != null && e.season !== '' ? Number(e.season) : null;
+        if (wantSeason === null ? es !== null : es !== wantSeason) return;
+        const pos = Number(e.position) || 0;
+        const dur = Number(e.duration) || 0;
+        merge(local, Number(e.episode), pos, dur, dur > 0 && pos >= dur - 30);
+      });
+    } catch (_) {}
+    let server = watchedServerCache.get(String(showId)) || null;
+    if (!server && global.WP.Social && global.WP.Social.getServerHistory) {
+      server = Promise.resolve(global.WP.Social.getServerHistory())
+        .then((items) => {
+          const m = new Map();
+          (items || []).forEach((h) => {
+            if (!h || String(h.mediaId) !== String(showId) || h.episode == null) return;
+            const hs = h.season != null && h.season !== 0 ? Number(h.season) : null;
+            if (wantSeason === null ? hs !== null : hs !== wantSeason) return;
+            const pos = Number(h.positionSeconds) || 0;
+            const dur = Number(h.durationSeconds) || 0;
+            merge(m, Number(h.episode), pos, dur, !!h.completed || (dur > 0 && pos >= dur - 30));
+          });
+          return m;
+        })
+        .catch(() => null);
+      watchedServerCache.set(String(showId), server);
+    }
+    return { local: local, server: server };
+  }
+
+  /**
+   * Paint watched state onto every .ep-btn under `root` (deep: covers flat
+   * grids AND lazily-built thread rows). Idempotent; the CURRENT episode
+   * keeps its highlight.
+   * @param {HTMLElement} root
+   * @param {Map<number, {pos: number, dur: number, completed: boolean}>} byEp
+   * @param {number} [currentEp]
+   */
+  function paintWatched(root, byEp, currentEp) {
+    if (!root || !byEp || !byEp.size) return;
+    root.querySelectorAll('.ep-btn').forEach((b) => {
+      const n = Number(b.textContent);
+      if (!n || n === currentEp || b.classList.contains('ep-btn--watched') || b.classList.contains('ep-btn--partial')) return;
+      const w = byEp.get(n);
+      if (!w) return;
+      if (w.completed || (w.dur > 0 && w.pos >= w.dur - 30)) {
+        b.classList.add('ep-btn--watched');
+        b.title = (b.title ? b.title + ' \u00b7 ' : '') + 'Watched';
+      } else if (w.pos > 15 && w.dur > 0) {
+        b.classList.add('ep-btn--partial');
+        b.style.setProperty('--wp', Math.min(100, Math.round((w.pos / w.dur) * 100)) + '%');
+        b.title = (b.title ? b.title + ' \u00b7 ' : '') + 'In progress';
+      }
+    });
+  }
+
   /**
    * THE episode grid component - used by EVERY episode surface (detail
    * picker, anime flat picker, room episodes modal) so long seasons thread
@@ -318,8 +399,17 @@
         })
         .catch(() => {});
     };
+    // WATCHED FADE: local history paints immediately; the server view
+    // (cross-device) re-paints when it arrives. Deep on purpose — it also
+    // decorates thread rows built later.
+    const watched = o.showId != null ? watchedEpisodesFor(o.showId, o.season == null ? null : o.season) : null;
+    const paintLocal = () => watched && paintWatched(epGrid, watched.local, o.currentEp || 0);
+    const decorate = (/** @type {HTMLElement} */ root) => {
+      applyNames(root);
+      paintLocal();
+    };
     if (o.count > 50) {
-      buildThreadedEpisodes(epGrid, o.count, o.pick, o.currentEp || 0, applyNames);
+      buildThreadedEpisodes(epGrid, o.count, o.pick, o.currentEp || 0, decorate);
     } else {
       for (let n = 1; n <= o.count; n++) {
         const b = h('button', 'ep-btn' + (n === o.currentEp ? ' ep-btn--current' : ''), String(n));
@@ -327,7 +417,12 @@
         b.addEventListener('click', () => o.pick(n));
         epGrid.appendChild(b);
       }
-      applyNames(epGrid);
+      decorate(epGrid);
+    }
+    if (watched && watched.server) {
+      watched.server.then((byEp) => {
+        if (byEp && byEp.size && epGrid.isConnected) paintWatched(epGrid, byEp, o.currentEp || 0);
+      });
     }
   }
 

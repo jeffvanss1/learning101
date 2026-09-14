@@ -1201,3 +1201,21 @@ the percent bar. catalog css v21.
 
 Tests 172/172 (dead-guard pinned absent + fade pinned). app v43 /
 ui-2026-09-14.72.
+
+## Watched-episode fade in the episode selectors (ui-2026-09-14.73)
+
+USER: "the episode on the details / episode selector [should show] the
+watched episode faded". Every episode grid (detail modal tv seasons,
+anime absolute grid, and the room episodes modal — flat AND threaded
+>50 rows) now marks:
+
+- WATCHED (completed, or >= duration-30s): faded (opacity .45) + a
+  red check badge (ink var(--on-accent), color-audit clean) + tooltip.
+- IN PROGRESS (>15s): a mini red progress bar sized --wp inside the
+  tile + "In progress" tooltip.
+- The CURRENT episode keeps its highlight (never faded).
+
+Sources: local history paints instantly; the server history (cached
+per show, one fetch) re-paints cross-device when it arrives. Painter is
+deep + idempotent so lazily-materialized thread rows decorate too.
+catalog v27 / catalog css v22 / ui-2026-09-14.73. Tests 173/173.
