@@ -677,9 +677,9 @@ test('mini-map: full timeline, EVERY caption visible as a bar sized to its durat
   assert.equal(ticksWrap.children.length, 2, 'both captions drawn');
   const pps = 600 / 2401;
   assert.ok(Math.abs(parseFloat(ticksWrap.children[0].style.left) - 10 * pps) < 0.5, 'caption 1 bar at 10s');
-  assert.ok(Math.abs(parseFloat(ticksWrap.children[0].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[0].style.width) === 2, 'caption 1 bar length = its 1s duration');
+  assert.ok(Math.abs(parseFloat(ticksWrap.children[0].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[0].style.width) === 1, 'caption 1 bar length = its 1s duration (min 1px density clamp)');
   assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.left) - 2400 * pps) < 0.5, 'caption 2 bar at 40:00');
-  assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[1].style.width) === 2, 'caption 2 bar length = its 1s duration');
+  assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[1].style.width) === 1, 'caption 2 bar length = its 1s duration (min 1px clamp)');
 
   // Head travels: hidden before any clock, then proportional to the span.
   assert.equal(play.style.display, 'none', 'no clock yet -> head hidden');
