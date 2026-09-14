@@ -125,7 +125,7 @@ test('security headers: every page and API response is hardened', async () => {
   assert.match(w, /frame-ancestors 'self'/, 'no third-party framing');
   assert.match(w, /\.\.\.securityHeaders\(\),/, 'json() inherits them');
   assert.match(w, /for \(const \[k, v\] of Object\.entries\(securityHeaders\(\)\)\) res\.headers\.set\(k, v\);/, 'static assets are wrapped');
-  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.67';/, 'api stamp bumped');
+  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.68';/, 'api stamp bumped');
 });
 
 
@@ -202,4 +202,25 @@ test('seek-war guards: convergence self-suppression + DO log dedupe window', () 
   assert.match(p, /if \(this\.isController\) \{\s*\/\/ WAR GUARD:[^]*?if \(Date\.now\(\) - this\._suppressed < 1500\) return;/, 'controller skips corrections within 1.5s of its own command');
   const wr = readFileSync(join(ROOT, 'src/WatchRoom.js'), 'utf8');
   assert.match(wr, /now\(\) - lastSeek\.at > 4000/, 'seek-log dedupe window 4s (the 1.5s window let wars flood the chat)');
+});
+
+test('phantom-pause kill chain: start latch + 2-observation pause mirror + buffering quiet', () => {
+  const p = readFileSync(join(ROOT, 'dist/js/player.js'), 'utf8');
+  assert.match(p, /MIRROR_PAUSE_CONFIRMATIONS = 2/, 'a pause needs 2 independent observations');
+  assert.match(p, /MIRROR_PAUSE_MIN_AGE_MS = 500/, 'and must persist past the min age');
+  assert.match(p, /START_LATCH_MS = 8000/, 'start latch is bounded');
+  assert.match(p, /MIRROR_BUFFERING_QUIET_MS = 1500/, 'pause mirror needs a buffering-free runway');
+  assert.match(p, /!playing && this\._awaitingStart && now - this\._playCmdAt < START_LATCH_MS/, 'boot lag never mirrors a pause');
+  assert.match(p, /this\._awaitingStart = true; \/\/ until the embed confirms playing/, 'latch armed on our play command');
+  assert.match(p, /this\._awaitingStart = false; \/\/ the embed confirmed play/, 'latch cleared on the first playing confirmation');
+  assert.match(p, /if \(!playing\) this\._requestStatus\(\);/, 'pause candidate fetches fresh evidence immediately');
+  assert.match(p, /if \(newEvidence\) this\._mirrorCandidate\.confirmations\+\+/, 'only real status arrivals accumulate evidence');
+  assert.match(p, /this\._lastBufferingAt = Date\.now\(\);/, 'buffering recency recorded');
+  assert.match(p, /this\._lastStatus = \{ time: -1, at: 0 \}; \/\/ stale baseline = bogus native-seek/, 'loadVideo resets the native-seek baseline');
+  assert.match(p, /this\._syncToTarget\(\); \/\/ discrete events bypassed convergence entirely/, 'discrete play events converge');
+});
+
+test('DO hardening: play/pause/seek without a usable time keep the current position (never snap to 0)', () => {
+  const wr = readFileSync(join(ROOT, 'src/WatchRoom.js'), 'utf8');
+  assert.equal(wr.match(/Number\.isFinite\(rawT\) \? this\.clampTime\(rawT\) : this\.playback\.time/g)?.length, 3, 'guard on all three: PLAY, PAUSE, SEEK');
 });

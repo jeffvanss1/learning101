@@ -474,7 +474,10 @@ export class WatchRoom {
 
       case MSG.PLAY: {
         if (!this.canControl(peer)) break;
-        const t = this.clampTime(msg.time);
+        const rawT = Number(msg.time);
+        // A message without a usable time keeps the CURRENT position —
+        // a raw clampTime(undefined) snapped the room back to 0.
+        const t = Number.isFinite(rawT) ? this.clampTime(rawT) : this.playback.time;
         this.playback.isPlaying = true;
         this.playback.time = t;
         this.playback.timestamp = now();
@@ -494,7 +497,10 @@ export class WatchRoom {
 
       case MSG.PAUSE: {
         if (!this.canControl(peer)) break;
-        const t = this.clampTime(msg.time);
+        const rawT = Number(msg.time);
+        // A message without a usable time keeps the CURRENT position —
+        // a raw clampTime(undefined) snapped the room back to 0.
+        const t = Number.isFinite(rawT) ? this.clampTime(rawT) : this.playback.time;
         this.playback.isPlaying = false;
         this.playback.time = t;
         this.playback.timestamp = now();
@@ -550,7 +556,10 @@ export class WatchRoom {
 
       case MSG.SEEK: {
         if (!this.canControl(peer)) break;
-        const t = this.clampTime(msg.time);
+        const rawT = Number(msg.time);
+        // A message without a usable time keeps the CURRENT position —
+        // a raw clampTime(undefined) snapped the room back to 0.
+        const t = Number.isFinite(rawT) ? this.clampTime(rawT) : this.playback.time;
         this.playback.time = t;
         this.playback.timestamp = now();
         // Seek log lands in the PERSISTED chat (late joiners see it too).

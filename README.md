@@ -1099,3 +1099,27 @@ only when sync + video + canControl() are all true (re-armed by the late
 host ack too); the controller skips position corrections within 1.5s of
 its own command (WAR GUARD); the DO dedupe window is 4s. Pins for all
 three. Tests 160/160, check clean. player v13 / app v41 / ui+api .67.
+
+## Phantom-pause audit: root cause + 10-defect kill chain (ui/api-2026-09-14.68)
+
+USER REPORT: "resume -> it auto-pauses; the pause banner comes after the
+video plays but the player still runs (sound on)". Full audit of the sync
+manager found the chain and killed it:
+
+| # | Defect | Fix |
+|---|--------|-----|
+| 1 | Mirror broadcast a PAUSE off ONE stale status (400ms debounce re-read the same observation — no new evidence) | A pause now needs 2 independent status observations + 500ms persistence |
+| 2 | No startup grace: after OUR play command, boot/seek lag reports "paused" -> instant phantom pause + banner while the embed then plays (split-brain: banner says paused, sound continues) | START LATCH: no pause mirror until the embed confirms playing (bounded 8s) |
+| 3 | Buffering stall treated as a user pause | Pause mirror needs 1.5s buffering-free runway (_lastBufferingAt) |
+| 4 | Pause candidate waited for the next 3s poll to confirm | New pause candidate requests fresh status IMMEDIATELY; fast recheck when the age gate opens |
+| 5 | loadVideo kept the PREVIOUS title's native-seek baseline -> bogus seek mirror on a new load | _lastStatus (+_freshUntil/_remoteAppliedAt/_lastPauseAssert/latch) reset per load |
+| 6 | Discrete play/pause embed events bypassed convergence entirely | _syncToTarget() on play/playing/pause/paused events |
+| 7 | DO PLAY/PAUSE/SEEK with a non-finite time snapped the room to 0 | keep the CURRENT position instead (all three handlers) |
+| 8 | Echo-guard reset dropped the confirmations counter (pause confirmation could never recover) | shape kept consistent |
+| 9 | Duplicate _endedFired declaration (.66 sloppiness) | removed |
+| 10 | localPause(localTime) passed a pointless arg | cosmetic |
+
+Behavior-tested against the real manager: boot-lag resume never pauses
+(#1/#2), a single stalled status cannot pause (#3/#4), buffering blocks
+the mirror, a REAL persistent pause still lands (exactly once), new-load
+hygiene. Tests 166/166, check clean. player v14 / ui+api-2026-09-14.68.

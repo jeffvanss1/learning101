@@ -52,6 +52,10 @@
   const PAUSE_ASSERT_MS = 2500; // min gap between pause re-asserts (anti-loop)
   const NATIVE_SEEK_THRESHOLD = 1.2; // seconds of unexplained time jump = user dragged the native bar
   const CONTROL_DEBOUNCE_MS = 400; // in-player state must persist this long to mirror
+  const MIRROR_PAUSE_CONFIRMATIONS = 2; // a PAUSE needs 2 independent observations to mirror
+  const MIRROR_PAUSE_MIN_AGE_MS = 500; // ... and must stay changed at least this long
+  const START_LATCH_MS = 8000; // after OUR play command, a pause is boot-lag for this long
+  const MIRROR_BUFFERING_QUIET_MS = 1500; // pause mirror needs this much buffering-free runway
   const CONTROL_SUPPRESS_MS = 1200; // ignore mirror right after our own command
   const REMOTE_ECHO_GUARD_MS = 1500; // the player's DELAYED status echo must never be mirrored
   const FRESH_ASSERT_MS = 1800; // window in which a fresh remote state may re-assert (dropped commands)
@@ -67,10 +71,12 @@
       this.localUpdatedAt = 0;
       this.duration = null;
       this.isBuffering = false;
+      this._lastBufferingAt = 0; // last buffering/waiting/stalled event (stalls are not user pauses)
       this.ready = false;
       this.isController = false; // set by app.js when this client can drive playback
       this._lastMsg = null; // latest authoritative playback tuple (with timestamp)
-      this._endedFired = false; // 'ended' emitted for the current load (derived or explicit)
+      this._awaitingStart = false; // we commanded play; the embed has not confirmed playing yet
+      this._playCmdAt = 0; // when we commanded play (bounds the start latch)
       this._lastAppliedTs = 0; // staleness guard: ignore older server snapshots
       this._iframeLoaded = false;
       this._lastPauseAssert = 0;
@@ -80,7 +86,7 @@
       this._remoteAppliedAt = 0; // last time we applied a REMOTE authoritative state
       this._freshUntil = 0; // while set, remote states may re-assert past the throttle
       this._mirroredPlaying = null; // play/pause state the room already knows
-      this._mirrorCandidate = { playing: null, since: 0 };
+      this._mirrorCandidate = { playing: null, since: 0, confirmations: 0 };
       this._lastStatus = { time: -1, at: 0 }; // native-seek detection baseline
       this._mirrorTimer = null;
       this._statusTimer = null;
@@ -131,7 +137,14 @@
       this._suppressed = 0;
       this._doNotForceUntil = 0;
       this._mirroredPlaying = null;
-      this._mirrorCandidate = { playing: null, since: 0 };
+      this._awaitingStart = false;
+      this._playCmdAt = 0;
+      this._freshUntil = 0;
+      this._remoteAppliedAt = 0;
+      this._lastPauseAssert = 0;
+      this._lastStatus = { time: -1, at: 0 }; // stale baseline = bogus native-seek on the new title
+      this._lastBufferingAt = 0;
+      this._mirrorCandidate = { playing: null, since: 0, confirmations: 0 };
       if (this._mirrorTimer) {
         clearTimeout(this._mirrorTimer);
         this._mirrorTimer = null;
@@ -177,6 +190,8 @@
       this.localPlaying = true;
       this.localUpdatedAt = Date.now();
       this._suppressed = Date.now(); // our own command — don't mirror it back
+      this._awaitingStart = true; // until the embed confirms playing, a pause is boot lag
+      this._playCmdAt = Date.now();
     }
 
     pause() {
@@ -389,7 +404,7 @@
     // For the controller only: detect a genuine in-player play/pause (not a
     // buffering flicker, not the echo of our own command) and broadcast it so
     // the whole room follows the controller's player.
-    _maybeMirrorControl() {
+    _maybeMirrorControl(/** @type {boolean} */ newEvidence) {
       if (!this.isController) return;
       const now = Date.now();
       const playing = this.localPlaying;
@@ -403,7 +418,17 @@
       // adopted-echo is what made the room play/pause loop.
       if (now - this._suppressed < CONTROL_SUPPRESS_MS) {
         this._mirroredPlaying = this._lastMsg ? !!this._lastMsg.isPlaying : playing;
-        this._mirrorCandidate = { playing: this._mirroredPlaying, since: now };
+        this._mirrorCandidate = { playing: this._mirroredPlaying, since: now, confirmations: 0 };
+        return;
+      }
+
+      // START LATCH: right after OUR play command the embed reports
+      // "paused" while it buffers/seek — mirroring that paused the room
+      // while the host's player kept playing (sound on, banner up). Before
+      // the embed's FIRST playing confirmation, a pause is boot lag, never
+      // a user action (bounded by START_LATCH_MS so a genuine pre-start
+      // pause still lands eventually).
+      if (!playing && this._awaitingStart && now - this._playCmdAt < START_LATCH_MS) {
         return;
       }
 
@@ -411,7 +436,7 @@
       // blocked) — never treat that as a user pause for the room.
       if (!playing && time < 0.5) {
         this._mirroredPlaying = playing;
-        this._mirrorCandidate = { playing, since: now };
+        this._mirrorCandidate = { playing, since: now, confirmations: 1 };
         return;
       }
 
@@ -420,27 +445,58 @@
       // before the check, so it never broadcasts. While undecided, hold off
       // forcing convergence so we don't fight the user's action.
       if (this._mirrorCandidate.playing !== playing) {
-        this._mirrorCandidate = { playing, since: now };
+        // A new PAUSE candidate gets fresh evidence immediately: ask the
+        // embed for a status NOW instead of waiting for the next 3s poll.
+        if (!playing) this._requestStatus();
         // ECHO GUARD: right after a REMOTE apply, the player's delayed status
         // still shows the OLD state. Mirroring it broadcast a stale PLAY/PAUSE
         // and the whole room looped. Inside the guard window, a differing
         // status is treated as echo: adopt quietly, never broadcast.
         if (now - this._remoteAppliedAt < REMOTE_ECHO_GUARD_MS) {
+          this._mirrorCandidate = { playing, since: now, confirmations: 0 };
           return;
         }
+        this._mirrorCandidate = { playing, since: now, confirmations: newEvidence ? 1 : this._mirrorCandidate.confirmations };
         this._doNotForceUntil = now + CONTROL_SUPPRESS_MS;
         this._scheduleMirrorCheck(CONTROL_DEBOUNCE_MS);
         return;
       }
+      // Same state as before: accumulate evidence (only real status arrivals
+      // count — a timer re-check re-reads the same observation).
+      if (newEvidence) this._mirrorCandidate.confirmations++;
+      // A pause with enough confirmations but inside the min-age window:
+      // re-check right when the window opens instead of waiting for the
+      // next 3s poll (guests feel the difference).
+      if (
+        !playing &&
+        playing !== this._mirroredPlaying &&
+        this._mirrorCandidate.confirmations >= MIRROR_PAUSE_CONFIRMATIONS &&
+        now - this._mirrorCandidate.since < MIRROR_PAUSE_MIN_AGE_MS
+      ) {
+        this._scheduleMirrorCheck(MIRROR_PAUSE_MIN_AGE_MS + 30);
+      }
 
       // State has been stable long enough and differs from what the room knows.
-      if (playing !== this._mirroredPlaying && now - this._mirrorCandidate.since >= CONTROL_DEBOUNCE_MS) {
+      // A PAUSE additionally needs TWO independent observations: the old
+      // single-status debounce broadcast a pause off ONE lagged/stalled
+      // status — the room banner said paused while the embed played on.
+      const pauseConfirmed =
+        !playing &&
+        this._mirrorCandidate.confirmations >= MIRROR_PAUSE_CONFIRMATIONS &&
+        now - this._mirrorCandidate.since >= MIRROR_PAUSE_MIN_AGE_MS &&
+        !this.isBuffering && // a stall is not a user action
+        now - this._lastBufferingAt > MIRROR_BUFFERING_QUIET_MS;
+      if (
+        playing !== this._mirroredPlaying &&
+        (playing || pauseConfirmed) &&
+        now - this._mirrorCandidate.since >= CONTROL_DEBOUNCE_MS
+      ) {
         // THE loop path: right after a remote apply the candidate still holds
         // the OLD state, and the player's delayed echo is "stable" — without
         // this guard it broadcast the stale state and the room play/pause
         // looped. Inside the guard window: adopt quietly, never broadcast.
         if (now - this._remoteAppliedAt < REMOTE_ECHO_GUARD_MS) {
-          this._mirrorCandidate = { playing, since: now };
+          this._mirrorCandidate = { playing, since: now, confirmations: 1 };
           return;
         }
         this._mirroredPlaying = playing;
@@ -474,7 +530,7 @@
       if (this._mirrorTimer) clearTimeout(this._mirrorTimer);
       this._mirrorTimer = setTimeout(() => {
         this._mirrorTimer = null;
-        this._maybeMirrorControl();
+        this._maybeMirrorControl(false); // re-reads the same observation: not new evidence
       }, delay);
     }
 
@@ -509,7 +565,10 @@
           if (typeof d.duration === 'number') this.duration = d.duration;
           if (typeof d.playing === 'boolean') {
             this.localPlaying = d.playing;
-            if (d.playing) this._hasPlayed = true;
+            if (d.playing) {
+              this._hasPlayed = true;
+              this._awaitingStart = false; // the embed confirmed play — pauses are real again
+            }
           }
           this.isBuffering = false;
           // DERIVED END: some embeds never post an 'ended' event - a status
@@ -534,7 +593,7 @@
           }
           // Controller: mirror a genuine in-player play/pause to the room
           // BEFORE converging, so convergence never fights the user's action.
-          this._maybeMirrorControl();
+          this._maybeMirrorControl(true); // a fresh status = fresh evidence
           // Controller: mirror a genuine drag on the player's OWN seek bar
           // (otherwise convergence reads it as drift and snaps it back).
           this._detectNativeSeek();
@@ -562,11 +621,13 @@
           this.localPlaying = true;
           this._hasPlayed = true;
           this.isBuffering = false;
+          this._awaitingStart = false;
           this.emit('progress', {
             time: this.localTime,
             playing: true,
             duration: this.duration,
           });
+          this._syncToTarget(); // discrete events bypassed convergence entirely
           break;
 
         case 'pause':
@@ -577,6 +638,7 @@
             playing: false,
             duration: this.duration,
           });
+          this._syncToTarget();
           break;
 
         case 'ended':
@@ -599,6 +661,7 @@
         case 'waiting':
         case 'stalled':
           this.isBuffering = true;
+          this._lastBufferingAt = Date.now();
           this.emit('buffering', {});
           break;
 

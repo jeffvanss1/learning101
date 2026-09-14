@@ -38,6 +38,7 @@ async function freshPlayer() {
     contentWindow,
     addEventListener() {},
     removeEventListener() {},
+    getAttribute: () => null,
   };
   const sync = new Manager(/** @type {any} */ (iframe));
 
@@ -49,7 +50,15 @@ async function freshPlayer() {
       })
     );
 
-  return { sync, fire };
+  const fireEvent = (event, extra = {}) =>
+    (listeners.message || []).forEach((fn) =>
+      fn({
+        source: contentWindow,
+        data: { type: 'PLAYER_EVENT', data: { event, ...extra } },
+      })
+    );
+
+  return { sync, fire, fireEvent };
 }
 
 test('a native seek-bar drag is mirrored to the room as control/seek', async () => {
@@ -294,4 +303,103 @@ test('derived end: paused-at-end after playing fires ended ONCE (no explicit eve
   assert.equal(ended2.length, 0, 'mid-video pause is not an end');
   sync.destroy();
   sync2.sync.destroy();
+});
+
+// ---------------------------------------------------------------------------
+// Phantom-pause regression (user report: resume -> "paused" banner while the
+// player kept playing; room flapped pause/play on buffering blips).
+// ---------------------------------------------------------------------------
+
+/** Boot a controller whose room state says PAUSED at 0 (joined a fresh room). */
+async function freshController() {
+  const { sync, fire, fireEvent } = await freshPlayer();
+  sync.isController = true;
+  sync._iframeLoaded = true;
+  sync.applyRemote({ isPlaying: false, time: 0, timestamp: Date.now() - 60000 });
+  await tick(10);
+  return { sync, fire, fireEvent };
+}
+
+test('phantom pause #1: boot lag after resume NEVER broadcasts a pause', async () => {
+  const { sync, fire } = await freshController();
+  const events = [];
+  sync.on('control', (e) => events.push(e));
+  sync.localPlay(1200); // resume command (seek+play+adopt+broadcast)
+  await tick(1300); // command-suppression window expires
+  // The embed is still buffering the seek: statuses report PAUSED at the
+  // resume position. The old mirror turned ONE such status into a pause
+  // broadcast ("paused" banner) while the player then started (sound on).
+  fire(1200, false);
+  await tick(500);
+  fire(1200, false);
+  await tick(500);
+  fire(1200, false);
+  await tick(500);
+  assert.equal(events.filter((e) => e.action === 'pause').length, 0, 'boot lag must not pause the room');
+  // The embed finally starts: the latch clears; the room already knows
+  // playing (our own resume broadcast) — no flap either way.
+  fire(1210, true);
+  await tick(500);
+  assert.equal(events.filter((e) => e.action === 'pause').length, 0, 'still no pause after start');
+  sync.destroy();
+});
+
+test('phantom pause #2: a single stalled status cannot pause the room (needs 2 observations)', async () => {
+  const { sync, fire } = await freshController();
+  const events = [];
+  sync.on('control', (e) => events.push(e));
+  sync.localPlay(300);
+  fire(300, true); // start confirmed -> latch off
+  await tick(1200);
+  fire(305, true); // playing baseline (mirror baseline = playing)
+  await tick(1200);
+  assert.equal(events.filter((e) => e.action === 'pause').length, 0, 'quiet playback (the resume play broadcast is expected)');
+  fire(305, false); // ONE stalled/lagged status — must stay silent
+  await tick(600);
+  assert.equal(events.filter((e) => e.action === 'pause').length, 0, 'one observation is not a pause');
+  fire(305, false); // second observation + age: a REAL user pause lands
+  await tick(700);
+  const pauses = events.filter((e) => e.action === 'pause');
+  assert.equal(pauses.length, 1, 'a persistent pause is mirrored exactly once');
+  sync.destroy();
+});
+
+test('phantom pause #3: buffering events block the pause mirror', async () => {
+  const { sync, fire, fireEvent } = await freshController();
+  const events = [];
+  sync.on('control', (e) => events.push(e));
+  sync.localPlay(300);
+  fire(300, true);
+  await tick(1200);
+  fireEvent('buffering');
+  fire(300, false); // stall reads as paused
+  fireEvent('waiting'); // real players re-emit stall events while stuck
+  fire(300, false);
+  await tick(800);
+  fireEvent('stalled');
+  fire(300, false);
+  await tick(800);
+  assert.equal(events.filter((e) => e.action === 'pause').length, 0, 'a stall is not a user pause');
+  fire(310, true); // recovered
+  await tick(500);
+  assert.equal(events.filter((e) => e.action === 'pause').length, 0);
+  sync.destroy();
+});
+
+test('new-load hygiene: stale baseline reset - a new title never mirrors a bogus seek', async () => {
+  const { sync, fire } = await freshPlayer();
+  sync.isController = true;
+  sync._iframeLoaded = true;
+  sync._mirroredPlaying = true;
+  sync._lastStatus = { time: 5000, at: Date.now() - 3000 }; // stale from the PREVIOUS title
+  sync.loadVideo({ src: 'https://bingr.one/watch/movie/99', id: 'm99', type: 'movie', title: 'x' });
+  assert.equal(sync._lastStatus.time, -1, 'native-seek baseline reset on load');
+  assert.equal(sync._awaitingStart, false, 'latch reset on load');
+  const events = [];
+  sync.on('control', (e) => events.push(e));
+  sync._iframeLoaded = true; // pretend the new document finished loading
+  fire(0, false); // first status of the new title
+  await tick(100);
+  assert.equal(events.length, 0, 'stale state must not emit bogus controls');
+  sync.destroy();
 });
