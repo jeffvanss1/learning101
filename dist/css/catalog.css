@@ -2199,3 +2199,51 @@ body.sidenav-collapsed .sidenav__search {
   color: #fff;
   border-color: var(--red);
 }
+
+/* ---- Threaded episode rows (long seasons: every episode, chunked) ----------------- */
+.detail__ep-row {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-soft);
+}
+.detail__ep-row-head {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: none;
+  cursor: pointer;
+}
+.detail__ep-row-head:hover {
+  color: var(--text);
+}
+.detail__ep-row.is-open .detail__ep-row-head {
+  color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+}
+.detail__ep-row-body {
+  display: none;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 6px;
+  padding: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.detail__ep-row.is-open .detail__ep-row-body {
+  display: grid;
+}
+
+/* ---- Player Like button (liked = red fill) ---------------------------------------- */
+#like-video.is-liked {
+  color: var(--red);
+  border-color: rgba(255, 0, 51, 0.45);
+}
+#like-video.is-liked #like-video-icon {
+  color: var(--red);
+}

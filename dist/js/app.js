@@ -455,6 +455,42 @@
     $('leave-room').onclick = onLeaveRoom;
     $('toggle-play').onclick = onTogglePlay;
     $('change-video').onclick = onOpenBrowse;
+    // Player LIKE: same taste signal as the catalog hearts, one tap away.
+    const likeBtn = $('like-video');
+    const likeIcon = $('like-video-icon');
+    const likeLabel = $('like-video-label');
+    const paintLike = (/** @type {boolean} */ on) => {
+      if (likeIcon) likeIcon.textContent = on ? '\u2665' : '\u2661';
+      if (likeLabel) likeLabel.textContent = on ? 'Liked' : 'Like';
+      if (likeBtn) likeBtn.classList.toggle('is-liked', on);
+    };
+    if (WP.Social && WP.Social.getLikeIds) {
+      WP.Social.getLikeIds().then((set) => {
+        if (state.video && state.video.id) paintLike(set.has(String(state.video.id)));
+      });
+    }
+    likeBtn.onclick = () => {
+      const v = state.video;
+      const Social = WP.Social;
+      if (!v || !v.id || !Social || !Social.toggleLike) return;
+      if (!Social.getSession || !Social.getSession()) {
+        Social.toast('Sign in to like titles.', true);
+        return;
+      }
+      const was = likeBtn.classList.contains('is-liked');
+      paintLike(!was); // optimistic
+      Social.toggleLike({
+        mediaId: String(v.id),
+        mediaType: v.type === 'tv' ? 'tv' : 'movie',
+        mediaTitle: v.title || '',
+        posterUrl: v.poster || '',
+      })
+        .then((on) => paintLike(on))
+        .catch(() => {
+          paintLike(was);
+          toast('Could not save that like \u2014 try again.', true);
+        });
+    };
     $('episode-switch').onclick = () => {
       const v = state.video;
       if (!v || v.type === 'movie' || !WP.Catalog.openEpisodes) return;
@@ -674,6 +710,11 @@
     const cv = $('change-video');
     cv.disabled = false;
     cv.querySelector('span').textContent = canControl() ? 'Change video' : 'Request video';
+    // Like button follows the current video's liked state.
+    const Social0 = WP.Social;
+    if (Social0 && Social0.getLikeIds && v && v.id) {
+      Social0.getLikeIds().then((set) => paintLike(set.has(String(v.id))));
+    }
     // Episodes switcher: only for series/anime, and only once we have a video.
     const epBtn = $('episode-switch');
     if (epBtn) {

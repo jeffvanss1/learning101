@@ -773,3 +773,15 @@ after a successful parse; any failure falls back to the local auto-load
 (force). A new video resets the priority and the DO now CLEARS this.subs
 on videoChange (a new title/episode must never inherit the previous
 file - fresh joiners auto-load fresh subs).
+
+## Player like button + threaded episode rows (ui-2026-09-13.46)
+
+- **Like button in the player controls**: same like system as the card
+  hearts (optimistic toggle, sign-in gated, follows the current video's
+  state). Liked = red ♥.
+- **Threaded episodes for long seasons**: the >120-episode numeric-input
+  shortcut is GONE. Seasons over 50 episodes render EVERY episode in
+  collapsible thread rows of ~50 ("E1-50", "E51-100", ...) with lazy
+  button materialization; the current episode's row auto-opens and
+  scrolls into view. Applies to the detail picker, the anime flat picker
+  and the room episode-switcher modal.

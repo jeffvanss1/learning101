@@ -435,3 +435,20 @@ test('VIDEO_CHANGE clears the room subs (new video = no stale inherited file)', 
   const snap = room.snapshot ? room.snapshot() : null;
   if (snap) assert.equal(snap.subs, null, 'snapshot exposes cleared subs');
 });
+
+test('player like button + threaded episode rows (long seasons)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /id="like-video"/, 'player Like button exists');
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(app, /Social\.toggleLike\(\{[\s\S]{0,120}mediaId: String\(v\.id\)/, 'player like wired to the current video');
+  assert.match(app, /paintLike\(set\.has\(String\(v\.id\)\)\)/, 'like state follows video changes');
+  const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  assert.match(cat, /function buildThreadedEpisodes\(/, 'threaded builder exists');
+  assert.equal((cat.match(/count > 120/g) || []).length, 0, 'numeric-input branches GONE');
+  assert.equal((cat.match(/count > 50/g) || []).length, 3, 'all three episode surfaces thread at >50');
+  assert.match(cat, /ep-btn--current/, 'current episode still highlighted');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.match(css, /\.detail__ep-row/, 'thread row styles present');
+});

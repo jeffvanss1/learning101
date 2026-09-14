@@ -265,6 +265,56 @@
     };
   }
 
+  /**
+   * Threaded episode grid for LONG seasons (> THREAD_ROW_MAX episodes):
+   * every episode is available, chunked into collapsible rows of ~50 with
+   * labeled headers (E1-50, E51-100, ...) - rows materialize their buttons
+   * lazily on first open (1000+ episodes must not create 1000 nodes).
+   * @param {HTMLElement} epGrid
+   * @param {number} count
+   * @param {(n: number) => void} pick
+   * @param {number} [currentEp] highlight + auto-open its thread row
+   */
+  function buildThreadedEpisodes(epGrid, count, pick, currentEp) {
+    const THREAD_ROW_MAX = 50;
+    const rows = Math.ceil(count / THREAD_ROW_MAX);
+    /** @type {HTMLElement[]} */ const rowEls = [];
+    for (let r = 0; r < rows; r++) {
+      const from = r * THREAD_ROW_MAX + 1;
+      const to = Math.min(count, from + THREAD_ROW_MAX - 1);
+      const rowEl = h('div', 'detail__ep-row');
+      const head = h('button', 'detail__ep-row-head', 'E' + from + '\u2013' + to);
+      head.type = 'button';
+      const body = h('div', 'detail__ep-row-body');
+      rowEl.appendChild(head);
+      rowEl.appendChild(body);
+      let built = false;
+      head.addEventListener('click', () => {
+        if (!built) {
+          built = true;
+          for (let n = from; n <= to; n++) {
+            const b = h('button', 'ep-btn' + (n === currentEp ? ' ep-btn--current' : ''), String(n));
+            b.type = 'button';
+            b.addEventListener('click', () => pick(n));
+            body.appendChild(b);
+          }
+        }
+        rowEl.classList.toggle('is-open');
+      });
+      epGrid.appendChild(rowEl);
+      rowEls.push(rowEl);
+    }
+    // Auto-open the row holding the current episode (or the first row).
+    const idx = currentEp ? Math.min(rows - 1, Math.floor((currentEp - 1) / THREAD_ROW_MAX)) : 0;
+    const head = rowEls[idx] && /** @type {HTMLButtonElement} */ (rowEls[idx].querySelector('.detail__ep-row-head'));
+    if (head) {
+      head.click();
+      const body = rowEls[idx].querySelector('.detail__ep-row-body');
+      const cur = body && body.querySelector('.ep-btn--current');
+      if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'center' });
+    }
+  }
+
   function typeLabel(item) {
     if (item.type === 'anime' || item.isAnime) return 'Anime';
     return item.type === 'movie' ? 'Movie' : 'Series';
@@ -693,24 +743,13 @@
       epGrid.innerHTML = '';
       const count = s.episodes || 0;
 
-      if (count > 120) {
-        // Very long shows: use a numeric input instead of 100+ buttons.
-        const wrap = h('div', 'detail__actions');
-        const num = h('input', 'field__input');
-        num.type = 'number';
-        num.min = '1';
-        num.max = String(count);
-        num.value = '1';
-        num.style.width = '120px';
-        const go = h('button', 'btn btn--primary', 'Play episode');
-        go.addEventListener('click', () => {
-          let n = Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1)));
+      if (count > 50) {
+        // Long season: EVERY episode available, threaded into collapsible
+        // rows (the old numeric input hid the catalog entirely).
+        buildThreadedEpisodes(epGrid, count, (n) => {
           onPick(buildVideo(item, { season: s.season, episode: n }));
           close();
         });
-        wrap.appendChild(num);
-        wrap.appendChild(go);
-        epGrid.appendChild(wrap);
         return;
       }
 
@@ -800,22 +839,8 @@
       close();
     };
 
-    if (count > 120) {
-      const wrap = h('div', 'detail__actions');
-      const num = h('input', 'field__input');
-      num.type = 'number';
-      num.min = '1';
-      num.max = String(count);
-      num.value = '1';
-      num.style.width = '120px';
-      const go = h('button', 'btn btn--primary', 'Play episode');
-      go.type = 'button';
-      go.addEventListener('click', () => {
-        pick(Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1))));
-      });
-      wrap.appendChild(num);
-      wrap.appendChild(go);
-      epGrid.appendChild(wrap);
+    if (count > 50) {
+      buildThreadedEpisodes(epGrid, count, pick);
     } else {
       for (let n = 1; n <= count; n++) {
         const b = h('button', 'ep-btn', String(n));
@@ -1484,22 +1509,13 @@
         function renderEpisodes(s) {
           epGrid.innerHTML = '';
           const count = s.episodes || 0;
-          if (count > 120) {
-            const wrap = h('div', 'detail__actions');
-            const num = h('input', 'field__input');
-            num.type = 'number';
-            num.min = '1';
-            num.max = String(count);
-            num.value = String(s.season === curSeason ? curEp || 1 : 1);
-            const go = h('button', 'btn btn--primary', 'Play episode');
-            go.addEventListener('click', () => {
-              const n = Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1)));
-              onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
-              close();
-            });
-            wrap.appendChild(num);
-            wrap.appendChild(go);
-            epGrid.appendChild(wrap);
+          const modalPick = (/** @type {number} */ n) => {
+            onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
+            close();
+          };
+          if (count > 50) {
+            // Threaded rows; the current episode's row auto-opens + scrolls.
+            buildThreadedEpisodes(epGrid, count, modalPick, s.season === curSeason ? curEp : 0);
             return;
           }
           for (let n = 1; n <= count; n++) {
