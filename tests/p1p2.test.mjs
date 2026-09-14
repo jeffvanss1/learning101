@@ -171,3 +171,26 @@ test('anilist burst control: feed classification is bounded (no mass rate-limit)
   assert.match(block[0], /Promise\.all\(\[run\(\), run\(\), run\(\)\]\)/, 'exactly 3 concurrent resolvers');
   assert.match(block[0], /await sleep\(150\)/, 'staggered requests');
 });
+
+test('auto next: toggle in the player bar (device pref), honored as the FIRST gate', () => {
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  const style = readFileSync(join(ROOT, 'dist/css/style.css'), 'utf8');
+  assert.match(html, /id="auto-next"/, 'toggle exists in video-actions');
+  assert.match(html, /id="auto-next-label"/, 'stateful label');
+  assert.match(a, /const AUTO_NEXT_KEY = 'wp:autonext';/, 'device-persisted pref');
+  assert.match(a, /function autoNextOn\(\)/, 'reader (default ON)');
+  assert.match(a, /function setAutoNext\(on\)/, 'writer');
+  assert.match(a, /autoBtn\.onclick = \(\) => setAutoNext\(!autoNextOn\(\)\);/, 'wired in initRoomUI');
+  assert.match(a, /if \(!autoNextOn\(\)\) \{\s*clearUpNext\(\);\s*return;/, 'OFF = the ended episode just stops (first gate)');
+  assert.match(a, /function paintAutoNext\(\)/, 'label/paint kept in sync');
+  assert.match(style, /#auto-next\.is-on \{/, 'visual on-state');
+});
+
+test('derived end: poll-based detection with once-per-load dedupe', () => {
+  const p = readFileSync(join(ROOT, 'dist/js/player.js'), 'utf8');
+  assert.match(p, /_endedFired = false; \/\/ fresh video: end detection re-arms/, 're-armed on load');
+  assert.match(p, /DERIVED END: some embeds never post an 'ended' event/, 'derived detector present');
+  assert.match(p, /this\.duration - d\.currentTime <= 2\.5/, 'within 2.5s of the end');
+  assert.match(p, /if \(!this\._endedFired\) \{\s*this\._endedFired = true;\s*this\.emit\('ended'/, 'explicit event deduped against the derived one');
+});

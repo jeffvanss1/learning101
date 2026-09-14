@@ -526,6 +526,12 @@
       if (peek) setSidenav(true);
       $('room-nav-toggle').setAttribute('aria-expanded', String(peek));
     };
+    // AUTO NEXT toggle (device pref): painted once here; clicks persist.
+    const autoBtn = $('auto-next');
+    if (autoBtn) {
+      paintAutoNext();
+      autoBtn.onclick = () => setAutoNext(!autoNextOn());
+    }
     $('episode-switch').onclick = () => {
       const v = state.video;
       if (!v || v.type === 'movie' || !WP.Catalog.openEpisodes) return;
@@ -1517,6 +1523,37 @@
   // --------------------------------------------------------------------------
   // Watch history (+ resume + auto-advance)
   // --------------------------------------------------------------------------
+  // AUTO NEXT: a device preference (like the theme), NOT room state - each
+  // viewer decides whether THEIR player advances. The host's toggle decides
+  // whether the ROOM advances (only the controller can change the video).
+  const AUTO_NEXT_KEY = 'wp:autonext';
+
+  /** @returns {boolean} */
+  function autoNextOn() {
+    try {
+      return localStorage.getItem(AUTO_NEXT_KEY) !== '0';
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function paintAutoNext() {
+    const btn = $('auto-next');
+    if (!btn) return;
+    const on = autoNextOn();
+    btn.setAttribute('aria-pressed', String(on));
+    const label = $('auto-next-label');
+    if (label) label.textContent = 'Auto next: ' + (on ? 'on' : 'off');
+    btn.classList.toggle('is-on', on);
+  }
+
+  function setAutoNext(on) {
+    try {
+      localStorage.setItem(AUTO_NEXT_KEY, on ? '1' : '0');
+    } catch (_) {}
+    paintAutoNext();
+  }
+
   // Resume: playback position is saved into the local history entry every ~8s
   // (sync 'progress'). Starting that item again seeks to it (see _pendingResume).
 
@@ -1546,6 +1583,11 @@
   function onEpisodeEnded() {
     const v = state.video;
     if (!v || v.type === 'movie') return;
+    // The toggle is the first gate - OFF means the ended episode just stops.
+    if (!autoNextOn()) {
+      clearUpNext();
+      return;
+    }
     if (!canControl()) {
       if (!state._endedToasted) {
         state._endedToasted = true;

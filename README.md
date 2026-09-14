@@ -1058,3 +1058,24 @@ picker (chips + per-season grids on the tv path), not a dead end.
 - Pins: dead-end message + renderer gone, fallback wiring, matched path
   unchanged, worker 15s failure TTL. Tests 156/156, check clean.
   catalog v25 / ui+api-2026-09-14.65.
+
+## Auto-advance hotfix: derived end detection + Auto next toggle (ui-2026-09-14.66)
+
+WHY IT STILL LOOKED BROKEN: auto-advance relied on the embed posting an
+explicit 'ended' playerstatus - if the embed never sends one (unknowable
+from outside the iframe), nothing ever triggered. Now the end is ALSO
+DERIVED from the status poll: paused within 2.5s of a >30s duration after
+having actually played = the end. Fire-once-per-load (re-armed on every
+video load); the explicit 'ended' event dedupes against it, and
+mid-video pauses never count.
+
+AUTO NEXT TOGGLE: new button in the room player bar (Between Like and
+Episodes): "Auto next: on/off", device-persisted (wp:autonext, default
+ON, red accent while on). It is the FIRST gate in the ended-path: OFF =
+the episode simply stops (no overlay, no countdown, no guest hint).
+Each viewer controls their own preference; only the controller's
+decision can actually change the room's video.
+
+Behavior-tested with the real sync manager (derived fire-once, no dupes
+on later polls, mid-video pause != end) + structural pins. Tests
+159/159, check clean. player v12 / app v40 / style v23 / ui-2026-09-14.66.

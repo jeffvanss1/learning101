@@ -271,3 +271,27 @@ test('room play/pause button flips instantly on host click', async () => {
   assert.match(app, /function onTogglePlay\(\) \{\s*if \(!canControl\(\)[\s\S]*?localPause\(state\.sync\.localTime\);\s*updatePlayerControls\(false\);/, 'pause click flips the button immediately');
   assert.match(app, /localPlay\(state\.sync\.localTime\);\s*updatePlayerControls\(true\);/, 'play click flips the button immediately');
 });
+
+test('derived end: paused-at-end after playing fires ended ONCE (no explicit event needed)', async () => {
+  const { sync, fire } = await freshPlayer();
+  const ended = [];
+  sync.on('ended', (e) => ended.push(e));
+  sync.duration = 120; // duration learned from the embed
+  fire(118, true); // playing -> _hasPlayed = true
+  fire(120, false); // paused AT the end; the embed NEVER sent an 'ended' event
+  assert.equal(ended.length, 1, 'derived ended fired exactly once');
+  fire(120, false); // later polls (paused at the end) must not re-fire
+  fire(119.8, false);
+  await tick(3100);
+  assert.equal(ended.length, 1, 'no duplicates on subsequent polls');
+  // a mid-video pause must NOT count as the end:
+  const sync2 = await freshPlayer();
+  const ended2 = [];
+  sync2.sync.on('ended', (e) => ended2.push(e));
+  sync2.sync.duration = 120;
+  sync2.fire(30, true);
+  sync2.fire(30, false); // user paused at 0:30
+  assert.equal(ended2.length, 0, 'mid-video pause is not an end');
+  sync.destroy();
+  sync2.sync.destroy();
+});

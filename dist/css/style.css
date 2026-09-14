@@ -935,6 +935,12 @@ button {
   flex: 0 0 auto;
 }
 
+/* Auto-next toggle: accent outline while ON (device pref, per viewer). */
+#auto-next.is-on {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 .video-info__desc {
   margin-top: 10px;
   padding: 10px 14px;

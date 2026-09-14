@@ -63,12 +63,14 @@
       this.isOwner = false;
       this.localPlaying = false;
       this.localTime = 0;
+      this._endedFired = false; // fresh video: end detection re-arms
       this.localUpdatedAt = 0;
       this.duration = null;
       this.isBuffering = false;
       this.ready = false;
       this.isController = false; // set by app.js when this client can drive playback
       this._lastMsg = null; // latest authoritative playback tuple (with timestamp)
+      this._endedFired = false; // 'ended' emitted for the current load (derived or explicit)
       this._lastAppliedTs = 0; // staleness guard: ignore older server snapshots
       this._iframeLoaded = false;
       this._lastPauseAssert = 0;
@@ -504,6 +506,20 @@
             if (d.playing) this._hasPlayed = true;
           }
           this.isBuffering = false;
+          // DERIVED END: some embeds never post an 'ended' event - a status
+          // that says "paused at (or past) the end" after having played IS
+          // the end. Fire once per load; the explicit case above dedupes.
+          if (
+            !this._endedFired &&
+            this._hasPlayed &&
+            d.playing === false &&
+            typeof d.currentTime === 'number' &&
+            this.duration > 30 &&
+            this.duration - d.currentTime <= 2.5
+          ) {
+            this._endedFired = true;
+            this.emit('ended', { time: this.localTime, duration: this.duration, derived: true });
+          }
           if (!this.ready) {
             this.ready = true;
             this._clearReadyTimer();
@@ -565,8 +581,12 @@
             duration: this.duration,
           });
           // Distinct signal for auto-advance (a PAUSE near the end looks
-          // identical in 'progress' - 'ended' is unambiguous).
-          this.emit('ended', { time: this.localTime, duration: this.duration });
+          // identical in 'progress' - 'ended' is unambiguous). Fire ONCE
+          // per load; the derived detector below may have beaten us to it.
+          if (!this._endedFired) {
+            this._endedFired = true;
+            this.emit('ended', { time: this.localTime, duration: this.duration });
+          }
           break;
 
         case 'buffering':
