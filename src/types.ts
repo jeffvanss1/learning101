@@ -140,7 +140,7 @@ export interface PublicUser {
   level: number;
   levelTitle: string;
   badges: Badge[];
-  stats: { watchCount: number; friendCount: number; favoritesCount: number };
+  stats: { watchCount: number; friendCount: number; favoritesCount: number; likesCount: number };
 }
 
 export interface Badge {
@@ -189,11 +189,35 @@ export interface FriendEntry {
   presence: PresencePayload;
 }
 
+export interface LikeItem {
+  mediaId: string;
+  mediaType: string;
+  mediaTitle: string;
+  posterUrl: string;
+  createdAt: number;
+}
+
+export interface SuggestionItem {
+  mediaId: string;
+  mediaType: string;
+  mediaTitle: string;
+  posterUrl: string;
+  /** how many of the user's liked titles recommended this one */
+  score: number;
+}
+
+export interface SuggestionsResponse {
+  seeds: string[];
+  items: SuggestionItem[];
+}
+
 export interface UserProfileResponse {
   user: PublicUser;
   presence: PresencePayload;
   favorites: FavoriteItem[];
   history: HistoryItem[];
+  /** Latest liked titles (newest first, capped at 24); total in stats.likesCount. */
+  likes: LikeItem[];
   /** Accepted friends of the profile owner (presence merged), newest first. */
   friends: FriendEntry[];
   friendship: FriendshipState;

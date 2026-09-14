@@ -1262,6 +1262,31 @@
     showcase.appendChild(grid);
     cols.appendChild(showcase);
 
+    // ---- Liked collection (uncapped) ---------------------------------------
+    const likes = /** @type {any} */ (data).likes || [];
+    if (likes.length) {
+      const likedSec = h('section', 'liked-section');
+      const count = (/** @type {any} */ (data.user && data.user.stats) || {}).likesCount || likes.length;
+      likedSec.appendChild(h('h2', 'section-title', 'Liked (' + count + ')'));
+      const likedGrid = h('div', 'liked-grid');
+      likes.forEach((/** @type {any} */ l) => {
+        const cell = h('div', 'liked-grid__item');
+        const im = document.createElement('img');
+        im.loading = 'lazy';
+        im.alt = l.mediaTitle || '';
+        im.src = l.posterUrl;
+        im.onerror = () => {
+          im.remove();
+          cell.appendChild(h('div', 'card-item__poster-fallback', (l.mediaTitle || '?').slice(0, 1).toUpperCase()));
+        };
+        cell.appendChild(im);
+        cell.appendChild(h('div', 'liked-grid__title', l.mediaTitle));
+        likedGrid.appendChild(cell);
+      });
+      likedSec.appendChild(likedGrid);
+      cols.appendChild(likedSec);
+    }
+
     // Friends column: list (public) +, on your own profile, an inline
     // people search so you can add friends without leaving the page.
     const friendsSection = h('section', 'profile-friends');
@@ -2121,7 +2146,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-13.42';
+  global.WP.build = 'ui-2026-09-13.43';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2137,6 +2162,73 @@
       })
       .catch(() => console.warn('[WatchParty] API unreachable'));
   } catch (_) {}
+
+  // ---------------------------------------------------------------------------
+  // 11b. LIKES: uncapped taste signal -> profile "Liked" + For You row
+  // ---------------------------------------------------------------------------
+  /** @type {Set<string> | null} own liked mediaIds (drives card hearts) */
+  let likeIds = null;
+  /** @type {Promise<Set<string>> | null} */
+  let likeIdsPromise = null;
+
+  /** @returns {Promise<Set<string>>} */
+  function getLikeIds() {
+    if (likeIds) return Promise.resolve(likeIds);
+    if (!likeIdsPromise) {
+      likeIdsPromise = api('/api/user/likes/ids')
+        .then((d) => {
+          likeIds = new Set((d && d.ids) || []);
+          return likeIds;
+        })
+        .catch(() => {
+          likeIdsPromise = null;
+          return /** @type {Set<string>} */ (new Set());
+        });
+    }
+    return likeIdsPromise;
+  }
+
+  /**
+   * Toggle like. Optimistic: the heart flips immediately; on failure it
+   * flips back and toasts.
+   * @param {{ mediaId: string, mediaType: string, mediaTitle: string, posterUrl: string }} item
+   * @returns {Promise<boolean>} the new liked state
+   */
+  async function toggleLike(item) {
+    const cur = await getLikeIds();
+    const was = cur.has(item.mediaId);
+    if (was) cur.delete(item.mediaId);
+    else cur.add(item.mediaId);
+    try {
+      const d = await api('/api/user/likes/toggle', {
+        method: 'POST',
+        body: JSON.stringify({
+          mediaId: item.mediaId,
+          mediaType: item.mediaType,
+          mediaTitle: item.mediaTitle,
+          posterUrl: item.posterUrl || '',
+        }),
+      });
+      if (!d || typeof d.liked !== 'boolean') throw new Error('bad response');
+      return d.liked;
+    } catch (e) {
+      if (was) cur.add(item.mediaId);
+      else cur.delete(item.mediaId);
+      throw e;
+    }
+  }
+
+  /** @returns {Promise<{ seeds: string[], items: Array<{mediaId: string, mediaType: string, mediaTitle: string, posterUrl: string, score: number}> }>} */
+  async function getSuggestions() {
+    const me = getSession();
+    if (!me) return { seeds: [], items: [] };
+    try {
+      const d = await api('/api/suggestions');
+      return { seeds: (d && d.seeds) || [], items: (d && d.items) || [] };
+    } catch (_) {
+      return { seeds: [], items: [] };
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // 12. Admin drawer (deployment-owner monitoring)
@@ -2314,5 +2406,9 @@
     toggleFriendsRail,
     refreshFriendsRail,
     toggleAdminPanel,
+    getLikeIds,
+    toggleLike,
+    getSuggestions,
+    toast,
   };
 })(/** @type {any} */ (window));

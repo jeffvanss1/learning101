@@ -738,3 +738,15 @@ miss.
   persists in localStorage ('wp:subsmap:zoom') and is restored on load.
   Both modes keep duration-sized bars, the alternating palette, the 2x
   offset fix, thread-drag sync and Align/Reset.
+
+## Likes + For You suggestions (api-2026-09-13.41)
+
+- **LIKE system** (uncapped; distinct from the pinned-4 favorites):
+  heart button on every catalog card (optimistic toggle, sign-in gated),
+  `POST /api/user/likes/toggle`, `GET /api/user/likes/ids`, profile
+  "Liked (N)" grid + `likesCount` stat, `likes[]` in the profile payload.
+- **For You row** on the home feed: TMDB `/{type}/{id}/recommendations`
+  seeded by the user's 4 most recent likes, KV-cached 24h per seed,
+  merged + deduped + ranked by seed overlap (`rankSuggestions`, unit
+  tested), excluding seeds/liked/watched. Titled
+  "For you · because you liked <seed>".

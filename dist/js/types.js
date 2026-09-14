@@ -33,7 +33,7 @@
  * @property {number} level
  * @property {string} levelTitle
  * @property {Badge[]} badges
- * @property {{watchCount:number, friendCount:number, favoritesCount:number}} stats
+ * @property {{watchCount:number, friendCount:number, favoritesCount:number, likesCount:number}} stats
  *
  * @typedef {Object} FavoriteItem
  * @property {string} mediaId
@@ -70,11 +70,19 @@
  * @property {FriendUser} user
  * @property {PresencePayload} presence
  *
+ * @typedef {Object} LikeItem
+ * @property {string} mediaId
+ * @property {string} mediaType
+ * @property {string} mediaTitle
+ * @property {string} posterUrl
+ * @property {number} createdAt
+ *
  * @typedef {Object} UserProfileResponse
  * @property {PublicUser} user
  * @property {PresencePayload} presence
  * @property {FavoriteItem[]} favorites
  * @property {HistoryItem[]} history
+ * @property {LikeItem[]} likes
  * @property {FriendEntry[]} friends  accepted friends, presence merged
  * @property {FriendshipState} friendship
  *

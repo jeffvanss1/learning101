@@ -129,7 +129,7 @@ test('admin UI: nav item (hidden), drawer, export and wiring exist', () => {
   assert.match(app, /WP\.Social\.toggleAdminPanel/);
   const social = readFileSync(join(ROOT, 'dist/js/social.js'), 'utf8');
   assert.match(social, /function toggleAdminPanel/);
-  assert.match(social, /toggleAdminPanel,\n  \};/, 'exported from WP.Social');
+  assert.match(social, /toggleAdminPanel,/, 'exported from WP.Social');
   assert.match(social, /applyAdminNav\(meData\.user\)/, 'nav reveal hooks into /api/auth/me');
   const me = readFileSync(join(ROOT, 'src/routes/auth.ts'), 'utf8');
   assert.match(me, /is_admin: !!row\.is_admin/, 'handleMe exposes is_admin');

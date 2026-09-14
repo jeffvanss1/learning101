@@ -11,6 +11,7 @@
 import type {
   Env,
   UserRow,
+  LikeItem,
   FavoriteRow,
   HistoryRow,
   FriendshipRow,
@@ -53,6 +54,7 @@ export interface UserStats {
   watchCount: number;
   friendCount: number;
   favoritesCount: number;
+  likesCount: number;
 }
 
 /** Full public projection: row + stats → level, title, badges. */
@@ -99,6 +101,11 @@ export async function fetchStats(
     )
       .bind(...userIds)
       .all<{ user_id: string; n: number }>();
+    const likesRes = await env.DB.prepare(
+      `SELECT user_id, COUNT(*) AS n FROM user_likes WHERE user_id IN (${placeholders}) GROUP BY user_id`
+    )
+      .bind(...userIds)
+      .all<{ user_id: string; n: number }>();
 
     const friends = friendsRes.results;
     const favs = favsRes.results;
@@ -106,6 +113,7 @@ export async function fetchStats(
     const friendCounts = new Map<string, number>();
     for (const r of friends) friendCounts.set(r.uid, (friendCounts.get(r.uid) || 0) + r.n);
     const favCounts = new Map(favs.map((r) => [r.user_id, r.n] as const));
+    const likeCounts = new Map(likesRes.results.map((r) => [r.user_id, r.n] as const));
     const watchCounts = new Map(watches.results.map((r) => [r.user_id, r.n] as const));
 
     for (const id of userIds) {
@@ -113,6 +121,7 @@ export async function fetchStats(
         watchCount: watchCounts.get(id) || 0,
         friendCount: friendCounts.get(id) || 0,
         favoritesCount: favCounts.get(id) || 0,
+        likesCount: likeCounts.get(id) || 0,
       });
     }
   } catch {
@@ -180,6 +189,25 @@ function rowToFavorite(f: FavoriteRow) {
   };
 }
 
+interface LikeRow {
+  user_id: string;
+  media_id: string;
+  media_type: string;
+  media_title: string;
+  poster_url: string;
+  created_at: number;
+}
+
+function rowToLike(l: LikeRow): LikeItem {
+  return {
+    mediaId: l.media_id,
+    mediaType: l.media_type,
+    mediaTitle: l.media_title,
+    posterUrl: l.poster_url,
+    createdAt: l.created_at,
+  };
+}
+
 function rowToHistory(h: HistoryRow) {
   return {
     mediaId: h.media_id,
@@ -211,7 +239,7 @@ export async function handleGetProfile(
     .first<UserRow>();
   if (!user) return errorJson(404, 'User not found');
 
-  const [favoritesRes, historyRes, statsMap, presence, friendEdges, friendsRes] = await Promise.all([
+  const [favoritesRes, historyRes, likesRes, statsMap, presence, friendEdges, friendsRes] = await Promise.all([
     env.DB.prepare(
       `SELECT user_id, media_id, media_type, media_title, poster_url, display_order, created_at
        FROM user_favorites WHERE user_id = ?1 ORDER BY display_order LIMIT 4`
@@ -224,6 +252,12 @@ export async function handleGetProfile(
     )
       .bind(user.id)
       .all<HistoryRow>(),
+    env.DB.prepare(
+      `SELECT user_id, media_id, media_type, media_title, poster_url, created_at
+       FROM user_likes WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 24`
+    )
+      .bind(user.id)
+      .all<LikeRow>(),
     fetchStats(env, [user.id]),
     getPresence(env, user.id),
     me ? friendEdgeMap(env, me.id, [user.id]) : Promise.resolve(new Map()),
@@ -254,7 +288,7 @@ export async function handleGetProfile(
   }));
 
   const stats =
-    statsMap.get(user.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0 };
+    statsMap.get(user.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0, likesCount: 0 };
   const edge = friendEdges.get(user.id);
 
   const body: UserProfileResponse = {
@@ -262,6 +296,7 @@ export async function handleGetProfile(
     presence,
     favorites: favoritesRes.results.map(rowToFavorite),
     history: historyRes.results.map(rowToHistory),
+    likes: likesRes.results.map(rowToLike),
     friends: friendEntries,
     friendship: friendshipFor(edge, me, user.id),
   };
@@ -371,7 +406,7 @@ export async function handleUpdateProfile(
     .first<UserRow>();
   if (!row) return errorJson(404, 'Account no longer exists');
   const statsMap = await fetchStats(env, [me.id]);
-  const stats = statsMap.get(me.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0 };
+  const stats = statsMap.get(me.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0, likesCount: 0 };
   return json({ user: toPublicUser(row), stats }, 200);
 }
 

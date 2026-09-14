@@ -447,6 +447,43 @@
     }
     poster.appendChild(h('span', 'card-item__badge', typeLabel(item)));
 
+    // LIKE HEART: top-right of the poster; state from the WP.Social cache.
+    const likeBtn = document.createElement('button');
+    likeBtn.type = 'button';
+    likeBtn.className = 'card-item__like';
+    likeBtn.setAttribute('aria-label', 'Like');
+    const syncHeart = (/** @type {boolean} */ on) => {
+      likeBtn.classList.toggle('is-liked', on);
+      likeBtn.textContent = on ? '\u2665' : '\u2661';
+    };
+    if (global.WP && global.WP.Social && global.WP.Social.getLikeIds) {
+      global.WP.Social.getLikeIds().then((set) => syncHeart(set.has(String(item.id))));
+    }
+    likeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const Social = global.WP && global.WP.Social;
+      if (!Social || !Social.toggleLike) return;
+      if (!Social.getSession || !Social.getSession()) {
+        Social.toast('Sign in to like titles.', true);
+        return;
+      }
+      const optimistic = !likeBtn.classList.contains('is-liked');
+      syncHeart(optimistic);
+      Social.toggleLike({
+        mediaId: String(item.id),
+        mediaType: item.type === 'tv' ? 'tv' : 'movie',
+        mediaTitle: item.title || '',
+        posterUrl: item.poster || '',
+      })
+        .then((on) => syncHeart(on))
+        .catch(() => {
+          syncHeart(!optimistic);
+          Social.toast('Could not save that like \u2014 try again.', true);
+        });
+    });
+    poster.appendChild(likeBtn);
+
     const body = h('div', 'card-item__body');
     body.appendChild(h('div', 'card-item__title', item.title));
     body.appendChild(h('div', 'card-item__meta', metaText(item)));
@@ -1213,6 +1250,22 @@
       }
       if (destroyed || mySeq !== seq) return;
       resetRows();
+      // FOR YOU row: like-based suggestions sit above the feed (signed-in
+      // users with likes only; silent skip otherwise).
+      if (global.WP && global.WP.Social && global.WP.Social.getSuggestions) {
+        try {
+          const sug = await global.WP.Social.getSuggestions();
+          if (!destroyed && mySeq === seq && sug.items && sug.items.length) {
+            const items = sug.items.map((si) => ({
+              id: si.mediaId,
+              type: si.mediaType === 'tv' ? 'tv' : 'movie',
+              title: si.mediaTitle,
+              poster: si.posterUrl,
+            }));
+            makeSectionRow({ key: 'foryou', title: 'For you' + (sug.seeds && sug.seeds.length ? ' \u00b7 because you liked ' + sug.seeds[0] : '') }, items);
+          }
+        } catch (_) {}
+      }
       for (let i = 0; i < INITIAL_SECTIONS; i++) await createSection(i);
       if (destroyed || mySeq !== seq) return;
       if (!sections.some((s) => s.el)) {

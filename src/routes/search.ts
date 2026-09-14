@@ -72,7 +72,7 @@ export async function handleUserSearch(request: Request, env: Env): Promise<Resp
       return {
         user: publicUserFromRow(
           row,
-          stats0.get(row.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0 },
+          stats0.get(row.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0, likesCount: 0 },
           presence.is_host
         ),
         presence,
@@ -126,7 +126,7 @@ export async function handleUserSearch(request: Request, env: Env): Promise<Resp
     return {
       user: publicUserFromRow(
         row,
-        stats.get(row.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0 },
+        stats.get(row.id) ?? { watchCount: 0, friendCount: 0, favoritesCount: 0, likesCount: 0 },
         presence.is_host
       ),
       presence,

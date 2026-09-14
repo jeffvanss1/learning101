@@ -70,6 +70,18 @@ const DDL = [
   // Admin monitoring: one row per room minted via POST /api/rooms. Rooms
   // themselves live in Durable Objects (not enumerable) — this registry is
   // the only server-side "who created what, when" record.
+  // LIKES: uncapped taste signal (favorites stay the pinned-4 showcase).
+  // Drives the profile "Liked" collection and the For You suggestions.
+  `CREATE TABLE IF NOT EXISTS user_likes (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    media_id TEXT NOT NULL,
+    media_type TEXT NOT NULL DEFAULT 'movie',
+    media_title TEXT NOT NULL,
+    poster_url TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, media_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_user_likes_time ON user_likes (user_id, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS rooms_created (
     room_id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL DEFAULT '',
