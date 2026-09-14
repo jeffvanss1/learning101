@@ -504,7 +504,7 @@
     apply();
   }
 
-  WP.I18N = { t: t, apply: apply, setLanguage: setLanguage };
+  WP.I18N = { t: t, apply: apply, setLanguage: setLanguage, get language() { return currentLang; } };
   Object.defineProperty(WP.I18N, 'language', { get: function () {
     return currentLang;
   } });

@@ -608,7 +608,7 @@ test('AUDIT: Reset routes through the room-sync path (guests learn about it)', a
   assert.ok(offsets.indexOf(0) !== -1, 'reset FIRED the room hook (host reset now reaches guests): ' + JSON.stringify(offsets));
 });
 
-test('AUDIT: Align releases its pick; the full-timeline head keeps travelling', async () => {
+test('AUDIT: Align releases its pick; the 60s window keeps following the clock', async () => {
   const { Subs, listeners, rafQueue } = await freshSubs();
   const wrap = new El2();
   Subs.mount(wrap);
@@ -638,23 +638,25 @@ test('AUDIT: Align releases its pick; the full-timeline head keeps travelling', 
   assert.equal(Math.abs(Subs.__test.state().offset - 0.5) < 0.6, true, 'aligned');
   assert.equal(alignBtn.disabled, true, 'selection RELEASED after align');
 
-  // Full timeline: the head TRAVELS with the clock (361s of 361s span ~ the right edge).
+  // The window ALWAYS follows the clock (head pinned mid-strip): at t=400
+  // the transform must be center(300) - 400*10 + offset*10.
   fireClock(listeners, rafQueue, 400);
   for (let i = 0; i < 3 && rafQueue.length; i++) {
     rafQueue.splice(0).forEach((cb) => cb());
     await new Promise((r) => setTimeout(r, 2));
   }
-  const left = parseFloat(play.style.left);
-  assert.ok(left > 95, 'head travelled to ~the end at t=400 of span 361 (clamped 100%): ' + play.style.left);
   const x = parseFloat(String(ticksWrap.style.transform).replace(/[^-0-9.]/g, ''));
-  assert.equal(Math.round(x), Math.round(Subs.__test.state().offset * (600 / 361)), 'transform carries ONLY the offset (thread stays put)');
+  const expected = 300 - 400 * 10 + Subs.__test.state().offset * 10;
+  assert.ok(Math.abs(x - expected) < 60, 'window centered on the playhead at ~400s: x=' + x + ' expected~' + expected);
+  assert.equal(play.style.left, '50%', 'head pinned mid-strip throughout');
 });
 
-test('mini-map: the strip spans the WHOLE subtitle timeline; head travels it', async () => {
+test('mini-map: ONE-MINUTE window, caption blocks sized to their duration, head pinned center', async () => {
   const { Subs, listeners, rafQueue } = await freshSubs();
   const wrap = new El2();
   Subs.mount(wrap);
-  // Two lines 40 minutes apart: BOTH visible, proportionally placed.
+  // Two lines 40 minutes apart: both on the absolute scale, only nearby
+  // ones visible in the 60s window around the head.
   Subs.loadCues(
     '1\n00:00:10,000 --> 00:00:11,000\nEarly line\n\n' +
       '2\n00:00:40:00,000 --> 00:00:40:01,000\nLater line\n'.replace(/00:00:40:00/g, '00:40:00').replace(/00:00:40:01/g, '00:40:01')
@@ -673,41 +675,42 @@ test('mini-map: the strip spans the WHOLE subtitle timeline; head travels it', a
   const ticksWrap = bar.children[0];
   const play = bar.children[1];
 
-  // Full timeline: both captions drawn as BLOCKS whose length equals their
-  // own timestamp duration (px = seconds * (600 / span 2401)).
-  assert.equal(ticksWrap.children.length, 2, 'both captions drawn on the full timeline');
-  const pps = 600 / 2401;
-  assert.ok(Math.abs(parseFloat(ticksWrap.children[0].style.left) - 10 * pps) < 0.5, 'caption 1 starts at 10s proportionally');
-  assert.ok(Math.abs(parseFloat(ticksWrap.children[0].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[0].style.width) === 2, 'caption 1 length = its 1s duration (min 2px)');
-  assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.left) - 2400 * pps) < 0.5, 'caption 2 starts at 40:00 proportionally');
-  assert.ok(Math.abs(parseFloat(ticksWrap.children[1].style.width) - 1 * pps) < 0.5 || parseFloat(ticksWrap.children[1].style.width) === 2, 'caption 2 length = its 1s duration');
+  // Both captions drawn as BLOCKS on the 60s px scale (600px / 60s = 10px/s).
+  assert.equal(ticksWrap.children.length, 2, 'both captions drawn');
+  const pps = 600 / 60;
+  assert.ok(Math.abs(parseFloat(ticksWrap.children[0].style.left) - 10 * pps) < 0.5, 'caption 1 block at 10s absolute');
+  assert.equal(Math.max(2, Math.round(parseFloat(ticksWrap.children[0].style.width))), Math.max(2, Math.round(1 * pps)), 'caption 1 block width = its 1s duration');
+  assert.equal(parseFloat(ticksWrap.children[1].style.left), 2400 * pps, 'caption 2 block at 40:00 absolute (offscreen until the window arrives)');
 
-  // ALTERNATING PALETTE: adjacent bars always differ; the four hues are the
-  // user's exact palette.
+  // Head PINNED center; hidden before any clock, visible once it reports.
+  assert.equal(play.style.display, 'none', 'no clock yet -> head hidden');
+  assert.equal(play.style.left, '50%', 'head pinned mid-strip');
+  fireClock(listeners, rafQueue, 30); // t=30s -> window [0..60]: caption 1 visible
+  for (let i = 0; i < 4 && rafQueue.length; i++) {
+    rafQueue.splice(0).forEach((cb) => cb());
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  assert.equal(play.style.display, 'block', 'head visible with the clock');
+  const x = parseFloat(String(ticksWrap.style.transform).replace(/[^-0-9.]/g, ''));
+  assert.ok(Math.abs(x - (300 - 30 * pps)) < 20, 'window centered on the playhead: x=' + x);
+
+  // ALTERNATING PALETTE: adjacent bars always differ; exact user palette.
   assert.notEqual(ticksWrap.children[0].style.background, ticksWrap.children[1].style.background, 'adjacent bars differ in color');
   const sub = (await import('node:fs')).readFileSync(join(ROOT, 'dist/js/subs.js'), 'utf8');
   for (const hex of ['#5003C0', '#AB03A9', '#FF467A', '#FFD51E']) {
     assert.ok(sub.includes(hex), 'palette carries ' + hex);
   }
 
-  // Head travels: hidden before any clock, then moves with it.
-  assert.equal(play.style.display, 'none', 'no clock yet -> head hidden (no garbage position)');
-  fireClock(listeners, rafQueue, 1200); // mid-timeline
-  for (let i = 0; i < 4 && rafQueue.length; i++) {
-    rafQueue.splice(0).forEach((cb) => cb());
-    await new Promise((r) => setTimeout(r, 2));
-  }
-  assert.equal(play.style.display, 'block', 'head visible once the clock reports');
-  const left = parseFloat(play.style.left);
-  assert.ok(left > 40 && left < 60, 'head at ~50% of the FULL timeline at t=1200/2401: ' + play.style.left);
+  // Palette/source checks BEFORE the align step (file IO advances the
+  // interpolated clock - keep the clock fire and the click adjacent).
 
-  // Manual match stays exact within the full-timeline view.
-  fireClock(listeners, rafQueue, 2389);
+  // Manual match stays exact within the zoomed view (jump to 39:50 first).
+  fireClock(listeners, rafQueue, 2390);
   rafQueue.splice(0).forEach((cb) => cb());
   ticksWrap.children[1]._h.click(); // the 40:00 line
   row.children[2]._h.click(); // Align to playhead
   const off = Subs.__test.state().offset;
-  assert.ok(Math.abs(off + 11) < 0.5, 'align snapped the 40:00 line to the playhead: ' + off);
+  assert.ok(Math.abs(off + 10) < 0.5, 'align snapped the 40:00 line to the playhead (now=2390): ' + off);
 });
 
 test('anime subs: tv/anime searches always carry season+episode (lima 400s without)', async () => {
@@ -1272,12 +1275,12 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   assert.ok(ticks, 'ticks strip exists');
   const resetBtn = rowEd.children.find((c) => String(c.className).indexOf('subs-editor__reset') !== -1);
   assert.ok(resetBtn, 'reset control exists in the row');
-  // BAR LENGTH == CAPTION LENGTH: FRESH_SRT spans 10s->12s (2s) on a
-  // 600px/12s strip (50px/s) => the block is exactly 100px wide.
+  // BAR LENGTH == CAPTION LENGTH: FRESH_SRT spans 10s->12s (2s) on the
+  // 60s scale (600px/60s = 10px/s) => the block is exactly 20px wide.
   const block = ticks.children.find((c) => String(c.className).indexOf('subs-editor__tick') !== -1);
   assert.ok(block, 'caption block rendered');
-  assert.equal(block.style.width, '100.0px', 'caption block width == its timestamp duration (2s x 50px/s)');
-  assert.equal(Math.round(parseFloat(block.style.left)), 500, 'caption block positioned at its 10s start');
+  assert.equal(block.style.width, '20.0px', 'caption block width == its timestamp duration (2s x 10px/s)');
+  assert.equal(Math.round(parseFloat(block.style.left)), 100, 'caption block positioned at its 10s start');
 
   // NO floating pill anywhere.
   assert.ok(!doc3.body.children.some((c) => String(c.className).indexOf('subs-syncbar') !== -1), 'no floating pill');
@@ -1288,7 +1291,7 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   let roomOffsets = [];
   Subs.onOffset((v) => roomOffsets.push(v));
 
-  // Full-timeline scale: 600px stub / 12s span = 50 px/s => 60px drag = +1.2s.
+  // 60s window scale: 600px stub / 60s = 10 px/s => 60px drag = +6s.
   const xBefore = parseFloat(String(ticks.style.transform).replace(/[^-0-9.]/g, '')) || 0;
   fire(bar, 'pointerdown', pd(100));
   fire(bar, 'pointermove', pd(130));
@@ -1301,11 +1304,11 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   const rows = panel.children.filter((c) => String(c.className).indexOf('subs-panel__row') === 0);
   const offEl = rows.map((r) => r.children.find((c) => c.className === 'subs-panel__offset')).find(Boolean);
   assert.ok(offEl, 'offset readout exists');
-  assert.equal(offEl.textContent, '+1.20s', 'offset follows the thread drag (50 px/s on a 12s timeline)');
+  assert.equal(offEl.textContent, '+6.00s', 'offset follows the thread drag (10 px/s)');
 
   fire(bar, 'pointerup', pd(160));
   assert.equal(roomOffsets.length, 1, 'release replicates the offset to the room EXACTLY once');
-  assert.equal(roomOffsets[0], 1.2);
+  assert.equal(roomOffsets[0], 6);
 
   // Reset control returns to zero.
   fire(resetBtn, 'click', {});

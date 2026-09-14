@@ -284,17 +284,13 @@
   // ZOOM: the strip shows a 5-minute window around the playhead, not the
   // whole movie (a 2h film compressed into one bar is unreadable). The
   // window slides forward as playback approaches its right edge.
-  // FULL-TIMELINE MINI-MAP: the strip spans the WHOLE subtitle file
-  // (first cue -> last cue), like a Premiere sequence bar. Ticks sit on
-  // absolute px (edPps = barWidth / total span), the red head travels the
-  // bar with the clock, and the drag slides the whole thread (offset).
-  const EDITOR_WINDOW_S = 60; // unused legacy const kept for reference
-  /** px per second on the full-timeline mini-map scale */
+  // ONE-MINUTE WINDOW, HEAD PINNED MID-STRIP: the visible strip is always
+  // [t-30s .. t+30s] on a fixed scale (edPps = barWidth/60). Caption BLOCKS
+  // (width = their duration) sit on absolute px; ONE transform per frame
+  // centers the window, so the scale slides under the stationary head.
+  const EDITOR_WINDOW_S = 60;
+  /** px per second on the 60-second mini-map scale */
   let edPps = 10;
-  /** total timeline span in seconds (last cue end); 1 while empty */
-  function edSpan() {
-    return cues.length ? Math.max(1, cues[cues.length - 1].end || 1) : 1;
-  }
 
   /** @param {number} s @returns {string} h:mm:ss / m:ss */
   function fmtTS(s) {
@@ -316,7 +312,7 @@
       if (edInfo) edInfo.textContent = tr('subs.editorEmpty', 'Load subtitles to see their timing here.');
       return;
     }
-    edPps = edBarWidth() / edSpan(); // full timeline across the strip
+    edPps = edBarWidth() / EDITOR_WINDOW_S; // 60 seconds across the strip
     // EVERY caption becomes a BLOCK whose length equals its timestamp span
     // (left = start, width = duration on the px scale) - a Premiere-style
     // sequence of caption clips, not thin ticks. Sample only absurd files.
@@ -411,7 +407,14 @@
     if (!(opts && opts.force) && key === autoKey) return;
     autoKey = key;
     lastGatedSeen = '';
-    const primary = langSel ? langSel.value : 'en';
+    let primary = langSel ? langSel.value : 'en';
+    // IP LANGUAGE GUARANTEE: without an explicit pick, the geo language IS
+    // the primary - even if the select somehow still says 'en'.
+    try {
+      const geoLang = WP.I18N && WP.I18N.language;
+      const explicit = localStorage.getItem('wp:subslang:explicit') === '1';
+      if (!explicit && geoLang) primary = geoLang;
+    } catch (_) {}
     const chain = primary === 'en' ? ['en', ''] : [primary, 'en', ''];
     /** @type {string[]} */
     const tried = [];
@@ -577,18 +580,15 @@
   function paintEditorThread() {
     if (!edTicks) return;
     const t = now();
-    // Red head travels the FULL timeline with the clock (hidden until the
-    // player reports one - a garbage position here read as "not synced").
+    // Head PINNED mid-strip; hidden until the clock reports (a garbage
+    // position here read as "not synced").
     if (edPlay) {
-      if (t >= 0) {
-        edPlay.style.display = 'block';
-        edPlay.style.left = (Math.min(1, Math.max(0, t / edSpan())) * 100).toFixed(2) + '%';
-      } else {
-        edPlay.style.display = 'none';
-      }
+      edPlay.style.left = '50%';
+      edPlay.style.display = t >= 0 ? 'block' : 'none';
     }
-    // The thread's offset slides the whole track with the drag.
-    const x = offset * edPps;
+    // Center the window on the playhead; the offset drags the thread with
+    // it. Pre-clock: center on a virtual t=0 so dragging STILL slides.
+    const x = edBarWidth() / 2 - (t >= 0 ? t : 0) * edPps + offset * edPps;
     edTicks.style.transform = 'translateX(' + x.toFixed(1) + 'px)';
   }
 
@@ -648,11 +648,15 @@
       opt.value = code;
       langSel.appendChild(opt);
     });
-    // Cross-language by default: English audio + Indonesian subs is the
-    // NORM here. Priority: the user's saved choice > geo UI language > en.
+    // IP LANGUAGE FIRST: the geo UI language (WP_GEO country -> id) is the
+    // default subtitle language - "impossible to miss". A saved choice only
+    // counts when the user EXPLICITLY picked it in this select (flagged);
+    // stale unflagged values never override the IP language again. (This
+    // used to read WP.I18N.language which did not exist -> silently 'en'.)
     try {
       const saved = localStorage.getItem('wp:subslang');
-      langSel.value = saved || (WP.I18N && WP.I18N.language) || 'en';
+      const explicit = localStorage.getItem('wp:subslang:explicit') === '1';
+      langSel.value = (explicit && saved) || (WP.I18N && WP.I18N.language) || saved || 'en';
     } catch (_) {
       langSel.value = (WP.I18N && WP.I18N.language) || 'en';
     }
@@ -661,6 +665,7 @@
     langSel.addEventListener('change', () => {
       try {
         localStorage.setItem('wp:subslang', langSel.value);
+        localStorage.setItem('wp:subslang:explicit', '1'); // explicit pick beats geo
       } catch (_) {}
       if (video) void autoLoad(video, { force: true }); // instant reload in the new language
     });

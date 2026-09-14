@@ -696,14 +696,20 @@ ALTER) is seeded idempotently by `ensureSchema` for username `jeff`.
   button, `force`) still win.
 - Per-step console logging: `[WatchParty] subs <lang>: N candidates…`.
 
-**Mini-map thread sync (subs v18, style v13):** the strip inside the
-subtitles panel spans the WHOLE subtitle timeline, and EVERY caption is
-a block whose LENGTH equals its own timestamp duration
-(`00:02:05,867 --> 00:02:08,221` = a 2.4s block) - a Premiere-style
-sequence of caption clips. The red head travels the strip with the video
-clock (hidden until the clock reports - never a garbage position). Grab
-anywhere and slide: the whole caption track shifts with the pointer
-(1px = 1px), the offset applies live (local) and replicates to the room
-ONCE on release. Tap a block + "Align to playhead" for exact matching;
-"Reset sync" returns to zero. (Floating-pill slider, 5-min window and
-60s centered variants were all rejected before this design.)
+**Mini-map thread sync (subs v20):** ONE-MINUTE window, playhead pinned
+dead-center. Every caption is a BLOCK whose LENGTH equals its own
+timestamp duration (`00:02:05,867 --> 00:02:08,221` = 2.4s = 24px on the
+60s/600px scale), colored by the alternating user palette (#5003C0 /
+#AB03A9 / #FF467A / #FFD51E - adjacent bars always differ). The whole
+scale slides under the stationary head (one transform per frame); grab
+anywhere and slide to sync (1px = 1px, live local, ONE room replication
+on release). Head hidden until the player clock reports. Tap a block +
+"Align to playhead" for exact matching; "Reset sync" returns to zero.
+
+**IP LANGUAGE FIRST (subs v20 + i18n):** `WP.I18N.language` never existed
+(the subs default silently fell to 'en'). i18n now exports the resolved
+language, and the subtitle auto-load chain is: EXPLICIT user pick
+(flagged 'wp:subslang:explicit', set only by changing the select) >
+IP/geo language > 'en'. Stale unflagged saved values can never override
+the IP language again - Indonesian subs are the default, impossible to
+miss.
