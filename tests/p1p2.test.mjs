@@ -125,7 +125,7 @@ test('security headers: every page and API response is hardened', async () => {
   assert.match(w, /frame-ancestors 'self'/, 'no third-party framing');
   assert.match(w, /\.\.\.securityHeaders\(\),/, 'json() inherits them');
   assert.match(w, /for \(const \[k, v\] of Object\.entries\(securityHeaders\(\)\)\) res\.headers\.set\(k, v\);/, 'static assets are wrapped');
-  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.68';/, 'api stamp bumped');
+  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.71';/, 'api stamp bumped');
 });
 
 
@@ -272,4 +272,34 @@ test('room cover broken-art guard + profile showcase has no empty poster-height 
   assert.match(css, /\.showcase__grid \{[^}]*align-items: start;/, 'grid rows no longer stretch empty slots');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /css\/social\.css\?v=19/, 'social css cache-bumped');
+});
+
+test('server watch memory: positions stored + served by the worker', () => {
+  const schema = readFileSync(join(ROOT, 'src/schema.ts'), 'utf8');
+  assert.match(schema, /position_seconds INTEGER NOT NULL DEFAULT 0/, 'DDL carries position');
+  assert.match(schema, /duration_seconds INTEGER NOT NULL DEFAULT 0/, 'DDL carries duration');
+  assert.match(schema, /needsProgressColumns/, 'self-provisioning ALTER for old DBs');
+  const migration = readFileSync(join(ROOT, 'migrations/0003_watch_history_progress.sql'), 'utf8');
+  assert.match(migration, /ALTER TABLE watch_history ADD COLUMN position_seconds/, 'canonical migration');
+  const users = readFileSync(join(ROOT, 'src/routes/users.ts'), 'utf8');
+  assert.match(users, /position_seconds = excluded\.position_seconds/, 'upsert stores the position');
+  assert.match(users, /duration_seconds = excluded\.duration_seconds/, 'upsert stores the duration');
+  assert.match(users, /positionSeconds: Number\(r\.position_seconds\) \|\| 0/, 'GET returns the position');
+  assert.match(users, /Math\.min\(Math\.floor\(Number\(body\.positionSeconds\) \|\| 0\), 86400\)/, 'position clamped');
+});
+
+test('server watch memory: client pings progress, resumes across devices', () => {
+  const s = readFileSync(join(ROOT, 'dist/js/social.js'), 'utf8');
+  assert.match(s, /function recordProgressFor\(video, positionSeconds, durationSeconds\)/, 'progress ping helper');
+  assert.match(s, /completed: dur > 0 && pos >= dur - 30/, 'episode completion derived client-side');
+  assert.match(s, /async function getServerEntry\(mediaId, season, episode\)/, 'per-title server lookup');
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /WP\.Social\.recordProgressFor\(v, p\.time, p\.duration \|\| 0\)/, 'progress pings ride the 8s throttle');
+  assert.match(a, /WP\.Social\.recordProgressFor\(v, dur \|\| 1, dur \|\| 0\)/, 'episode end marks completed server-side');
+  assert.match(a, /if \(state\._pendingResume == null \|\| pos > state\._pendingResume \+ 30\)/, 'server upgrades resume, never downgrades');
+  assert.match(a, /if \(dur && pos >= dur - 30\) return; \/\/ already finished/, 'finished episodes start fresh');
+  assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
+  assert.match(a, /else startRoomWithVideo\(\{ \.\.\.v, src: undefined \}\);/, 'server-only cards keep their position on click');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/app\.js\?v=42/, 'app cache-bumped');
 });

@@ -348,6 +348,27 @@
   async function startRoomWithVideo(video) {
     // History card with a saved position (>60s in): resume on ready.
     state._pendingResume = video && Number(video.position) > 60 ? Number(video.position) : null;
+    // SERVER RESUME MEMORY: for signed-in viewers, the server row may know a
+    // position this device doesn't (watched on the phone, resuming on the
+    // laptop). tryResume() only consumes _pendingResume once the room is
+    // drivable, so upgrading it mid-setup is safe; consumed = harmless no-op.
+    if (video && video.id && WP.Social && WP.Social.getServerEntry && WP.Social.getSession && WP.Social.getSession()) {
+      const wantSeason = video.season != null ? Number(video.season) : null;
+      const wantEp = video.episode != null ? Number(video.episode) : null;
+      WP.Social.getServerEntry(String(video.id), wantSeason, wantEp)
+        .then((entry) => {
+          const pos = (entry && Number(entry.positionSeconds)) || 0;
+          const dur = (entry && Number(entry.durationSeconds)) || 0;
+          if (pos <= 60) return; // nothing useful remembered
+          if (dur && pos >= dur - 30) return; // already finished — fresh start
+          // Upgrade, never downgrade: local pending wins unless the server is
+          // meaningfully (30s) ahead.
+          if (state._pendingResume == null || pos > state._pendingResume + 30) {
+            state._pendingResume = pos;
+          }
+        })
+        .catch(() => {});
+    }
     // A saved identity is reused silently — no re-login every time.
     if (!state.name) state.name = await promptName();
     if (!state.name) return;
@@ -1579,6 +1600,9 @@
     if (now - (state._lastProgAt || 0) < 8000) return; // throttle
     state._lastProgAt = now;
     WP.historySetProgress(v, p.time, p.duration || 0);
+    // SERVER RESUME MEMORY: same cadence, fire-and-forget — any device can
+    // pick up exactly here (signed-in viewers only; the helper self-gates).
+    if (WP.Social && WP.Social.recordProgressFor) WP.Social.recordProgressFor(v, p.time, p.duration || 0);
   }
 
   function clearUpNext() {
@@ -1595,6 +1619,11 @@
   /** Auto-advance: what happens when the episode ends. */
   function onEpisodeEnded() {
     const v = state.video;
+    // SERVER: remember this episode as finished (position = duration).
+    if (v && v.id && WP.Social && WP.Social.recordProgressFor) {
+      const dur = (state.sync && state.sync.duration) || 0;
+      WP.Social.recordProgressFor(v, dur || 1, dur || 0);
+    }
     if (!v || v.type === 'movie') return;
     // The toggle is the first gate - OFF means the ended episode just stops.
     if (!autoNextOn()) {
@@ -1745,6 +1774,10 @@
           episode: h.episode || null,
           watchedAt: h.watchedAt || 0,
           completed: !!h.completed,
+          // SERVER RESUME MEMORY: positions ride along, so the progress bar
+          // renders and the click resumes exactly where the other device stopped.
+          position: Number(h.positionSeconds) || 0,
+          duration: Number(h.durationSeconds) || 0,
         }));
       merged = merged.concat(extras);
       merged.sort((x, y) => (y.watchedAt || 0) - (x.watchedAt || 0));
@@ -1837,7 +1870,10 @@
       // still resume if a local position exists for them later).
       card.addEventListener('click', () => {
         if (v.src) startRoomWithVideo(v);
-        else startRoomWithVideo({ ...v, src: undefined, position: undefined });
+        // Server-only entries have no src (rebuilt from the id) — but the
+        // remembered position MUST ride along (it is the whole point of the
+        // server-side memory).
+        else startRoomWithVideo({ ...v, src: undefined });
       });
       scroller.appendChild(card);
     });

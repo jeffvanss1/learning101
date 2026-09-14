@@ -1157,3 +1157,30 @@ only real favorites; your own profile gets compact add-affordances
 
 Tests 169/169 (pins updated: absolute-episode contract kept — season is
 still never passed for anime picks). ui-2026-09-14.70.
+
+## Server-side watch memory: history + episode + position in D1 (ui/api-2026-09-14.71)
+
+USER ASK: "lets make it history watch and episode save in server
+database, so it always remembers the episode that been watched".
+
+Before: watch_history rows existed per (user, media, season, episode)
+but carried NO position, and the client POSTed only at video start —
+progress lived (and died) in localStorage. Another device = amnesia.
+
+Now:
+- D1: watch_history gains position_seconds/duration_seconds (fresh DDL +
+  self-provisioning ALTER for existing DBs + migrations/0003).
+- POST /api/user/history upserts the position (clamped, single row per
+  episode); GET returns positionSeconds/durationSeconds.
+- Client: saveWatchProgress now also pings the server every ~8s
+  (fire-and-forget, signed-in only); episode end marks completed
+  (position = duration); recordHistoryFor carries a resume position.
+- RESUME ACROSS DEVICES: startRoomWithVideo looks up the server entry —
+  upgrades the pending resume when the server is 30s+ ahead, never
+  downgrades, and finished episodes (>= dur-30) start fresh.
+- /history page: server-only cards now render the red progress bar AND
+  keep their position on click (previously discarded).
+
+Deploy note: the D1 columns self-provision on the first profile-route
+request; `npm run db:migrate:remote` applies migration 0003 explicitly.
+Tests 171/171, check clean. app v42 / ui+api-2026-09-14.71.

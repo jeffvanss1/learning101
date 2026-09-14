@@ -53,6 +53,8 @@ const DDL = [
     season INTEGER,
     episode INTEGER,
     completed INTEGER NOT NULL DEFAULT 0,
+    position_seconds INTEGER NOT NULL DEFAULT 0,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
     watched_at INTEGER NOT NULL,
     UNIQUE (user_id, media_id, season, episode)
   )`,
@@ -104,10 +106,21 @@ export async function ensureSchema(env: Env): Promise<void> {
     // the CREATE TABLE above, old ones from this ALTER.
     let needsCodeColumn = false;
     let needsAdminColumn = false;
+    let needsProgressColumns = false;
     try {
       const info = await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>();
       needsCodeColumn = !info.results.some((c) => c.name === 'code_hash');
       needsAdminColumn = !info.results.some((c) => c.name === 'is_admin');
+    } catch {
+      // Table missing entirely → the CREATE TABLE in the batch covers it.
+    }
+    try {
+      const whInfo = await env.DB.prepare('PRAGMA table_info(watch_history)').all<{ name: string }>();
+      // 0003: resume positions live server-side so every device remembers
+      // the episode and where it faded out.
+      needsProgressColumns =
+        !whInfo.results.some((c) => c.name === 'position_seconds') ||
+        !whInfo.results.some((c) => c.name === 'duration_seconds');
     } catch {
       // Table missing entirely → the CREATE TABLE in the batch covers it.
     }
@@ -118,6 +131,10 @@ export async function ensureSchema(env: Env): Promise<void> {
     }
     if (needsAdminColumn) {
       statements.push(env.DB.prepare('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0'));
+    }
+    if (needsProgressColumns) {
+      statements.push(env.DB.prepare('ALTER TABLE watch_history ADD COLUMN position_seconds INTEGER NOT NULL DEFAULT 0'));
+      statements.push(env.DB.prepare('ALTER TABLE watch_history ADD COLUMN duration_seconds INTEGER NOT NULL DEFAULT 0'));
     }
     // D1 batches run inside an implicit transaction and reject DDL there, so
     // each statement runs individually (all idempotent — safe to retry).

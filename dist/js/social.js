@@ -392,8 +392,67 @@
         posterUrl: video.poster || video.thumb || '',
         season: video.season != null ? video.season : null,
         episode: video.episode != null ? video.episode : null,
+        // Resuming a card carries its saved position — the server row starts accurate.
+        positionSeconds: Math.max(0, Math.floor(Number(video.position) || 0)),
+        durationSeconds: Math.max(0, Math.floor(Number(video.duration) || 0)),
       }),
     }).catch(() => {});
+  }
+
+  /**
+   * SERVER RESUME MEMORY: periodic progress write for signed-in viewers.
+   * The same upsert endpoint as recordHistoryFor (one row per
+   * user+media+season+episode) — every ~8s saveWatchProgress lands the
+   * current position, so ANY device can resume exactly here. Marks the
+   * episode completed at >= duration-30s.
+   * @param {any} video
+   * @param {number} positionSeconds
+   * @param {number} [durationSeconds]
+   */
+  function recordProgressFor(video, positionSeconds, durationSeconds) {
+    const s = loadSession();
+    if (!s || !video || !video.id || !video.title) return;
+    const pos = Math.max(0, Math.floor(Number(positionSeconds) || 0));
+    const dur = Math.max(0, Math.floor(Number(durationSeconds) || 0));
+    if (!pos && !dur) return;
+    api('/api/user/history', {
+      method: 'POST',
+      body: JSON.stringify({
+        mediaId: String(video.id),
+        mediaType: video.type || 'movie',
+        mediaTitle: video.title,
+        posterUrl: video.poster || video.thumb || '',
+        season: video.season != null ? video.season : null,
+        episode: video.episode != null ? video.episode : null,
+        positionSeconds: pos,
+        durationSeconds: dur,
+        completed: dur > 0 && pos >= dur - 30,
+      }),
+    }).catch(() => {});
+  }
+
+  /**
+   * Server-side position for ONE title (resume across devices). Returns
+   * { positionSeconds, durationSeconds, season, episode, ... } or null.
+   * @param {string|number} mediaId
+   * @param {number|null} [season]
+   * @param {number|null} [episode]
+   * @returns {Promise<any | null>}
+   */
+  async function getServerEntry(mediaId, season, episode) {
+    const items = await getServerHistory();
+    if (!items || !items.length) return null;
+    const wantId = String(mediaId);
+    const wantSeason = season != null ? Number(season) : null;
+    const wantEpisode = episode != null ? Number(episode) : null;
+    return (
+      items.find(
+        (h) =>
+          String(h.mediaId) === wantId &&
+          (h.season || null) === wantSeason &&
+          (h.episode || null) === wantEpisode
+      ) || null
+    );
   }
 
   /**
@@ -2218,7 +2277,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.70';
+  global.WP.build = 'ui-2026-09-14.71';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2469,6 +2528,8 @@
     getProfile,
     updateProfile,
     recordHistoryFor,
+    recordProgressFor,
+    getServerEntry,
     friendAction,
     RoomPresence,
     startIdlePresence,

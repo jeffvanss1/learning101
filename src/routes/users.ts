@@ -428,6 +428,8 @@ export async function handleRecordHistory(
     season?: number;
     episode?: number;
     completed?: boolean;
+    positionSeconds?: number;
+    durationSeconds?: number;
   }>(request);
   if (!body) return errorJson(400, 'Invalid JSON body');
 
@@ -439,12 +441,18 @@ export async function handleRecordHistory(
   const episode = Number.isInteger(body.episode) && (body.episode as number) > 0 ? body.episode! : 0;
 
   try {
+    // Resume memory: clamp to sane bounds (a day covers any runtime).
+    const positionSeconds = Math.max(0, Math.min(Math.floor(Number(body.positionSeconds) || 0), 86400));
+    const durationSeconds = Math.max(0, Math.min(Math.floor(Number(body.durationSeconds) || 0), 86400));
+
     await env.DB.prepare(
-      `INSERT INTO watch_history (user_id, media_id, media_type, media_title, poster_url, season, episode, completed, watched_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+      `INSERT INTO watch_history (user_id, media_id, media_type, media_title, poster_url, season, episode, completed, position_seconds, duration_seconds, watched_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
        ON CONFLICT (user_id, media_id, season, episode) DO UPDATE SET
          watched_at = excluded.watched_at,
          completed = excluded.completed,
+         position_seconds = excluded.position_seconds,
+         duration_seconds = excluded.duration_seconds,
          media_title = excluded.media_title,
          poster_url = excluded.poster_url`
     )
@@ -457,6 +465,8 @@ export async function handleRecordHistory(
         season,
         episode,
         body.completed ? 1 : 0,
+        positionSeconds,
+        durationSeconds,
         Date.now()
       )
       .run();
@@ -474,7 +484,7 @@ export async function handleRecordHistory(
 export async function handleGetHistory(_request: Request, env: Env, me: AuthedUser): Promise<Response> {
   try {
     const { results } = await env.DB.prepare(
-      `SELECT media_id, media_type, media_title, poster_url, season, episode, completed, watched_at
+      `SELECT media_id, media_type, media_title, poster_url, season, episode, completed, position_seconds, duration_seconds, watched_at
        FROM watch_history WHERE user_id = ?1 ORDER BY watched_at DESC LIMIT 100`
     )
       .bind(me.id)
@@ -487,6 +497,8 @@ export async function handleGetHistory(_request: Request, env: Env, me: AuthedUs
       season: Number(r.season) || null,
       episode: Number(r.episode) || null,
       completed: Number(r.completed) === 1,
+      positionSeconds: Number(r.position_seconds) || 0,
+      durationSeconds: Number(r.duration_seconds) || 0,
       watchedAt: Number(r.watched_at) || 0,
     }));
     return json({ items });
