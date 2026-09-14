@@ -23,7 +23,7 @@
   <!-- Type is the system stack Apple uses (SF Pro on Apple devices, Segoe UI /
        Roboto elsewhere) — no web font download, so it matches apple.com. -->
   <link rel="stylesheet" href="/css/style.css?v=20" />
-  <link rel="stylesheet" href="/css/catalog.css?v=14" />
+  <link rel="stylesheet" href="/css/catalog.css?v=15" />
   <link rel="stylesheet" href="/css/social.css?v=16" />
 </head>
 <body>
@@ -177,6 +177,12 @@
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
           </svg>
           <span>Copy invite</span>
+        </button>
+        <button id="room-nav-toggle" class="btn btn--ghost btn--sm" type="button" aria-expanded="false" title="Show navigation">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+          <span>Menu</span>
         </button>
         <button id="leave-room" class="btn btn--ghost btn--sm btn--danger" type="button">Leave</button>
       </div>
@@ -417,6 +423,6 @@
   <script src="/js/subs.js?v=25"></script>
   <script src="/js/catalog.js?v=20"></script>
   <script src="/js/social.js?v=43"></script>
-  <script src="/js/app.js?v=32"></script>
+  <script src="/js/app.js?v=33"></script>
 </body>
 </html>

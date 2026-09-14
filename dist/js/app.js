@@ -392,13 +392,16 @@
     state._lastRecKey = null;
     resetRecs();
 
-    // Room focus: collapse the guide rail to icons. Remember only whether WE
-    // collapsed it, so leaving restores the user's pre-room state faithfully.
+    // Room focus: the guide rail is HIDDEN entirely (CSS body.room-focus);
+    // the collapsed class is kept so a peek (#room-nav-toggle) shows the
+    // icon strip. Remember only whether WE collapsed it, so leaving restores
+    // the user's pre-room state faithfully.
     if (!sidenavCollapsed()) {
       setSidenav(true);
       state._sidenavAuto = true;
       state._sidenavTouched = false;
     }
+    document.body.classList.add('room-focus');
 
     // Tear down any previous session so listeners/commands never stack.
     if (state.sync) {
@@ -511,6 +514,14 @@
           if (state.video && String(state.video.id) === vid) paintLike(was);
           toast('Could not save that like \u2014 try again.', true);
         });
+    };
+    // TEMPORARY navigation peek while the rail is hidden in a room: shows the
+    // icon strip until toggled back. Deliberately NOT the persistent pref and
+    // does NOT claim the rail (leaving still restores the pre-room state).
+    $('room-nav-toggle').onclick = () => {
+      const peek = document.body.classList.toggle('rail-peek');
+      if (peek) setSidenav(true);
+      $('room-nav-toggle').setAttribute('aria-expanded', String(peek));
     };
     $('episode-switch').onclick = () => {
       const v = state.video;
@@ -1267,6 +1278,8 @@
     // unless they expanded it themselves inside the room (last explicit
     // action wins).
     if (state._sidenavAuto && !state._sidenavTouched) setSidenav(false);
+    document.body.classList.remove('room-focus');
+    document.body.classList.remove('rail-peek');
     state._sidenavAuto = false;
     state._sidenavTouched = false;
   }

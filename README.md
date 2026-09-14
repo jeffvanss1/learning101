@@ -932,3 +932,17 @@ Tests 139/139, check clean. style v20 / catalog v14 / social v16 / ui .53.
 - Pinned in tests/stability.test.mjs (setter/reader singletons, restore
   conditional, manual-win rule, no-persistence). Tests 140/140.
   app.js v32 / ui-2026-09-14.54.
+
+## Room focus II: the guide rail is now FULLY hidden in rooms (ui-2026-09-14.55)
+
+- The 72px icon strip was still too much for the room: entering a room
+  now HIDES the sidenav completely (`body.room-focus .sidenav { display:
+  none }`); leaving the room restores exactly the pre-room state
+  (unchanged restore rules: auto-collapse never persists, manual wins).
+- Stranded-proof: the room header gains a Menu button (visible ONLY in
+  rooms) that temporarily peeks the icon strip (`rail-peek` class,
+  in-memory only) - toggle it away again or just leave the room.
+  Brand-home link also stays for full navigation.
+- Pins: room-focus add/remove, peek wiring + icon-strip, CSS rules,
+  Menu button room-only. Tests 140/140, check clean.
+  app.js v33 / catalog.css v15 / ui-2026-09-14.55.

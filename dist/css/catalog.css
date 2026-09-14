@@ -225,6 +225,25 @@ body.sidenav-collapsed .sidenav__search {
   display: none;
 }
 
+/* ---- Room focus: the guide rail is HIDDEN entirely ----------------------------
+   Rooms need the space (player + chat). #room-nav-toggle in the room header
+   offers a temporary icon-strip peek; leaving the room restores the rail. */
+#room-nav-toggle {
+  display: none;
+}
+
+body.room-focus #room-nav-toggle {
+  display: inline-flex;
+}
+
+body.room-focus .sidenav {
+  display: none;
+}
+
+body.room-focus.rail-peek .sidenav {
+  display: flex;
+}
+
 /* ---- Search -------------------------------------------------------------------- */
 .browse__search {
   display: flex;

@@ -62,7 +62,20 @@ test('stability: room auto-collapses the sidenav; leaving restores pre-room stat
 
   // The AUTO move is contextual only - it must never touch localStorage
   // (the persistent pref is written exclusively by the manual toggle).
-  const m = app.indexOf('Room focus: collapse the guide rail');
+  const m = app.indexOf('Room focus: the guide rail is HIDDEN');
   const end = app.indexOf('Tear down any previous session', m);
   assert.doesNotMatch(app.slice(m, end), /localStorage/, 'auto-collapse never persists');
+
+  // FULL HIDE: room-focus hides the rail entirely in rooms; the room-header
+  // Menu button peeks the icon strip; leaving removes both classes.
+  assert.match(app, /document\.body\.classList\.add\('room-focus'\);/, 'room entry hides the rail');
+  assert.match(app, /classList\.remove\('room-focus'\);\s*document\.body\.classList\.remove\('rail-peek'\);/, 'teardown unhides the rail + clears peek');
+  assert.match(app, /\$\('room-nav-toggle'\)\.onclick/, 'room Menu button wired');
+  assert.match(app, /if \(peek\) setSidenav\(true\);/, 'peek shows the ICON strip');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /id="room-nav-toggle"/, 'Menu button exists in the room header');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.match(css, /body\.room-focus \.sidenav \{\s*display: none;/, 'CSS hides the rail in rooms');
+  assert.match(css, /body\.room-focus\.rail-peek \.sidenav \{\s*display: flex;/, 'CSS restores the rail on peek');
+  assert.match(css, /body\.room-focus #room-nav-toggle \{\s*display: inline-flex;/, 'Menu button only visible in rooms');
 });
