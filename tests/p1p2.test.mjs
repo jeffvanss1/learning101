@@ -123,7 +123,7 @@ test('security headers: every page and API response is hardened', async () => {
   assert.match(w, /frame-ancestors 'self'/, 'no third-party framing');
   assert.match(w, /\.\.\.securityHeaders\(\),/, 'json() inherits them');
   assert.match(w, /for \(const \[k, v\] of Object\.entries\(securityHeaders\(\)\)\) res\.headers\.set\(k, v\);/, 'static assets are wrapped');
-  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.64';/, 'api stamp bumped');
+  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.65';/, 'api stamp bumped');
 });
 
 

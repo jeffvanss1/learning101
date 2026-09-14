@@ -712,7 +712,7 @@
           // Resolve anime classification + AniList id. Try the Worker endpoint
           // first (TMDB keywords + AniList match); if that's unreachable or
           // can't find a match, fall back to a direct browser -> AniList lookup
-          // (public, keyless GraphQL API). Anime never falls back to /watch/tv/.
+          // (public, keyless GraphQL API). Unmatched anime degrades to the TMDB tv path.
           let info = null;
           try {
             info = await anilistApi(item.id);
@@ -737,7 +737,14 @@
               if (malId) item.malId = malId;
               renderAnimeBody(body, item, extra, { episodes: episodes, malId: malId }, onPick, close);
             } else {
-              renderAnimeUnresolved(body, item, extra);
+              // NO AniList match: degrade to the REAL TMDB seasons UI (chips
+              // + per-season grids playing the tv path) instead of a dead
+              // end. TMDB anime entries carry proper /season structure, so
+              // the user can still watch; if a later resolve matches, the
+              // absolute AniList grid takes over again.
+              item.isAnime = false;
+              item.type = 'tv';
+              renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
             }
           } else {
             renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
@@ -894,19 +901,6 @@
     body.appendChild(section);
   }
 
-  // Detected as anime, but AniList lookup failed to yield an ID.
-  function renderAnimeUnresolved(body, item, extra) {
-    body.innerHTML = '';
-    const title = (extra && (extra.name || extra.title)) || item.title || 'This title';
-    body.appendChild(h('div', 'detail__title', title));
-    body.appendChild(
-      h(
-        'div',
-        'browse__empty',
-        "This looks like anime, but we couldn't match it on AniList, so it can't be played through the anime player yet."
-      )
-    );
-  }
 
   // ---- feed definitions (shared by the home browse feed and /discovery pages) --------
   // Pure data: instances must copy these, never mutate them (two mounts can

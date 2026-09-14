@@ -195,3 +195,15 @@ test('boruto fix wiring: dual-variant search + short-lived misses (both caches)'
   assert.match(cat, /o\.data && o\.data\.anilistId != null \? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS/, 'worker-path cache picks TTL by resolved-ness');
   assert.match(cat, /o\.data && o\.data\.id != null \? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS/, 'direct fallback cache picks TTL by resolved-ness');
 });
+
+test('unmatched anime degrades to TMDB seasons (tv path) - the dead end is GONE', () => {
+  const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  assert.equal(cat.includes("couldn't match it on AniList"), false, 'dead-end message deleted');
+  assert.equal(/renderAnimeUnresolved/.test(cat), false, 'dead-end renderer deleted');
+  assert.match(cat, /item\.isAnime = false;\s*item\.type = 'tv';\s*renderDetailBody\(body, item, extra, extra\.seasons \|\| \[\], onPick, close\);/, 'unmatched anime renders the REAL TMDB season picker (chips + grids, tv path)');
+  // matched anime still uses the absolute AniList grid:
+  assert.match(cat, /renderAnimeBody\(body, item, extra, \{ episodes: episodes, malId: malId \}/, 'matched anime unchanged');
+  const worker = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
+  assert.match(worker, /ANIME_TTL_MS : 15 \* 1000/, 'worker caches FAILURES only 15 seconds');
+  assert.equal((worker.match(/max-age=15'/g) || []).length, 2, 'failure Cache-Control 15s (both sites)');
+});

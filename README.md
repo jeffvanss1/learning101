@@ -1039,3 +1039,22 @@ steady-state cost; (2) classifyAnime resolves with bounded concurrency
 (3 workers, 150ms stagger) - the worker's day-long cache absorbs repeat
 views. Pins for both. Tests 155/155, check clean.
 catalog v24 / ui+api-2026-09-14.64.
+
+## Anime dead-end removed: unmatched -> real TMDB seasons (ui/api-2026-09-14.65)
+
+USER DIRECTED (after the rate-limit hotfix still showed the wall): TMDB
+anime entries carry proper /season structure (JoJo-class catalogs) - an
+anime that fails to resolve on AniList must degrade to that REAL season
+picker (chips + per-season grids on the tv path), not a dead end.
+
+- renderAnimeUnresolved ("couldn't match it on AniList") DELETED. The
+  unmatched branch renders renderDetailBody with the item's own TMDB
+  seasons as a normal series (isAnime/type unset so buildVideo makes tv
+  videos). If a later resolve matches, the absolute AniList grid takes
+  over again. Matched anime: unchanged.
+- Worker failure-cache 5min -> 15 SECONDS (+ Cache-Control max-age=15,
+  both sites): a rate-limit window now recovers in seconds instead of
+  compounding into minutes of unresolved titles.
+- Pins: dead-end message + renderer gone, fallback wiring, matched path
+  unchanged, worker 15s failure TTL. Tests 156/156, check clean.
+  catalog v25 / ui+api-2026-09-14.65.

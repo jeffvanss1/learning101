@@ -552,14 +552,17 @@ export default {
           // Resolved matches cache a day; misses/nulls only 5 minutes so a
           // matcher fix propagates fast (the old 7d edge TTL poisoned the
           // pre-fix null responses for a WEEK — clients couldn't un-see it).
-          const cc = (hit.data as any) && (hit.data as any).anilistId ? 'public, max-age=86400' : 'public, max-age=300';
+          const cc = (hit.data as any) && (hit.data as any).anilistId ? 'public, max-age=86400' : 'public, max-age=15';
           return json(hit.data, 200, { 'Cache-Control': cc });
         }
         try {
           const data = await resolveAnime(tmdbId, apiKey);
           if (animeCache.size >= ANIME_CACHE_MAX) animeCache.clear();
-          animeCache.set(tmdbId, { data, expires: Date.now() + (data.anilistId ? ANIME_TTL_MS : 5 * 60 * 1000) });
-          const cc = data.anilistId ? 'public, max-age=86400' : 'public, max-age=300';
+          // Failures are cached 15 SECONDS: a rate-limit window must recover
+          // fast, and a matcher fix must propagate even faster (5-minute null
+          // caching turned one bad window into minutes of dead ends).
+          animeCache.set(tmdbId, { data, expires: Date.now() + (data.anilistId ? ANIME_TTL_MS : 15 * 1000) });
+          const cc = data.anilistId ? 'public, max-age=86400' : 'public, max-age=15';
           return json(data, 200, { 'Cache-Control': cc });
         } catch (e) {
           return json({ error: 'AniList lookup failed', detail: String(e) }, 502);
