@@ -454,6 +454,11 @@ export class WatchRoom {
         const video = sanitizeMeta(msg.video);
         if (!video.id) break;
         this.meta.video = video;
+        // A new video invalidates the previous subtitle file (it belongs to
+        // the OLD title/episode - serving it to new joiners showed wrong or
+        // dead subs). The host's client auto-loads the new video's subs and
+        // broadcasts a fresh SUBS load.
+        this.subs = undefined;
         // Choosing a video begins playback for the whole room — no need to
         // press the UI play button to start.
         this.playback = { isPlaying: true, time: 0, timestamp: now() };

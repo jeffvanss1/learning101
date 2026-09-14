@@ -762,3 +762,14 @@ miss.
   Sync (hint is the tooltip). Row 3: mini-map, Align, Reset, 60s/full
   zoom, text Size. The duplicate "Reset offset" button was removed
   (Reset routes through the same room-sync path).
+
+## First-load subtitles fix (api-2026-09-13.41)
+
+Joiners inherited the host's subtitle fileId BEFORE knowing the download
+would succeed: roomSubsActive was set optimistically and the joiner's own
+auto-load was superseded - so a failed inherited download left the room
+with NO subtitles at all. Now the room-priority flag is claimed only
+after a successful parse; any failure falls back to the local auto-load
+(force). A new video resets the priority and the DO now CLEARS this.subs
+on videoChange (a new title/episode must never inherit the previous
+file - fresh joiners auto-load fresh subs).

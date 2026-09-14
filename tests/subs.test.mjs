@@ -1427,3 +1427,83 @@ test('mini-map zoom toggle: 60s centered window, persisted across loads', async 
   const zoomBtn2 = row2.children.find((c) => String(c.className).indexOf('subs-editor__zoom') !== -1);
   assert.equal(zoomBtn2.textContent, '\u23f1 60s', 'toggle shows the active mode');
 });
+
+test('first-load fix: inherited host file failing to download FALLS BACK to local auto-load', async () => {
+  // The dead end: joiner's own auto-load was killed, roomSubsActive was set
+  // optimistically, and the host's file failed -> nothing, ever.
+  let fileFail = true; // first /api/subs/file call (host file) fails
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/subs/file?fileId=HOST1')) {
+      if (fileFail) return Promise.resolve({ ok: false, status: 502 });
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:05,000 --> 00:00:09,000\nfallback cue\n' });
+    }
+    if (u.includes('/api/subs/search')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          results: [{ fileId: 'MINE1', release: 'Fallback.Pick', lang: 'id', downloads: 900 }],
+          best: { fileId: 'MINE1', release: 'Fallback.Pick', lang: 'id', downloads: 900 },
+        }),
+      });
+    }
+    if (u.includes('fileId=MINE1')) {
+      return Promise.resolve({ ok: true, text: async () => '1\n00:00:05,000 --> 00:00:09,000\nfallback cue\n' });
+    }
+    return Promise.reject(new Error('unexpected ' + u));
+  };
+
+  const storeF = {};
+  const docF = {
+    createElement: (t) => new El2(t),
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    documentElement: new El2('html'),
+    body: new El2('body'),
+    addEventListener() {},
+    readyState: 'complete',
+    hidden: false,
+  };
+  globalThis.window = {
+    WP: {},
+    innerWidth: 1200,
+    innerHeight: 800,
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {},
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    localStorage: {
+      getItem: (k) => (k in storeF ? storeF[k] : null),
+      setItem: (k, v) => (storeF[k] = String(v)),
+      removeItem: (k) => delete storeF[k],
+    },
+  };
+  globalThis.document = docF;
+  globalThis.location = { search: '' };
+  globalThis.localStorage = globalThis.window.localStorage;
+  Object.assign(globalThis.window, { document: docF, location: globalThis.location, localStorage: globalThis.localStorage });
+
+  const Subs = (await import(join(ROOT, 'dist/js/subs.js') + '?firstload=' + Date.now())).window ? globalThis.window.WP.Subs : globalThis.window.WP.Subs;
+  assert.ok(Subs, 'module registered');
+  Subs.mount(new El2());
+
+  // The joiner flow: state msg sets the video (auto-load starts, superseded)
+  // then the host's subs fileId arrives and its download FAILS.
+  Subs.setVideo({ type: 'tv', id: '67663', season: 1, episode: 11 });
+  await new Promise((r) => setTimeout(r, 10)); // let auto-load #1 start + stall on fetch
+  await Subs.loadRemote({ fileId: 'HOST1', label: 'Host.Pick [Bahasa Indonesia]' });
+  await new Promise((r) => setTimeout(r, 30)); // fallback chain runs
+
+  const st = Subs.__test.state();
+  assert.equal(st.cues, 1, 'fallback auto-load landed cues after the host file failed: ' + st.cues);
+  assert.match(st.status, /Fallback\.Pick|from file/, 'status shows the fallback pick: ' + st.status);
+
+  // And the success path still wins the room over: a good host file loads.
+  fileFail = false;
+  await Subs.loadRemote({ fileId: 'HOST1', label: 'Host.Pick [Bahasa Indonesia]' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(Subs.__test.state().status, /loaded by host/, 'good host file takes over');
+});

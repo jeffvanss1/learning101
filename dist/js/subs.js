@@ -374,18 +374,26 @@
       if (info && info.label) setStatus((info.label) + ' \u00b7 ' + tr('subs.byHost', 'loaded by host'));
       return;
     }
-    roomSubsActive = true;
-    autoLoadGen++; // any in-flight local auto-load is now stale: discard it
     if (fileId === lastLoadedFileId && cues.length) return; // echo guard
+    autoLoadGen++; // supersede any in-flight LOCAL auto-load while we try the host's file
     try {
       const res = await fetch('/api/subs/file?fileId=' + encodeURIComponent(fileId));
-      if (!res.ok) return;
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       const text = await res.text();
-      if (!parseSubtitles(text).length) return;
+      if (!parseSubtitles(text).length) throw new Error('unparseable');
+      // SUCCESS only now: the room's pick wins over local auto-load.
+      roomSubsActive = true;
       lastLoadedFileId = fileId;
       loadCues(text);
       setStatus((info && info.label ? info.label : '') + ' \u00b7 ' + tr('subs.byHost', 'loaded by host'));
-    } catch (_) {}
+    } catch (_) {
+      // FIRST-LOAD DEAD END (fixed): the inherited file failed to download -
+      // previously roomSubsActive was already true AND the local auto-load
+      // was killed, leaving the joiner with nothing. Fall back to our own
+      // auto-load for this video.
+      roomSubsActive = false;
+      if (video) void autoLoad(video, { force: true });
+    }
   }
 
   /** @param {number} v */
@@ -928,6 +936,7 @@
     }
     lastVideoKey = nextKey;
     video = next;
+    roomSubsActive = false; // new video = fresh subtitle context (the old room pick is stale)
     cues = [];
     cueIdx = 0;
     gotClock = false;

@@ -420,3 +420,18 @@ test('episode switcher modal in room + subs panel decluttered', async () => {
   assert.match(subs, /row3\.appendChild\(syncBtn\)/, 'Sync merged into the offset row');
   assert.equal(/panel\.appendChild\(row2\)/.test(subs), false, 'upload row2 gone');
 });
+
+test('VIDEO_CHANGE clears the room subs (new video = no stale inherited file)', async () => {
+  const { room, store, wsHost } = await freshRoom();
+  await room.webSocketMessage(wsHost, JSON.stringify({ type: 'subs', action: 'load', fileId: 'EP11', label: 'Bleach S01E11 [id]' }));
+  assert.equal(room.subs.fileId, 'EP11');
+
+  await room.webSocketMessage(wsHost, JSON.stringify({
+    type: 'videoChange',
+    video: { type: 'tv', id: '67663', src: 'https://x/67663/1/12', title: 'Bleach', season: 1, episode: 12 },
+  }));
+  assert.equal(room.subs, undefined, 'subs invalidated by the video change');
+  // The next state snapshot carries subs: null -> joiners auto-load fresh.
+  const snap = room.snapshot ? room.snapshot() : null;
+  if (snap) assert.equal(snap.subs, null, 'snapshot exposes cleared subs');
+});
