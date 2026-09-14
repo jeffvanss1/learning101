@@ -836,6 +836,7 @@
           thumb.appendChild(img);
         }
         if (img.src !== v.poster) img.src = v.poster;
+        img.onerror = () => img.remove(); // broken art must never show as a torn frame
       } else if (img) {
         img.remove();
       }

@@ -1136,3 +1136,24 @@ thumb. Focus rings kept (a11y). Skeleton shimmer / avatar-cosmetics
 gradients untouched (functional or paid features). style.css v24 /
 catalog.css v19 / social.css v18. Tests 167/167 (shape pinned: no
 999px outside the scrollbar, .btn flat 8px).
+
+## Cover fixes (#11) + profile gap (#12) (ui-2026-09-14.70)
+
+#11 COVER GONE ON EPISODE SWITCH: the room episode switcher rebuilt the
+video from {id,type,title} only — poster/backdrop/overview were dropped,
+so updateVideoUI removed the cover. Both pick paths now SPREAD the room
+video (...video), keeping the artwork. Detail modal: the cover now
+FOLLOWS the selected season (TMDB ships poster_path per season; broken
+season art reverts to the show poster, never a torn frame). Episodes
+modal: new compact cover row (64px, 8px radius) — show title + season
+label that follows the chips; anime path shows the show art + episode
+count. Room cover also gains a broken-art guard. catalog v26 /
+catalog css v20.
+
+#12 PROFILE GAP: the favorites showcase always rendered 4 poster-height
+slots; empty ones were huge dashed holes above Friends. Visitors now see
+only real favorites; your own profile gets compact add-affordances
+(aspect-ratio released, grid no longer stretches them). social css v19.
+
+Tests 169/169 (pins updated: absolute-episode contract kept — season is
+still never passed for anime picks). ui-2026-09-14.70.

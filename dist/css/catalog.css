@@ -1311,3 +1311,38 @@ body.room-focus.rail-peek .sidenav {
   color: var(--red);
 }
 
+
+/* Episodes modal: compact cover row (follows the selected season) */
+.episodes-modal__headrow {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin: 2px 0 14px;
+}
+
+.episodes-modal__cover {
+  width: 64px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--bg-input);
+  flex: 0 0 auto;
+}
+
+.episodes-modal__covermeta {
+  min-width: 0;
+}
+
+.episodes-modal__show {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episodes-modal__season {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}

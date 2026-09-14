@@ -761,11 +761,20 @@
     body.innerHTML = '';
 
     const top = h('div', 'detail__top');
+    const showPosterSrc = (extra && extra.poster_path ? img(extra.poster_path, 'w500') : '') || item.poster || '';
     const poster = document.createElement('img');
     poster.className = 'detail__poster';
     poster.alt = '';
-    poster.src = (extra && extra.poster_path ? img(extra.poster_path, 'w500') : '') || item.poster || '';
-    poster.onerror = () => poster.remove();
+    poster.src = showPosterSrc;
+    // A failed season cover reverts to the SHOW poster (never a broken image,
+    // never a vanished cover); only when even the show art is gone do we drop it.
+    poster.onerror = () => {
+      if (poster.src !== showPosterSrc && showPosterSrc) {
+        poster.src = showPosterSrc;
+      } else {
+        poster.remove();
+      }
+    };
     top.appendChild(poster);
 
     const info = h('div', 'detail__info');
@@ -800,7 +809,13 @@
 
     const usable = (Array.isArray(seasons) ? seasons : [])
       .filter((s) => s && Number(s.season_number) > 0)
-      .map((s) => ({ season: Number(s.season_number), name: s.name || `Season ${s.season_number}`, episodes: Number(s.episode_count) || 0 }));
+      .map((s) => ({
+        season: Number(s.season_number),
+        name: s.name || `Season ${s.season_number}`,
+        episodes: Number(s.episode_count) || 0,
+        // TMDB ships a poster per season — the detail cover follows it.
+        poster: (s.poster_path ? img(s.poster_path, 'w500') : '') || showPosterSrc,
+      }));
 
     const section = h('div', 'detail__section');
     section.appendChild(h('p', 'detail__label', 'Season'));
@@ -817,6 +832,8 @@
       seasonChips.querySelectorAll('.chip').forEach((c) => {
         if (Number(c.dataset.season) === s.season) c.classList.add('chip--active');
       });
+      // The cover follows the selected season (falls back to the show art).
+      if (s.poster && poster.parentNode && poster.src !== s.poster) poster.src = s.poster;
       renderEpisodes(s);
     }
 
@@ -1568,13 +1585,31 @@
           }
           if (anilistId != null && episodes > 0) {
             body.innerHTML = '';
+            const animePoster = (extra && extra.poster_path ? img(extra.poster_path, 'w154') : '') || video.poster || '';
+            const acov = document.createElement('img');
+            acov.className = 'episodes-modal__cover';
+            acov.alt = '';
+            acov.src = animePoster;
+            acov.onerror = () => {
+              if (acov.src !== animePoster && animePoster) acov.src = animePoster;
+              else acov.remove();
+            };
+            const ameta = h('div', 'episodes-modal__covermeta');
+            ameta.appendChild(h('div', 'episodes-modal__show', video.title || 'Series'));
+            ameta.appendChild(h('div', 'episodes-modal__season', episodes + ' episodes'));
+            const arow = h('div', 'episodes-modal__headrow');
+            arow.appendChild(acov);
+            ameta && arow.appendChild(ameta);
+            body.appendChild(arow);
             body.appendChild(h('p', 'detail__label', 'Episode'));
             const epGrid = h('div', 'detail__episodes');
             body.appendChild(epGrid);
             renderEpisodeGrid(epGrid, {
               count: episodes,
               pick: (n) => {
-                onPick(buildVideo({ id: video.id, type: 'anime', isAnime: true, anilistId: anilistId, malId: malId, title: video.title }, { episode: n }));
+                // SPREAD the room video: dropping poster/backdrop/overview here
+                // is what erased the room cover on every episode switch.
+                onPick(buildVideo({ ...video, type: 'anime', isAnime: true, anilistId: anilistId, malId: malId }, { episode: n }));
                 close();
               },
               currentEp: Number(video.episode) || 0,
@@ -1596,7 +1631,12 @@
         }
         const usable = ((extra && extra.seasons) || [])
           .filter((s) => s && Number(s.season_number) > 0)
-          .map((s) => ({ season: Number(s.season_number), name: s.name || 'Season ' + s.season_number, episodes: Number(s.episode_count) || 0 }));
+          .map((s) => ({
+            season: Number(s.season_number),
+            name: s.name || 'Season ' + s.season_number,
+            episodes: Number(s.episode_count) || 0,
+            poster: (s.poster_path ? img(s.poster_path, 'w154') : '') || showPoster,
+          }));
         body.innerHTML = '';
         if (!usable.length) {
           body.appendChild(h('div', 'browse__empty', 'No season data available.'));
@@ -1606,6 +1646,27 @@
         const curEp = Number(video.episode) || 0;
         const seasonChips = h('div', 'detail__seasons');
         const epGrid = h('div', 'detail__episodes');
+
+        // Cover row: the show's art, following the selected season (TMDB
+        // ships a poster per season) — the modal no longer looks like a
+        // bare numbered list.
+        const showPoster = (extra && extra.poster_path ? img(extra.poster_path, 'w154') : '') || video.poster || '';
+        const cov = document.createElement('img');
+        cov.className = 'episodes-modal__cover';
+        cov.alt = '';
+        cov.src = showPoster;
+        cov.onerror = () => {
+          if (cov.src !== showPoster && showPoster) cov.src = showPoster;
+          else cov.remove();
+        };
+        const coverMeta = h('div', 'episodes-modal__covermeta');
+        coverMeta.appendChild(h('div', 'episodes-modal__show', video.title || 'Series'));
+        const seasonLabel = h('div', 'episodes-modal__season', 'Season ' + curSeason);
+        coverMeta.appendChild(seasonLabel);
+        const coverRow = h('div', 'episodes-modal__headrow');
+        coverRow.appendChild(cov);
+        coverRow.appendChild(coverMeta);
+        body.appendChild(coverRow);
         body.appendChild(seasonChips);
         body.appendChild(epGrid);
 
@@ -1615,7 +1676,7 @@
           renderEpisodeGrid(epGrid, {
             count: count,
             pick: (n) => {
-              onPick(buildVideo({ id: video.id, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId, title: video.title }, { season: s.season, episode: n }));
+              onPick(buildVideo({ ...video, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId }, { season: s.season, episode: n }));
               close();
             },
             currentEp: s.season === curSeason ? curEp : 0,
@@ -1633,6 +1694,8 @@
             active = s;
             seasonChips.querySelectorAll('.chip').forEach((x) => x.classList.remove('chip--active'));
             chip.classList.add('chip--active');
+            if (s.poster && cov.parentNode && cov.src !== s.poster) cov.src = s.poster;
+            seasonLabel.textContent = 'Season ' + s.season;
             renderEpisodes(s);
           });
           seasonChips.appendChild(chip);

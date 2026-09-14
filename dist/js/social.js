@@ -1270,6 +1270,11 @@
     const grid = h('div', 'showcase__grid');
     for (let i = 0; i < PIN_LIMIT; i++) {
       const fav = data.favorites[i] || null;
+      // Empty slots on OTHER people's profiles were full poster-height
+      // dashed boxes — the "empty gap" between favorites and friends.
+      // Visitors see only real favorites; your own profile gets ONE
+      // compact add-affordance per free slot.
+      if (!fav && !own) continue;
       grid.appendChild(showcaseSlot(fav, own, onEdited));
     }
     showcase.appendChild(grid);
@@ -2213,7 +2218,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.69';
+  global.WP.build = 'ui-2026-09-14.70';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

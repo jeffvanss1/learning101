@@ -525,6 +525,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
+  align-items: start; /* empty slots stay compact — no poster-height holes */
 }
 
 .showcase__card {
@@ -583,6 +584,8 @@
   border-style: dashed;
   gap: 4px;
   cursor: pointer;
+  aspect-ratio: auto; /* compact add-affordance, not an empty poster hole */
+  padding: 16px 10px;
 }
 
 .showcase__plus {

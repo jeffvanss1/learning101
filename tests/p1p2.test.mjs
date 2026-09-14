@@ -239,6 +239,37 @@ test('minimal shape pass: no oval buttons — flat radii, circles only where the
   assert.match(social, /\.avatar-frame \{[^}]*border-radius: 50%;/, 'avatars stay circular');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /css\/style\.css\?v=24/, 'style cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=19/, 'catalog cache-bumped');
-  assert.match(html, /css\/social\.css\?v=18/, 'social cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=20/, 'catalog cache-bumped');
+  assert.match(html, /css\/social\.css\?v=19/, 'social cache-bumped');
+});
+
+test('cover survives episode switch + season covers in both modals', () => {
+  const c = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  // The episode switcher spreads the room video (poster/backdrop/overview ride along).
+  assert.match(c, /onPick\(buildVideo\(\{ \.\.\.video, type: 'anime', isAnime: true, anilistId: anilistId, malId: malId \}, \{ episode: n \}\)\)/, 'anime pick preserves artwork');
+  assert.match(c, /onPick\(buildVideo\(\{ \.\.\.video, type: isAnime \? 'anime' : 'tv', isAnime: isAnime, anilistId: video\.anilistId \}, \{ season: s\.season, episode: n \}\)\)/, 'tv pick preserves artwork');
+  // Detail modal: season cover swap + revert-to-show onerror (never remove-on-error).
+  assert.match(c, /poster: \(s\.poster_path \? img\(s\.poster_path, 'w500'\) : ''\) \|\| showPosterSrc/, 'detail seasons carry their poster');
+  assert.match(c, /if \(s\.poster && poster\.parentNode && poster\.src !== s\.poster\) poster\.src = s\.poster;/, 'season switch swaps the detail cover');
+  assert.match(c, /if \(poster\.src !== showPosterSrc && showPosterSrc\) \{\s*poster\.src = showPosterSrc;/, 'broken season art reverts to the show poster');
+  // Episodes modal: cover row (show art -> season art) for tv AND anime paths.
+  assert.match(c, /episodes-modal__cover/, 'episodes modal shows a cover');
+  assert.match(c, /if \(s\.poster && cov\.parentNode && cov\.src !== s\.poster\) cov\.src = s\.poster;/, 'modal cover follows the season chip');
+  assert.match(c, /episodes-modal__season', 'Season ' \+ curSeason/, 'season label initial');
+  assert.match(c, /episodes-modal__season', episodes \+ ' episodes'/, 'anime modal shows the episode count');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/catalog\.js\?v=26/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=20/, 'catalog css cache-bumped');
+});
+
+test('room cover broken-art guard + profile showcase has no empty poster-height holes', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /img\.onerror = \(\) => img\.remove\(\); \/\/ broken art must never show as a torn frame/, 'room cover guard');
+  const s = readFileSync(join(ROOT, 'dist/js/social.js'), 'utf8');
+  assert.match(s, /if \(!fav && !own\) continue;/, 'no empty slots on other people profiles');
+  const css = readFileSync(join(ROOT, 'dist/css/social.css'), 'utf8');
+  assert.match(css, /\.showcase__card--empty \{[^}]*aspect-ratio: auto;/, 'empty slots are compact');
+  assert.match(css, /\.showcase__grid \{[^}]*align-items: start;/, 'grid rows no longer stretch empty slots');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /css\/social\.css\?v=19/, 'social css cache-bumped');
 });
