@@ -12,6 +12,12 @@
   --border: #303030;
   --border-soft: #262626;
 
+  /* Subtle translucent fills (hover washes, tracks, ghost buttons) that
+     flip direction in light mode (white-on-dark -> black-on-light). */
+  --fill-soft: rgba(255, 255, 255, 0.05);
+  --fill-med: rgba(255, 255, 255, 0.08);
+  --fill-strong: rgba(255, 255, 255, 0.14);
+
   --text: #f1f1f1;
   --text-dim: #aaaaaa;
   --text-muted: #717171;
@@ -30,11 +36,74 @@
   --radius-sm: 8px;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 
+  color-scheme: dark;
+
   --header-h: 60px;
   --sidebar-w: 380px;
   --topnav-h: 60px;
   --sidenav-w: 224px;
   --sidenav-w-collapsed: 72px;
+}
+
+/* ---------------------------------------------------------------------------
+   LIGHT THEME — explicit pick (html[data-theme='light']) or the system
+   preference by default (prefers-color-scheme). An explicit data-theme wins;
+   with no attribute the media query below follows the OS. The inline head
+   script in index.html applies an explicit pick pre-paint (no flash).
+   -------------------------------------------------------------------------- */
+html[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-soft: #f9f9f9;
+  --bg-elev: #ffffff;
+  --bg-raised: #f2f2f2;
+  --bg-input: #f8f8f8;
+  --bg-hover: #e5e5e5;
+  --border: #e5e5e5;
+  --border-soft: #ececec;
+
+  --fill-soft: rgba(0, 0, 0, 0.045);
+  --fill-med: rgba(0, 0, 0, 0.07);
+  --fill-strong: rgba(0, 0, 0, 0.12);
+
+  --text: #0f0f0f;
+  --text-dim: #606060;
+  --text-muted: #909090;
+
+  --blue: #065fd4;
+  --blue-hover: #0557c5;
+
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  /* System default: follow the OS unless the user picked dark explicitly. */
+  html:not([data-theme='dark']) {
+    --bg: #ffffff;
+    --bg-soft: #f9f9f9;
+    --bg-elev: #ffffff;
+    --bg-raised: #f2f2f2;
+    --bg-input: #f8f8f8;
+    --bg-hover: #e5e5e5;
+    --border: #e5e5e5;
+    --border-soft: #ececec;
+
+    --fill-soft: rgba(0, 0, 0, 0.045);
+    --fill-med: rgba(0, 0, 0, 0.07);
+    --fill-strong: rgba(0, 0, 0, 0.12);
+
+    --text: #0f0f0f;
+    --text-dim: #606060;
+    --text-muted: #909090;
+
+    --blue: #065fd4;
+    --blue-hover: #0557c5;
+
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+
+    color-scheme: light;
+  }
 }
 
 * {
@@ -128,7 +197,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  color: #fff;
+  color: var(--text);
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.2px;
@@ -202,12 +271,12 @@ button {
 }
 
 .btn--ghost {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-med);
   color: var(--text);
   border-color: var(--border);
 }
 .btn--ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--fill-strong);
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -935,7 +1004,7 @@ button {
 }
 
 .upnext-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--fill-soft);
 }
 
 .upnext-item__thumb {
@@ -1177,7 +1246,7 @@ button {
 }
 
 .chat-msg:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-soft);
 }
 
 @keyframes msg-in {
@@ -1657,7 +1726,7 @@ button {
 
 /* subs mini timing editor (manual match) */
 .subs-editor { flex-direction: column; align-items: stretch; gap: 4px; }
-.subs-editor__bar { position: relative; height: 26px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.subs-editor__bar { position: relative; height: 26px; border-radius: 6px; background: var(--fill-med); overflow: hidden; }
 .subs-editor__ticks { position: absolute; inset: 0; }
 .subs-editor__tick { position: absolute; top: 4px; bottom: 4px; min-width: 1px; border-radius: 1px; background: rgba(122, 162, 255, 0.45); border-left: 1px solid rgba(122, 162, 255, 0.95); cursor: pointer; }
 .subs-editor__tick:hover { background: #7aa2ff; }

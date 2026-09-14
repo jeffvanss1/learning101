@@ -1413,6 +1413,32 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Theme preference: the SYSTEM dark/light mode is always respected by
+  // default (CSS prefers-color-scheme). An explicit pick wins and is saved
+  // device-locally (like the access code flow — NOT profile data), applied
+  // to <html data-theme> instantly by the pre-paint script in index.html.
+  const THEME_KEY = 'wp:theme:explicit';
+
+  /** @returns {'system' | 'light' | 'dark'} */
+  function themePref() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return v === 'light' || v === 'dark' ? v : 'system';
+    } catch (_) {
+      return 'system';
+    }
+  }
+
+  /** @param {'system' | 'light' | 'dark'} pref */
+  function applyThemePref(pref) {
+    try {
+      if (pref === 'light' || pref === 'dark') localStorage.setItem(THEME_KEY, pref);
+      else localStorage.removeItem(THEME_KEY);
+    } catch (_) {}
+    if (pref === 'light' || pref === 'dark') document.documentElement.setAttribute('data-theme', pref);
+    else document.documentElement.removeAttribute('data-theme');
+  }
+
   // 7. Profile editor modal
   // ---------------------------------------------------------------------------
 
@@ -1488,6 +1514,34 @@
     });
     frameField.appendChild(frameRow);
     form.appendChild(frameField);
+
+    // Theme (System / Light / Dark) — applied instantly, saved on this device.
+    const themeField = h('div', 'field');
+    themeField.appendChild(h('span', 'field__label', 'Theme'));
+    const themeRow = h('div', 'theme-picker');
+    const themeOptions = /** @type {const} */ ([
+      ['system', 'System (auto)'],
+      ['light', 'Light'],
+      ['dark', 'Dark'],
+    ]);
+    let theme = themePref();
+    themeOptions.forEach(([val, label]) => {
+      const opt = /** @type {HTMLButtonElement} */ (h('button', 'theme-picker__opt', label));
+      opt.type = 'button';
+      if (val === theme) opt.classList.add('is-selected');
+      opt.addEventListener('click', () => {
+        theme = val;
+        applyThemePref(val); // instant — device-level setting
+        themeRow.querySelectorAll('.theme-picker__opt').forEach((o) => o.classList.remove('is-selected'));
+        opt.classList.add('is-selected');
+      });
+      themeRow.appendChild(opt);
+    });
+    themeField.appendChild(themeRow);
+    themeField.appendChild(
+      h('span', 'field__hint', 'System follows your device dark/light mode. An explicit pick is saved on this device.')
+    );
+    form.appendChild(themeField);
 
     // Favorites (4 pins)
     const favField = h('div', 'field');
@@ -2146,7 +2200,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.48';
+  global.WP.build = 'ui-2026-09-14.49';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2385,6 +2439,8 @@
   }
 
   global.WP.Social = {
+    themePref,
+    applyThemePref,
     ensureSession,
     claimWithCode,
     rotateAccessCode,

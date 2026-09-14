@@ -820,3 +820,19 @@ Tests 130/130, tsc clean. app.js v30 / catalog.js v18 / ui-2026-09-14.47.
   falls back to the old grid only when no match exists). Picks build the
   anime video with `{ episode: n }` and never a season; the current
   episode highlights correctly; threading still applies past 50.
+
+## Theme: system dark/light respected + profile toggle (ui-2026-09-14.49)
+
+- **The app always respects your device dark/light mode now.** Light theme
+  ships via CSS (`prefers-color-scheme` by default — zero JS, no flash);
+  `color-scheme` is set per mode so scrollbars/inputs follow too, and the
+  browser UI color (`theme-color` meta) adapts.
+- **Profile editor → Theme**: System (auto) / Light / Dark segmented
+  control. An explicit pick is saved device-locally
+  (`wp:theme:explicit`, like the access code flow — NOT profile data) and
+  applied instantly via `html[data-theme]`; a pre-paint inline script in
+  index.html applies it before first paint so switching never flashes.
+- Subtle translucent fills (ghost buttons, chat/up-next hovers, subs
+  mini-map track) moved to semantic `--fill-*` vars that flip direction in
+  light mode; header brand text follows the theme instead of staying white.
+  Video surfaces stay black (players should).
