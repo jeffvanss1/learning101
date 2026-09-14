@@ -804,3 +804,19 @@ file - fresh joiners auto-load fresh subs).
   ♡/♥ state on every video change. Sign-in gated with a toast.
 
 Tests 130/130, tsc clean. app.js v30 / catalog.js v18 / ui-2026-09-14.47.
+
+## Anime episode fix: absolute numbering in the room modal (ui-2026-09-14.48)
+
+- **BUG**: the room episode-switcher fetched TMDB seasons for anime. TMDB
+  splits long anime into many seasons whose numbers restart at 1 (One
+  Piece "Season 14, E5"), but the anime player plays
+  `/anime/<anilistId>/<episode>` with that number as the ABSOLUTE episode -
+  so "S14 E5" replayed absolute episode 5 (Romance Dawn). Affected EVERY
+  anime, worst for multi-season-on-TMDB shows; single-season anime were
+  only accidentally correct.
+- **FIX**: for anime the modal now resolves the AniList id (worker
+  endpoint, then direct GraphQL fallback) and renders ONE flat absolute
+  grid 1..N (AniList episodes; TMDB total when ongoing shows report null;
+  falls back to the old grid only when no match exists). Picks build the
+  anime video with `{ episode: n }` and never a season; the current
+  episode highlights correctly; threading still applies past 50.

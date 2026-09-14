@@ -451,8 +451,11 @@ test('player like button + threaded episode rows (long seasons)', async () => {
   assert.equal((cat.match(/count > 120/g) || []).length, 0, 'numeric-input branches GONE');
   assert.equal((cat.match(/count > 50/g) || []).length, 1, 'exactly ONE >50 decision (the shared component)');
   assert.equal((cat.match(/function renderEpisodeGrid/g) || []).length, 1, 'ONE episode-grid component');
-  assert.equal((cat.match(/renderEpisodeGrid\(epGrid/g) || []).length, 4, 'component def + all three surfaces (detail, anime, room modal)');
+  assert.equal((cat.match(/renderEpisodeGrid\(epGrid/g) || []).length, 5, 'component def + detail + anime detail + room modal (tv + anime branches)');
   assert.equal((cat.match(/buildThreadedEpisodes\(/g) || []).length, 2, 'builder called ONLY from the component (def + 1 call)');
+  assert.match(cat, /await anilistApi\(video\.id\)/, 'room modal resolves anime via AniList');
+  assert.match(cat, /Anime = AniList ABSOLUTE numbering/, 'anime room-modal grid is ABSOLUTE');
+  assert.match(cat, /type: 'anime', isAnime: true, anilistId: anilistId, title: video\.title \}, \{ episode: n \}\)/, 'anime pick = absolute episode, season NEVER passed (S14E5 replayed E5 bug)');
   assert.match(cat, /ep-btn--current/, 'current episode still highlighted');
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.detail__ep-row/, 'thread row styles present');

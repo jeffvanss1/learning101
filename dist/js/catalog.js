@@ -1508,6 +1508,51 @@
     (async () => {
       try {
         const extra = await api('/tv/' + encodeURIComponent(String(video.id)));
+        if (isAnime) {
+          // Anime = AniList ABSOLUTE numbering. TMDB splits long anime into
+          // many seasons whose episode numbers RESTART at 1 (One Piece
+          // "Season 14, E5"), but the anime player plays
+          // /anime/<anilistId>/<episode> with that number as the ABSOLUTE
+          // episode - so every pick past TMDB season 1 replayed the wrong
+          // episode. Render ONE flat absolute grid instead.
+          let anilistId = video.anilistId != null ? String(video.anilistId) : null;
+          let episodes = 0;
+          try {
+            const info = await anilistApi(video.id);
+            if (info && info.anilistId != null) anilistId = String(info.anilistId);
+            if (info && info.episodes != null) episodes = Number(info.episodes) || 0;
+          } catch (_) {}
+          // Ongoing anime often have episodes: null on AniList - use the
+          // TMDB total (same source the detail picker falls back to).
+          if (!episodes) episodes = Number(extra && extra.number_of_episodes) || 0;
+          if (anilistId == null && video.title) {
+            try {
+              const direct = await anilistDirect(video.title, video.year || '');
+              if (direct && direct.id != null) {
+                anilistId = String(direct.id);
+                if (!episodes) episodes = Number(direct.episodes) || 0;
+              }
+            } catch (_) {}
+          }
+          if (anilistId != null && episodes > 0) {
+            body.innerHTML = '';
+            body.appendChild(h('p', 'detail__label', 'Episode'));
+            const epGrid = h('div', 'detail__episodes');
+            body.appendChild(epGrid);
+            renderEpisodeGrid(epGrid, {
+              count: episodes,
+              pick: (n) => {
+                onPick(buildVideo({ id: video.id, type: 'anime', isAnime: true, anilistId: anilistId, title: video.title }, { episode: n }));
+                close();
+              },
+              currentEp: Number(video.episode) || 0,
+              showId: null,
+              season: null,
+            });
+            return;
+          }
+          // No AniList match: fall through to the TMDB grid (best effort).
+        }
         const usable = ((extra && extra.seasons) || [])
           .filter((s) => s && Number(s.season_number) > 0)
           .map((s) => ({ season: Number(s.season_number), name: s.name || 'Season ' + s.season_number, episodes: Number(s.episode_count) || 0 }));
