@@ -432,6 +432,19 @@
   }
 
   /**
+   * Server history WITH the failure reason - the /history page surfaces
+   * problems in the page instead of silently showing only local data.
+   * @returns {Promise<{items: Array<any> | null, error: string | null}>}
+   */
+  function getServerHistoryStatus() {
+    const s0 = loadSession();
+    if (!s0) return Promise.resolve({ items: null, error: 'signed-out' });
+    return api('/api/user/history')
+      .then((d) => ({ items: d && Array.isArray(d.items) ? d.items : [], error: null }))
+      .catch((e) => ({ items: null, error: (e && e.message) || 'request failed' }));
+  }
+
+  /**
    * Server-side position for ONE title (resume across devices). Returns
    * { positionSeconds, durationSeconds, season, episode, ... } or null.
    * @param {string|number} mediaId
@@ -2277,7 +2290,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-14.75';
+  global.WP.build = 'ui-2026-09-14.76';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2530,6 +2543,7 @@
     recordHistoryFor,
     recordProgressFor,
     getServerEntry,
+    getServerHistoryStatus,
     friendAction,
     RoomPresence,
     startIdlePresence,

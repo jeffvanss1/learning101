@@ -47,7 +47,7 @@ test('history unification: server list merges in, local wins; filters + per-item
   const s = readFileSync(join(ROOT, 'dist/js/social.js'), 'utf8');
   assert.match(s, /function getServerHistory\(\)/, 'server history reader');
   assert.match(s, /global\.WP\.Social = \{[\s\S]*?getServerHistory,/, 'exported');
-  assert.match(a, /const extras = server\s*\.filter\(\(h\) => !seen\.has\(/, 'server entries only fill gaps (local wins)');
+  assert.match(a, /SERVER-FIRST \(user directive\)/, 'account history is the source of truth (server-first)');
   assert.match(a, /state\._historyServerTried = true;/, 'one fetch per page visit');
   assert.match(a, /function renderHistoryChips\(/, 'filter chips');
   assert.match(a, /'movie', 'Movies'/, 'Movies filter');
@@ -239,7 +239,7 @@ test('minimal shape pass: no oval buttons — flat radii, circles only where the
   assert.match(social, /\.avatar-frame \{[^}]*border-radius: 50%;/, 'avatars stay circular');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /css\/style\.css\?v=24/, 'style cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=22/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog cache-bumped');
   assert.match(html, /css\/social\.css\?v=19/, 'social cache-bumped');
 });
 
@@ -259,7 +259,7 @@ test('cover survives episode switch + season covers in both modals', () => {
   assert.match(c, /episodes-modal__season', episodes \+ ' episodes'/, 'anime modal shows the episode count');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=27/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=22/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog css cache-bumped');
 });
 
 test('room cover broken-art guard + profile showcase has no empty poster-height holes', () => {
@@ -299,9 +299,9 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /if \(state\._pendingResume == null \|\| pos > state\._pendingResume \+ 30\)/, 'server upgrades resume, never downgrades');
   assert.match(a, /if \(dur && pos >= dur - 30\) return; \/\/ already finished/, 'finished episodes start fresh');
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
-  assert.match(a, /else startRoomWithVideo\(\{ \.\.\.v, src: undefined \}\);/, 'server-only cards keep their position on click');
+  assert.match(a, /card\.addEventListener\('click', \(\) => startRoomWithVideo\(v\)\);/, 'single click path: server cards rebuilt playable, position rides along');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=45/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=46/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -313,8 +313,8 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=45/, 'app cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=22/, 'catalog css cache-bumped');
+  assert.match(html, /js\/app\.js\?v=46/, 'app cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog css cache-bumped');
 });
 
 test('episode selector watched fade: local + server watched states on every grid', () => {
@@ -332,7 +332,7 @@ test('episode selector watched fade: local + server watched states on every grid
   assert.match(css, /\.ep-btn--partial::after \{[^}]*width: var\(--wp, 0%\);/s, 'partial = mini progress bar');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=27/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=22/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=23/, 'catalog css cache-bumped');
 });
 
 test('/history never-silent guarantees: error surface + self-explanatory empty', () => {
@@ -351,5 +351,23 @@ test('history nav dead-end fixed + never-blank view setup + global error surface
   assert.match(a, /window\.addEventListener\('error', \(ev\) =>/, 'uncaught errors surface as a visible toast');
   assert.match(a, /window\.addEventListener\('unhandledrejection', \(ev\) =>/, 'rejections surface too');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=45/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=46/, 'app cache-bumped');
+});
+
+test('history is SERVER-FIRST with an on-page status line', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /SERVER-FIRST \(user directive\)/, 'account history is the source of truth');
+  assert.match(a, /WP\.Catalog\.buildVideo[\s\S]*?\.src/, 'server rows rebuilt into playable cards');
+  assert.match(a, /paintHistoryStatus\(sess, server, local\.length\);/, 'status line painted every render');
+  assert.match(a, /'Account: ' \+ serverRows\.length \+ ' titles/, 'shows both counts');
+  assert.match(a, /Account history unavailable: ' \+ state\._historyStatusError/, 'server failures are VISIBLE');
+  assert.match(a, /card\.addEventListener\('click', \(\) => startRoomWithVideo\(v\)\);/, 'single click path - every card has src');
+  assert.doesNotMatch(a, /startRoomWithVideo\(\{ \.\.\.v, src: undefined \}\)/, 'old discard-position path gone');
+  const s = readFileSync(join(ROOT, 'dist/js/social.js'), 'utf8');
+  assert.match(s, /function getServerHistoryStatus\(\)/, 'status-bearing fetch');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /id="history-status"/, 'status element exists');
+  assert.match(html, /js\/social\.js\?v=45/, 'social cache-bumped');
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  assert.match(css, /\.history__status--err \{/, 'error status styled');
 });

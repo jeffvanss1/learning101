@@ -1783,43 +1783,50 @@
     if (!scroller) return;
     try {
 
-      // LOCAL history is the source of truth for resume positions; the server
-      // list (signed-in) fills gaps so phone and desktop agree on titles.
+      // SERVER-FIRST (user directive): when signed in, the ACCOUNT history is
+      // the source of truth - server rows become fully playable cards (src is
+      // rebuilt from the id) with their resume positions; local entries only
+      // fill gaps. Signed out: local history is all there is.
       const local = WP.historyGet();
       const kOf = (id, s, e) => `${id}|${s != null ? s : ''}|${e != null ? e : ''}`;
-      const seen = new Set();
-      let merged = local.map((v) => {
-        seen.add(kOf(v.id, v.season, v.episode));
-        return v;
-      });
+      const sess = WP.Social && WP.Social.getSession ? WP.Social.getSession() : null;
       const server = state._historyServer;
-      if (server && server.length) {
-        const extras = server
-          .filter((h) => !seen.has(kOf(String(h.mediaId), h.season || null, h.episode || null)))
-          .map((h) => ({
-            type: h.mediaType === 'tv' ? 'tv' : h.mediaType === 'anime' ? 'anime' : 'movie',
-            id: String(h.mediaId),
-            src: '',
-            title: h.mediaTitle || 'Untitled',
-            year: '',
-            poster: h.posterUrl || '',
-            backdrop: '',
-            season: h.season || null,
-            episode: h.episode || null,
-            watchedAt: h.watchedAt || 0,
-            completed: !!h.completed,
-            // SERVER RESUME MEMORY: positions ride along, so the progress bar
-            // renders and the click resumes exactly where the other device stopped.
+      let merged;
+      if (sess && server) {
+        const seen = new Set();
+        const fromServer = server.map((h) => {
+          const type = h.mediaType === 'tv' ? 'tv' : h.mediaType === 'anime' ? 'anime' : 'movie';
+          let src = '';
+          try {
+            src = WP.Catalog && WP.Catalog.buildVideo
+              ? WP.Catalog.buildVideo(
+                  { id: String(h.mediaId), type, title: h.mediaTitle || 'Untitled', poster: h.posterUrl || '', year: '', overview: '', rating: null },
+                  { season: h.season || 1, episode: h.episode || 1 }
+                ).src
+              : '';
+          } catch (_) {}
+          seen.add(kOf(String(h.mediaId), h.season || null, h.episode || null));
+          return {
+            type, id: String(h.mediaId), src,
+            title: h.mediaTitle || 'Untitled', year: '', poster: h.posterUrl || '', backdrop: '',
+            season: h.season || null, episode: h.episode || null,
+            watchedAt: h.watchedAt || 0, completed: !!h.completed,
             position: Number(h.positionSeconds) || 0,
             duration: Number(h.durationSeconds) || 0,
-          }));
-        merged = merged.concat(extras);
+          };
+        });
+        const localExtras = local.filter((v) => !seen.has(kOf(v.id, v.season, v.episode)));
+        merged = fromServer.concat(localExtras);
         merged.sort((x, y) => (y.watchedAt || 0) - (x.watchedAt || 0));
-      } else if (!state._historyServerTried && WP.Social && WP.Social.getServerHistory && WP.Social.getSession && WP.Social.getSession()) {
+      } else {
+        merged = local.slice();
+      }
+      if (!state._historyServerTried && WP.Social && WP.Social.getServerHistoryStatus && sess) {
         // One fetch per page visit; re-render merges it in when it arrives.
         state._historyServerTried = true;
-        WP.Social.getServerHistory().then((items) => {
-          state._historyServer = items || [];
+        WP.Social.getServerHistoryStatus().then((r) => {
+          state._historyServer = r && Array.isArray(r.items) ? r.items : [];
+          state._historyStatusError = r && r.error && r.error !== 'signed-out' ? r.error : null;
           const page = $('history-page');
           if (page && !page.hidden) renderHistory();
         });
@@ -1836,6 +1843,7 @@
       });
 
       renderHistoryChips(merged.length);
+      paintHistoryStatus(sess, server, local.length);
       if (empty) empty.hidden = !!items.length;
       if (!items.length) {
         scroller.innerHTML = '';
@@ -1921,13 +1929,9 @@
 
         // Server-only entries have no src - they link to a fresh start (and
         // still resume if a local position exists for them later).
-        card.addEventListener('click', () => {
-          if (v.src) startRoomWithVideo(v);
-          // Server-only entries have no src (rebuilt from the id) — but the
-          // remembered position MUST ride along (it is the whole point of the
-          // server-side memory).
-          else startRoomWithVideo({ ...v, src: undefined });
-        });
+        // Every card now has a playable src (server rows are rebuilt from the
+        // id) and its remembered position - click = resume exactly there.
+        card.addEventListener('click', () => startRoomWithVideo(v));
         scroller.appendChild(card);
       });
       } catch (e) {
@@ -1939,6 +1943,27 @@
           empty.hidden = false;
         }
       }
+  }
+
+  /** Visible status line: WHICH side has data (ends the blank-page guessing). */
+  function paintHistoryStatus(signedIn, serverRows, localCount) {
+    const el = $('history-status');
+    if (!el) return;
+    if (!signedIn || !state._historyServerTried) {
+      el.hidden = true;
+      return;
+    }
+    if (!serverRows && state._historyStatusError) {
+      el.hidden = false;
+      el.classList.add('history__status--err');
+      el.textContent = 'Account history unavailable: ' + state._historyStatusError + ' - showing this device only.';
+      return;
+    }
+    el.classList.remove('history__status--err');
+    el.hidden = false;
+    el.textContent = serverRows
+      ? 'Account: ' + serverRows.length + ' titles \u00b7 This device: ' + localCount
+      : 'Loading your account history\u2026';
   }
 
   /** Filter chip row (All / Movies / Series / Anime) for the history page. */

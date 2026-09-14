@@ -18,7 +18,7 @@ function sliceRenderHistory() {
   return a.slice(start, end);
 }
 
-function harness({ local = [], signedIn = null, boom = false } = {}) {
+function harness({ local = [], signedIn = null, boom = false, server = undefined, serverError = null } = {}) {
   const els = {};
   const mk = (id) => ({
     id,
@@ -29,6 +29,7 @@ function harness({ local = [], signedIn = null, boom = false } = {}) {
     title: '',
     textContent: '',
     style: { setProperty() {} },
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     setAttribute() {},
     addEventListener() {},
     appendChild(c) {
@@ -39,7 +40,7 @@ function harness({ local = [], signedIn = null, boom = false } = {}) {
       return [];
     },
   });
-  ['history-scroller', 'history-empty', 'history-filters'].forEach((id) => (els[id] = mk(id)));
+  ['history-scroller', 'history-empty', 'history-filters', 'history-status'].forEach((id) => (els[id] = mk(id)));
   const document = { createElement: () => mk('dyn'), createTextNode: (t) => ({ text: t }) };
   const WP = {
     historyGet: boom
@@ -50,9 +51,18 @@ function harness({ local = [], signedIn = null, boom = false } = {}) {
     historyKey: (v) => `${v.id}|${v.season ?? ''}|${v.episode ?? ''}`,
     historyRemove: () => {},
     timeAgo: () => '5m ago',
-    Social: signedIn === null ? undefined : { getSession: () => (signedIn ? { user: {} } : null) },
+    Catalog: { buildVideo: (ref, opts) => ({ src: `https://bingr.one/watch/${ref.type === 'movie' ? 'movie' : ref.type === 'anime' ? 'anime' : 'tv'}/${ref.id}` }) },
+    Social: signedIn === null
+      ? undefined
+      : {
+          getSession: () => (signedIn ? { user: {} } : null),
+          getServerHistoryStatus: () =>
+            Promise.resolve(
+              serverError ? { items: null, error: serverError } : { items: server || [], error: null }
+            ),
+        },
   };
-  const state = {};
+  const state = { _historyServer: server === undefined && signedIn ? null : server === undefined ? null : server, _historyServerTried: server === undefined ? false : true, _historyStatusError: serverError };
   const $ = (id) => els[id] || null;
   const errors = [];
   const consoleError = console.error;
@@ -99,4 +109,25 @@ test('/history render failure shows the ERROR (never silent blank)', () => {
   const els = harness({ boom: true });
   assert.match(els['history-empty'].textContent, /History failed to load: storage broken/, 'visible error with cause');
   assert.equal(els['history-scroller'].kids.length, 0);
+});
+
+test('/history SERVER-FIRST: account rows render as playable cards with positions + status line', async () => {
+  const els = harness({
+    local: [],
+    signedIn: true,
+    server: [
+      { mediaId: '999', mediaType: 'tv', mediaTitle: 'Server Show', posterUrl: '', season: 1, episode: 4, completed: false, positionSeconds: 300, durationSeconds: 2400, watchedAt: Date.now() - 1000 },
+    ],
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(els['history-scroller'].kids.length, 1, 'server row rendered');
+  assert.match(els['history-status'].textContent, /Account: 1 titles/, 'status line shows the account count');
+  assert.equal(els['history-empty'].hidden, true);
+});
+
+test('/history SERVER FAILURE is visible in the page', async () => {
+  const els = harness({ local: [{ type: 'movie', id: '1', src: 'x', title: 'Local', watchedAt: Date.now() }], signedIn: true, server: null, serverError: 'D1 hiccups' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(els['history-status'].textContent, /Account history unavailable: D1 hiccups/, 'the failure is on the page, not silent');
+  assert.equal(els['history-scroller'].kids.length, 1, 'local still renders');
 });

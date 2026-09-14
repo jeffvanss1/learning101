@@ -1256,3 +1256,22 @@ harness — so the blank lives in their runtime. Shipped:
 - GLOBAL ERROR SURFACE: uncaught errors/rejections now toast on screen
   for 10s with the cause — "it's blank" reports come with evidence.
 app v45 / ui-2026-09-14.75. Tests 179/179, check clean.
+
+## /history is now SERVER-FIRST with an on-page status line (ui-2026-09-14.76)
+
+USER DIRECTIVE: "just doing it from server db, and its better" — done:
+- Signed in: the ACCOUNT history (D1) is the source of truth. Server rows
+  become FULLY PLAYABLE cards (src rebuilt via Catalog.buildVideo from the
+  id) carrying their resume positions; local entries only fill gaps.
+  Signed out: local history as before.
+- NEW STATUS LINE on the page (#history-status): "Account: N titles ·
+  This device: M" — or "Account history unavailable: <reason> - showing
+  this device only" in red. Which side has the data is now VISIBLE, no
+  console needed. This ends the blank-page debugging loop for good.
+- Single click path: every card has src + position; the old
+  discard-position fallback is gone.
+- social.js: getServerHistoryStatus() (failure reason surfaces instead
+  of the silent catch-and-null).
+Execution-tested: server rows render with src + status counts; a server
+failure shows in-page while local still renders. Tests 182/182.
+app v46 / social v45 / catalog css v23 / ui-2026-09-14.76.
