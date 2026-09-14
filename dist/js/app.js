@@ -1573,29 +1573,26 @@
    * - TV: TMDB's season episode_count METADATA lies (The Walking Dead S02
    *   advanced to a phantom E14) - use the SEASON DETAIL episode list and
    *   skip specials. At a season finale, offer the next season's E1.
-   * - Anime: Jikan/MAL absolute list is the source of truth (TMDB splits
-   *   anime into bogus seasons); falls back to the AniList total.
+   * - Anime: the AniList-native absolute count is the source of truth
+   *   (TMDB splits anime into bogus seasons and its metadata lies).
    * @returns {Promise<{season?: number, episode: number} | null>}
    */
   function resolveNextEpisode(v) {
     if (v.type === 'anime') {
       const curEp = Number(v.episode) || 1;
+      // ANILIST-NATIVE: the canonical `episodes` count we already resolve
+      // (worker endpoint -> direct GraphQL fallback). Absolute numbering.
+      if (v.anilistId == null) return Promise.resolve(null);
       const withTimeout = (/** @type {Promise<number|null>} */ p) =>
         Promise.race([p, new Promise((r) => setTimeout(() => r(null), 4000))]);
-      return withTimeout(v.malId ? WP.Catalog.jikanCount(v.malId) : Promise.resolve(null)).then(
-        (/** @type {number|null} */ count) => {
-          if (count && curEp + 1 <= count) return { episode: curEp + 1 };
-          if (count) return null; // MAL says we finished the series
-          if (v.anilistId == null) return null;
-          return WP.Catalog.anilistApi(v.id)
-            .then((/** @type {any} */ info) =>
-              info && info.episodes && curEp + 1 <= Number(info.episodes)
-                ? { episode: curEp + 1 }
-                : null
-            )
-            .catch(() => null);
-        }
-      );
+      return withTimeout(
+        WP.Catalog.anilistApi(v.id)
+          .then((/** @type {any} */ info) => (info && info.episodes != null ? Number(info.episodes) : null))
+          .catch(() => null)
+      ).then((/** @type {number|null} */ count) => {
+        if (!count) return null; // unknown total - never offer a ghost episode
+        return curEp + 1 <= count ? { episode: curEp + 1 } : null; // series finale
+      });
     }
     const curSeason = Number(v.season) || 1;
     const curEp = Number(v.episode) || 1;

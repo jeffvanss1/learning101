@@ -92,6 +92,7 @@
 
 .browse {
   min-height: 100vh;
+  min-height: 100dvh; /* iOS toolbar-safe (fallback above) */
 }
 
 /* ---- Side navigation (left guide rail) ------------------------------------------ */
@@ -375,6 +376,19 @@ body.room-focus.rail-peek .sidenav {
 .history-card:hover .history-card__remove,
 .history-card__remove:focus-visible {
   opacity: 1;
+}
+
+/* Touch has no hover: per-item remove + card hearts are ALWAYS visible. */
+@media (hover: none) {
+  .history-card__remove {
+    opacity: 1;
+  }
+  .card-item__like {
+    opacity: 1 !important;
+  }
+  .btn--sm {
+    min-height: 38px; /* comfortable touch targets */
+  }
 }
 
 /* Resume progress: thin red bar hugging the poster bottom. */

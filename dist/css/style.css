@@ -463,6 +463,7 @@ button {
 /* ---- Lobby -------------------------------------------------------------------- */
 .lobby {
   min-height: 100vh;
+  min-height: 100dvh; /* iOS toolbar-safe (fallback above) */
   display: flex;
   flex-direction: column;
   background:
@@ -616,6 +617,7 @@ button {
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* iOS toolbar-safe (fallback above) */
   overflow: hidden;
 }
 
@@ -829,6 +831,14 @@ button {
   background: rgba(0, 0, 0, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.16);
   backdrop-filter: blur(6px);
+}
+@media (max-width: 560px) {
+  .up-next {
+    width: calc(100% - 24px);
+    flex-wrap: wrap;
+    justify-content: center;
+    text-align: center;
+  }
 }
 .up-next__label {
   font-size: 13px;

@@ -1403,6 +1403,7 @@
     width: auto;
     transform: none;
     max-height: calc(100vh - var(--topnav-h) - 24px);
+    max-height: calc(100dvh - var(--topnav-h) - 24px); /* iOS-safe */
     margin: 0 16px 24px 0;
     border: 1px solid var(--border-soft);
     border-radius: var(--radius);

@@ -65,7 +65,7 @@ test('reconnect: drops are surfaced with toasts, recovery confirmed', async () =
 
 test('rate limits: auth/claim/code/admin are KV-damped and fail open', async () => {
   const r = routerSrc();
-  assert.equal((r.match(/await kvRateLimit\(env, '/g) || []).length, 5, 'applied to session + claim + code + admin + jikan');
+  assert.equal((r.match(/await kvRateLimit\(env, '/g) || []).length, 4, 'applied to session + claim + code + admin');
   assert.match(r, /'claim:' \+ clientIp\(request\), 20, 300/, 'claim: 20/5min (code-guessing damper)');
   assert.match(r, /return true; \/\/ fail open, always/, 'KV failure never takes the API down');
   const { kvRateLimit } = await import(
@@ -123,90 +123,42 @@ test('security headers: every page and API response is hardened', async () => {
   assert.match(w, /frame-ancestors 'self'/, 'no third-party framing');
   assert.match(w, /\.\.\.securityHeaders\(\),/, 'json() inherits them');
   assert.match(w, /for \(const \[k, v\] of Object\.entries\(securityHeaders\(\)\)\) res\.headers\.set\(k, v\);/, 'static assets are wrapped');
-  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.60';/, 'api stamp bumped');
+  assert.match(routerSrc(), /WORKER_BUILD = 'api-2026-09-14\.62';/, 'api stamp bumped');
 });
 
-// ---- Jikan (MAL) integration: accurate anime episodes + true next-episode ----
 
-test('jikan: worker proxy throttles, caches, normalizes; anilist returns malId', async () => {
-  const w = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
-  assert.match(w, /malId = best\.idMal \|\| null;/, 'anilist match carries the MAL id');
-  assert.match(w, /return \{ anime: true, anilistId, malId, episodes, title \};/, 'resolve payload includes malId');
-  const jikan = readFileSync(join(ROOT, 'src/routes/jikan.ts'), 'utf8');
-  assert.match(jikan, /\$\{JIKAN_ORIGIN\}\/anime\/\$\{malId\}\/episodes\?page=\$\{page\}/, 'official v4 episodes endpoint');
-  assert.match(jikan, /secCount >= 2 \|\| minCount >= 50/, 'token bucket UNDER the 3/s + 60/min upstream limits');
-  assert.match(jikan, /errorJson\(429, 'Jikan rate budget spent/, 'fail-soft 429 (client falls back, never breaks)');
-  assert.match(jikan, /'Cache-Control': 'public, max-age=21600'/, 'edge cache 6h');
-  const r = routerSrc();
-  assert.match(r, /\/api\\\/jikan\\\/anime\\\/\(\[\^\/\]\+\)\\\/episodes/, 'routed');
-  assert.match(r, /'jikan:' \+ clientIp\(request\), 60, 60/, 'IP-damped');
-});
+// ---- AniList-native anime data (Jikan removed: API is being discontinued) ----
 
-test('jikan route: normalization + cache + throttle + validation (runtime)', async () => {
-  const { handleJikanEpisodes } = await import(
-    pathToFileURL(join(ROOT, 'src/routes/jikan.ts')).href + '?v=' + Date.now()
-  );
-  const calls = [];
-  const realFetch = globalThis.fetch;
-  // @ts-ignore - test stub
-  globalThis.fetch = async (url) => {
-    calls.push(String(url));
-    return new Response(
-      JSON.stringify({
-        data: [
-          { mal_id: 1, title: 'Romance Dawn', filler: false, recap: false, aired: '1999-10-20' },
-          { mal_id: 2, title: 'Appear! Zoro the Swordsman' },
-          { mal_id: 3, title: null },
-        ],
-        pagination: { last_visible_page: 7 },
-      }),
-      { status: 200 }
-    );
-  };
-  try {
-    const env = /** @type {any} */ ({});
-    const r1 = await handleJikanEpisodes(new Request('https://x/'), env, '21', '1');
-    assert.equal(r1.status, 200);
-    const d1 = await r1.json();
-    assert.equal(d1.episodes.length, 3);
-    assert.equal(d1.episodes[0].number, 1);
-    assert.equal(d1.episodes[0].title, 'Romance Dawn');
-    assert.equal(d1.episodes[2].title, '');
-    assert.equal(d1.lastPage, 7);
-    assert.equal(calls.length, 1, 'one upstream call');
-    await handleJikanEpisodes(new Request('https://x/'), env, '21', '1');
-    assert.equal(calls.length, 1, 'SERVED FROM CACHE (second call hits nothing upstream)');
-    const bad = await handleJikanEpisodes(new Request('https://x/'), env, 'abc', '1');
-    assert.equal(bad.status, 422, 'invalid MAL id rejected');
-    // throttle: burn the per-second budget (2) then expect 429, not an upstream call
-    calls.length = 0;
-    let throttled = false;
-    for (let i = 0; i < 6; i++) {
-      const r = await handleJikanEpisodes(new Request('https://x/'), env, '9000' + i, '1');
-      if (r.status === 429) throttled = true;
-    }
-    assert.ok(throttled, 'budget exhausts to a soft 429 (never hammers Jikan)');
-  } finally {
-    globalThis.fetch = realFetch;
+test('anilist-native: no jikan remnants; anime counts + auto-advance run on AniList', async () => {
+  const fs = await import('node:fs');
+  for (const f of ['src/router.ts', 'dist/js/catalog.js', 'dist/js/app.js']) {
+    const src = readFileSync(join(ROOT, f), 'utf8');
+    assert.equal((src.match(/jikan/gi) || []).length, 0, f + ': zero jikan references');
   }
-});
-
-test('anime pipeline: jikan helpers, MAL ids flow through history + picks', async () => {
+  assert.ok(!fs.existsSync(join(ROOT, 'src/routes/jikan.ts')), 'jikan route file deleted');
   const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
   const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
-  const u = readFileSync(join(ROOT, 'dist/js/utils.js'), 'utf8');
-  assert.match(cat, /async function jikanEpisodes\(malId\)/, 'full episode list helper');
-  assert.match(cat, /async function jikanCount\(malId\)/, 'cheap count helper');
-  assert.match(cat, /wp:jikan:/, 'localStorage cache (24h)');
-  assert.match(cat, /function applyJikanNames\(/, 'MAL titles patched onto .ep-btn nodes');
-  assert.match(cat, /malId: item\.malId != null \? String\(item\.malId\) : null/, 'buildVideo carries malId');
-  assert.match(cat, /if \(jikanEps && jikanEps\.length\) episodes = jikanEps\.length;/, 'room modal uses the TRUE MAL count (JoJo-class bugs)');
-  assert.match(cat, /renderAnimeBody\(body, item, extra, \{ episodes: episodes, malId: malId \}/, 'detail page gets malId for enrichment');
-  assert.match(u, /malId: video\.malId != null \? video\.malId : null/, 'history keeps malId (auto-advance after restart)');
-  // Auto-advance data-correctness:
-  assert.match(a, /\/season\/' \+ curSeason\)\s*\.then/, 'TV next-ep uses the SEASON DETAIL list (episode_count metadata lies - TWD E14 bug)');
-  assert.match(a, /e\.episode_type !== 'special'/, 'specials skipped');
+  // AniList-native contracts that replaced it:
+  assert.match(cat, /async function anilistApi\(tmdbId\)/, 'worker AniList resolve (battle-tested)');
+  assert.match(a, /WP\.Catalog\.anilistApi\(v\.id\)/, 'auto-advance uses the AniList resolve');
+  assert.match(a, /info && info\.episodes != null \? Number\(info\.episodes\) : null/, 'canonical AniList count');
+  assert.match(a, /unknown total - never offer a ghost episode/, 'unknown totals refuse to advance');
+  // The data-correctness fixes from the Jikan round SURVIVE on AniList:
+  assert.match(cat, /Episode list unavailable right now/, 'broken TMDB anime grid never renders with an AniList id');
+  assert.match(a, /e\.episode_type !== 'special'/, 'TV specials skipped');
   assert.match(a, /episode: 1 \};/, 'season finale -> next season E1');
-  assert.match(a, /WP\.Catalog\.jikanCount\(v\.malId\)/, 'anime next-ep from MAL');
-  assert.match(a, /series finale|series finale/, 'no ghost advance at the end');
+});
+
+test('mobile/desktop readiness: dvh viewports, touch-visible controls, responsive overlays', () => {
+  const style = readFileSync(join(ROOT, 'dist/css/style.css'), 'utf8');
+  const catalog = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  const social = readFileSync(join(ROOT, 'dist/css/social.css'), 'utf8');
+  assert.equal((style.match(/min-height: 100dvh;/g) || []).length, 1, 'dvh page height (iOS toolbar-safe)');
+  assert.match(style, /height: 100dvh;/, 'dvh room height');
+  assert.match(catalog, /min-height: 100dvh;/, 'dvh browse height');
+  assert.match(social, /calc\(100dvh - var\(--topnav-h\)/, 'dvh friends rail');
+  assert.match(catalog, /@media \(hover: none\) \{[\s\S]*\.history-card__remove \{\s*opacity: 1;/, 'per-item remove visible on touch');
+  assert.match(catalog, /@media \(hover: none\) \{[\s\S]*\.card-item__like \{\s*opacity: 1 !important;/, 'card hearts visible on touch');
+  assert.match(catalog, /@media \(hover: none\) \{[\s\S]*\.btn--sm \{\s*min-height: 38px;/, 'touch targets >= 38px');
+  assert.match(style, /@media \(max-width: 560px\) \{\s*\.up-next \{/, 'up-next overlay fits small screens');
 });

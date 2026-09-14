@@ -984,3 +984,22 @@ JIKAN INTEGRATION (per docs.api.jikan.moe, limits 3/s + 60/min):
 
 Tests 153/153 (jikan route runtime-tested: normalization, cache hit,
 422, throttle), tsc clean. catalog v21 / app v38 / utils v8 / ui+api .60.
+
+## Jikan rolled back -> AniList-native + mobile/desktop readiness (ui/api-2026-09-14.62)
+
+- JIKAN REMOVED entirely (route, proxy, client helpers, caches): the API
+  is being discontinued. Anime data runs on the ANILIST-NATIVE pipeline
+  we already battle-test: canonical `episodes` count via the worker
+  resolve (direct GraphQL fallback), absolute numbering, and the
+  data-correctness rules survive - broken TMDB anime grids never render
+  when an AniList id exists ("unavailable" note instead), auto-advance
+  refuses ghost episodes, TV still uses real season lists (specials
+  skipped, season finale -> next season E1), and `malId` (AniList's own
+  idMal) stays plumbed through buildVideo/history for future needs.
+- MOBILE/DESKTOP readiness: viewport heights use 100dvh (iOS toolbar-
+  safe, vh fallback first); touch devices (hover: none) always show the
+  per-item history remove + card hearts (no hover to reveal them) and
+  get >=38px small-button targets; the up-next overlay wraps on small
+  screens. Zero jikan references remain (test-pinned).
+- Tests 152/152, tsc clean. catalog v22 / app v39 / style v22 /
+  catalog v18 / social v17 / ui+api-2026-09-14.62.
