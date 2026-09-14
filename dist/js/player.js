@@ -202,18 +202,39 @@
     }
 
     // ---- controller actions (optimistic local apply + broadcast intent) ----
+    /**
+     * HOST AUTHORITY: the controller's player is the source of truth. Adopt
+     * our own action into the local room snapshot IMMEDIATELY so the sync
+     * loop cannot re-assert the stale state while the DO round-trip is in
+     * flight (this was the "pause/play needs two clicks" bug: the last
+     * snapshot still said the opposite, and the next status poll paused the
+     * host back). The DO echo later confirms the same values - idempotent.
+     */
+    _adoptLocalState(playing) {
+      if (this._lastMsg) {
+        this._lastMsg.isPlaying = !!playing;
+        this._lastMsg.time = this.localTime;
+        this._lastMsg.timestamp = Date.now();
+      }
+      // While OUR action settles, never force the player from the room state.
+      this._doNotForceUntil = Date.now() + 2500;
+    }
+
     localPlay(time) {
       this.play(time !== undefined ? time : this.localTime);
+      this._adoptLocalState(true);
       this.emit('control', { action: 'play', time: this.localTime });
     }
 
     localPause() {
       this.pause();
+      this._adoptLocalState(false);
       this.emit('control', { action: 'pause', time: this.localTime });
     }
 
     localSeek(time) {
       this.seek(time);
+      this._adoptLocalState(this.localPlaying);
       this.emit('control', { action: 'seek', time: this.localTime });
     }
 

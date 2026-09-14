@@ -887,8 +887,13 @@
 
   function onTogglePlay() {
     if (!canControl() || !state.sync || !state.video || !state.video.src) return;
-    if (state.sync.localPlaying) state.sync.localPause(state.sync.localTime);
-    else state.sync.localPlay(state.sync.localTime);
+    if (state.sync.localPlaying) {
+      state.sync.localPause(state.sync.localTime);
+      updatePlayerControls(false); // INSTANT - never wait for the 3s status poll
+    } else {
+      state.sync.localPlay(state.sync.localTime);
+      updatePlayerControls(true);
+    }
   }
 
   // Collapse/expand the chat bottom sheet on small screens. No visual effect

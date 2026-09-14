@@ -201,3 +201,54 @@ test('AUDIT: a pause swallowed by a buffering player is re-asserted within ~1s',
   sync.destroy();
   await tick(5);
 });
+
+// HOST AUTHORITY (2026-09-14): the controller's own play/pause/seek must
+// adopt the local room snapshot IMMEDIATELY. The old bug: the last snapshot
+// still said the opposite, and the next 3s status poll re-asserted the STALE
+// state - cancelling the host's click ("I have to hit twice to register").
+test('controller actions adopt the local snapshot - no stale re-assert', async () => {
+  const { sync, fire } = await freshPlayer();
+  const posted = [];
+  sync.iframe.contentWindow.postMessage = (m) => posted.push(m);
+  sync.isController = true;
+
+  // The room says: PLAYING at t=100 (authoritative snapshot arrives).
+  sync.applyRemote({ isPlaying: true, time: 100, timestamp: Date.now() });
+  assert.equal(sync._lastMsg.isPlaying, true, 'baseline snapshot adopted');
+
+  // Host hits PAUSE. Snapshot must flip IMMEDIATELY (no round-trip wait).
+  sync.localPause();
+  assert.equal(sync.localPlaying, false, 'local state = paused');
+  assert.equal(sync._lastMsg.isPlaying, false, 'snapshot adopted the pause instantly');
+  assert.equal(sync._lastMsg.time, sync.localTime, 'snapshot time = local time');
+  assert.ok(Date.now() < sync._doNotForceUntil, 'no-force window open while the action settles');
+  assert.ok(posted.some((m) => m.command === 'pause'), 'pause went to the player');
+
+  // The status poll fires BEFORE the DO echo arrives (snapshot was adopted,
+  // so the sync loop must NOT re-assert the old playing state).
+  posted.length = 0;
+  fire(100.2, false); // iframe agrees: paused at ~100
+  sync._syncToTarget(true);
+  assert.ok(!posted.some((m) => m.command === 'play'), 'NO stale play re-assert after a host pause');
+
+  // Host hits PLAY from the paused snapshot - same guarantee.
+  sync.localPlay();
+  assert.equal(sync._lastMsg.isPlaying, true, 'snapshot adopted the play instantly');
+  posted.length = 0;
+  fire(100.5, true);
+  sync._syncToTarget(true);
+  assert.ok(!posted.some((m) => m.command === 'pause'), 'NO stale pause re-assert after a host play');
+
+  // Seek adopts the position (no yank-back to the stale position).
+  sync.localSeek(250);
+  assert.equal(sync._lastMsg.time, 250, 'snapshot adopted the seek position');
+  sync.destroy(); // stop the status poller so the test process can exit
+});
+
+// Instant UI: the room Play/Pause button flips SYNCHRONOUSLY with the host's
+// click (it used to wait for the iframe status poll, reading as "not registered").
+test('room play/pause button flips instantly on host click', async () => {
+  const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(app, /function onTogglePlay\(\) \{\s*if \(!canControl\(\)[\s\S]*?localPause\(state\.sync\.localTime\);\s*updatePlayerControls\(false\);/, 'pause click flips the button immediately');
+  assert.match(app, /localPlay\(state\.sync\.localTime\);\s*updatePlayerControls\(true\);/, 'play click flips the button immediately');
+});
