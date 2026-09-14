@@ -205,24 +205,36 @@ async function resolveAnime(tmdbId: string, apiKey: string): Promise<Record<stri
   let episodes: number | null = null;
   let title: string | null = null;
   try {
-    const res = await fetch(ANILIST_ORIGIN, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        query: ANILIST_QUERY,
-        variables: { search: show.original_name || show.name || '' },
-      }),
-    });
-    if (res.ok) {
-      const data: any = await res.json();
+    // SEARCH BOTH title variants: TMDB's original_name can be mixed-script
+    // ("BORUTO-ボルト- NARUTO NEXT GENERATIONS") which AniList's SEARCH_MATCH
+    // handles worse than the english/romaji `name` — a single-variant search
+    // was the Boruto-class "couldn't match on AniList" failure. Merge the
+    // candidate pages (dedupe by id) and let matchAnilist score them all.
+    const variants = Array.from(new Set([show.original_name, show.name].filter(Boolean)));
+    const pages: any[] = await Promise.all(
+      variants.map((s) =>
+        fetch(ANILIST_ORIGIN, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ query: ANILIST_QUERY, variables: { search: s } }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      )
+    );
+    const byId = new Map<number, any>();
+    for (const data of pages) {
       const media = (data && data.data && data.data.Page && data.data.Page.media) || [];
-      const best = matchAnilist(show, media);
-      if (best) {
-        anilistId = best.id;
-        malId = best.idMal || null; // Jikan (MAL) key for episode lists
-        episodes = best.episodes || null;
-        title = (best.title && (best.title.romaji || best.title.english)) || null;
+      for (const m of media) {
+        if (m && m.id != null && !byId.has(m.id)) byId.set(m.id, m);
       }
+    }
+    const best = matchAnilist(show, Array.from(byId.values()));
+    if (best) {
+      anilistId = best.id;
+      malId = best.idMal || null;
+      episodes = best.episodes || null;
+      title = (best.title && (best.title.romaji || best.title.english)) || null;
     }
   } catch (_) {
     // AniList unreachable — the caller gets { anime: true, anilistId: null }.

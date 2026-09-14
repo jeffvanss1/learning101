@@ -6,6 +6,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeTitle, matchAnilist, classifyIsAnime } from '../src/anilist.js';
+import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { ROOT } from './dompath.mjs';
 
 test('normalizeTitle keeps CJK/kana (unicode letters, not a-z0-9)', () => {
@@ -52,8 +54,8 @@ test('anime fix wiring: versioned endpoint (edge-bust), v3 cache, English catalo
   const { readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
   const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
-  assert.ok(cat.includes("wp:anilist:v3:"), 'localStorage prefix v3 (busts poisoned entries)');
-  assert.ok(cat.includes("'?v=2'"), 'endpoint query ?v=2 (never-hit URL: the edge cached the old nulls for 7 days)');
+  assert.ok(cat.includes("wp:anilist:v4:"), 'localStorage prefix v4 (v3 held 7-day nulls)');
+  assert.ok(cat.includes("'?v=3'"), 'endpoint query ?v=3 (v2 responses may hold stale misses)');
   const worker = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
   assert.ok(worker.includes("proxyTmdb(rest, url.search, apiKey, 'en-US')"), 'catalog titles pinned to English');
   assert.ok(worker.includes("public, max-age=300"), 'unresolved lookups get a SHORT edge TTL (fixes propagate)');
@@ -144,4 +146,51 @@ test('brand mark is the infinity logo; player play controls untouched', async ()
   assert.equal((html.match(/5 3 19 12 5 21/g) || []).length, 2, 'player play icons untouched in html');
   const app = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
   assert.equal(/5 3 19 12 5 21/.test(app), true, 'play/pause toggle untouched in app.js');
+});
+
+// ---- Boruto regression (2026-09-14): "couldn't match on AniList" ----
+// REAL TMDB record (verified live on themoviedb.org/tv/70881):
+//   name "Boruto: Naruto Next Generations",
+//   original_name "BORUTO-ボルト- NARUTO NEXT GENERATIONS", first aired 2017-04-05.
+// Two stacked bugs: (1) the worker searched ONLY original_name - AniList's
+// SEARCH_MATCH handles the mixed-script string worse than the romaji name;
+// (2) BOTH client caches stored UNRESOLVED results for 7 DAYS, so one
+// transient blip poisoned the title for a week. Fix: dual-variant search +
+// misses live 5 minutes. (The AniList-side behavior can be eyeballed in the
+// graph.anilist.co playground with the query in README.)
+
+test('matchAnilist: Boruto (real TMDB 70881 record) matches AniList romaji/native + year', () => {
+  const show = {
+    id: 70881,
+    name: 'Boruto: Naruto Next Generations',
+    original_name: 'BORUTO-ボルト- NARUTO NEXT GENERATIONS',
+    first_air_date: '2017-04-05',
+    genres: [{ id: 16, name: 'Animation' }],
+    origin_country: ['JP'],
+  };
+  // AniList-shaped candidates: Boruto + the decoys a search could plausibly return.
+  const media = [
+    { id: 20, title: { romaji: 'Naruto', english: 'Naruto', native: 'NARUTO' }, episodes: 220, startDate: { year: 2002 } },
+    { id: 1735, title: { romaji: 'Naruto: Shippuuden', english: 'Naruto: Shippuden', native: 'NARUTO-ナルト- 疾風伝' }, episodes: 500, startDate: { year: 2007 } },
+    { id: 131573, title: { romaji: 'Boruto: Naruto Next Generations', english: 'Boruto: Naruto Next Generations', native: 'BORUTO-ボルト- NARUTO NEXT GENERATIONS' }, episodes: 293, startDate: { year: 2017 } },
+  ];
+  const best = matchAnilist(show, media);
+  assert.ok(best, 'Boruto must match');
+  assert.equal(best.id, 131573, 'matched Boruto, not a Naruto decoy');
+  assert.equal(best.episodes, 293);
+  // And with the native title alone as the only candidate (worst case the
+  // original_name search returns ONLY the native-scripted entry):
+  const best2 = matchAnilist(show, [media[2]]);
+  assert.ok(best2 && best2.id === 131573, 'native-only candidate still matches');
+});
+
+test('boruto fix wiring: dual-variant search + short-lived misses (both caches)', () => {
+  const worker = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
+  assert.match(worker, /variants = Array\.from\(new Set\(\[show\.original_name, show\.name\]/, 'worker searches BOTH title variants');
+  const cat = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
+  assert.match(cat, /wp:anilist:v4:/, 'cache prefix bumped (v3 entries hold 7-day nulls)');
+  assert.match(cat, /\/api\/anilist\/' \+ encodeURIComponent\(tmdbId\) \+ '\?v=3'/, 'endpoint buster bumped');
+  assert.match(cat, /ANILIST_NULL_TTL_MS = 5 \* 60 \* 1000/, 'misses TTL = 5 minutes');
+  assert.match(cat, /o\.data && o\.data\.anilistId != null \? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS/, 'worker-path cache picks TTL by resolved-ness');
+  assert.match(cat, /o\.data && o\.data\.id != null \? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS/, 'direct fallback cache picks TTL by resolved-ness');
 });

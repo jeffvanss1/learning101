@@ -1003,3 +1003,23 @@ Tests 153/153 (jikan route runtime-tested: normalization, cache hit,
   screens. Zero jikan references remain (test-pinned).
 - Tests 152/152, tsc clean. catalog v22 / app v39 / style v22 /
   catalog v18 / social v17 / ui+api-2026-09-14.62.
+
+## Boruto fix: dual-variant AniList search + cache misses live 5 min (ui-2026-09-14.63)
+
+REAL-DATA DEBUG (themoviedb.org/tv/70881, fetched live): TMDB's Boruto is
+name "Boruto: Naruto Next Generations", original_name
+"BORUTO-ボルト- NARUTO NEXT GENERATIONS" (2017). Two stacked bugs:
+1. The worker searched ONLY original_name - AniList's SEARCH_MATCH handles
+   the mixed-script string worse than the romaji `name`, so the candidate
+   page could miss Boruto entirely. The worker now searches BOTH variants,
+   merges candidates by id, and scores them all.
+2. BOTH client caches (worker path + direct GraphQL fallback) stored
+   UNRESOLVED results for 7 DAYS - one transient blip poisoned a title for
+   a week (the actual "we couldn't match it" the user kept seeing).
+   Resolved matches still cache 7 days; misses now live 5 MINUTES.
+   Cache prefix v3->v4 + endpoint ?v=2->v=3 clear everyone's poisoned
+   entries on first load.
+Pinned with the REAL TMDB fixture (70881) against AniList-shaped
+candidates incl. Naruto decoys. Playground query to eyeball the raw API:
+{"query":"{Page(page:1,perPage:5){media(search:\"Boruto: Naruto Next Generations\",type:ANIME,isAdult:false,sort:[SEARCH_MATCH]){id title{romaji english native} episodes startDate{year}}}}"}
+(graph.anilist.co - POST). Tests 154/154, check clean. catalog v23 / ui .63.

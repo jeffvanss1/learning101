@@ -25,8 +25,9 @@
   const CACHE_KEY_PREFIX = 'wp:cat:';
   const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
   const ANIME_KEYWORD = 210024; // TMDB keyword id for "anime"
-  const ANILIST_CACHE_PREFIX = 'wp:anilist:v3:'; // v3: busts edge-poisoned nulls (old 7d Cache-Control) + old v2 entries
-  const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const ANILIST_CACHE_PREFIX = 'wp:anilist:v4:'; // v4: busts the v3 entries (which cached UNRESOLVED results for 7 days - the Boruto bug)
+  const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for RESOLVED matches
+  const ANILIST_NULL_TTL_MS = 5 * 60 * 1000; // misses live 5 minutes - a fix must reach users fast, a blip must not poison a week
 
   // ---- tiny DOM helpers ------------------------------------------------------
   function h(tag, cls, text) {
@@ -79,10 +80,14 @@
       const raw = localStorage.getItem(cacheKey);
       if (raw) {
         const o = JSON.parse(raw);
-        if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data;
+        // RESOLVED results live 7 days; UNRESOLVED (anilistId:null) only 5
+        // minutes - a single transient blip must not poison the cache for
+        // a week (this was the Boruto "couldn't match on AniList" bug).
+        const ttl = o.data && o.data.anilistId != null ? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS;
+        if (Date.now() - o.ts < ttl) return o.data;
       }
     } catch (_) {}
-    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId) + '?v=2', { // v=2: never-hit URL (edge cached the pre-fix nulls 7 days)
+    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId) + '?v=3', { // v=3: never-hit URL (v2 responses may hold stale misses)
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -174,7 +179,8 @@
       const raw = localStorage.getItem(cacheKey);
       if (raw) {
         const o = JSON.parse(raw);
-        if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data || null;
+        const ttl = o.data && o.data.id != null ? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS;
+        if (Date.now() - o.ts < ttl) return o.data || null;
       }
     } catch (_) {}
     try {
