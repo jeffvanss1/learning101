@@ -85,6 +85,16 @@ async function freshPlayer() {
   return { sync, status, seekCount, seeks, plays, iframe, posted };
 }
 
+/**
+ * The seek target is the room position PROJECTED onto the moment of the seek, so
+ * a millisecond of test time reads as 300.001s. "At the room" is a tolerance.
+ * @param {any} app @param {number} expected @param {string} message
+ */
+function assertSeekedTo(app, expected, message) {
+  const last = app.seeks()[app.seeks().length - 1];
+  assert.ok(Math.abs(last - expected) < 1, message + ': ' + last);
+}
+
 /** Seat a GUEST into a room that is 300s into a movie. */
 async function guestWatching() {
   const app = await freshPlayer();
@@ -146,14 +156,14 @@ test('a small offset is IGNORED while playing (2.5s, not 0.75s)', async () => {
 
 test('a big, PROGRESSING drift is corrected once per cooldown — not per poll', async () => {
   const app = await guestWatching(); // 300s target, joins at 0
-  const first = app.seekCount();
-  assert.equal(first, 1, 'join correction');
+  assert.equal(app.seekCount(), 1, 'join correction');
 
   // The join seek has landed (the settle window itself is proven in test 2, on
-  // real time); the player now plays, 20s behind the room, and is MOVING: each
-  // status advances its own clock.
+  // real time) and the cooldown it armed has since been spent. The player now
+  // plays, 20s behind the room, and is MOVING: each status advances its clock.
   app.sync._settleUntil = 0;
   app.sync._awaitingStart = false;
+  app.sync._lastCorrectionAt = Date.now() - 20000;
   let local = 280;
   for (let i = 0; i < 8; i++) {
     local += 3;
@@ -162,14 +172,29 @@ test('a big, PROGRESSING drift is corrected once per cooldown — not per poll',
     app.sync._lastMsg.timestamp = Date.now();
     app.status(local, true);
   }
-  const second = app.seekCount();
-  assert.equal(second, first + 1, 'a genuinely behind, playing client is corrected once');
-  assert.equal(app.seeks()[app.seeks().length - 1], 300, 'to the room\'s position');
-  assert.equal(
-    app.seeks().filter((t) => t === 300).length,
-    2,
-    'exactly two seeks to 300 in eight polls: the join, then one drift fix'
-  );
+  assert.equal(app.seekCount(), 2, 'a genuinely behind, playing client is corrected');
+  assertSeekedTo(app, 300, 'to the room\'s position');
+
+  // …and then it is LEFT ALONE. The same drift keeps being reported; the
+  // cooldown - not the drift - decides when another seek is allowed.
+  const armedAt = app.sync._lastCorrectionAt;
+  for (let i = 0; i < 6; i++) {
+    local += 3;
+    app.sync._lastMsg.timestamp = Date.now();
+    app.status(local, true);
+  }
+  assert.equal(app.seekCount(), 2, 'six more polls inside the cooldown: no third seek');
+  assert.equal(app.sync._lastCorrectionAt, armedAt, 'and the budget was not re-armed');
+
+  // The cooldown is a delay, not a surrender: once its turn comes, the same
+  // drift is corrected again (the room is the reference, whoever is ahead).
+  app.sync._lastCorrectionAt = Date.now() - 20000;
+  app.sync._settleUntil = 0;
+  app.sync._awaitingStart = false;
+  local += 3;
+  app.status(local, true);
+  assert.equal(app.seekCount(), 3, 'a correction lands once the budget allows');
+  assertSeekedTo(app, 300, 'back to the room\'s position');
 });
 
 test('a FROZEN clock backs the player off instead of hammering it', async () => {
@@ -202,7 +227,7 @@ test('an explicit room command CLEARS the budget: following the host is never de
   // The HOST seeks the room to 900s — an explicit command.
   app.sync.applyRemote({ time: 900, isPlaying: true, timestamp: Date.now() });
   assert.equal(app.seekCount(), before + 1, 'the room command lands immediately');
-  assert.equal(app.seeks()[app.seeks().length - 1], 900, 'to the room\'s position');
+  assertSeekedTo(app, 900, 'to the room\'s position');
   assert.ok(app.sync._lastCorrectionAt > 0, 'the correction was made (and the budget armed for drift)');
   assert.equal(app.sync._correctionBackoff, 8000, 'at the BASE cooldown, not an escalated one');
 });
@@ -288,12 +313,45 @@ test('buffering: a stall blocks the next correction attempt (a stall is not a po
   app.sync._syncToTarget();
   assert.equal(app.seekCount(), before, 'no seek while buffering');
 
-  // Once the embed is fine again (a status clears the stall flag), the drift is
-  // corrected - as soon as the player shows it is actually MOVING again.
+  // Once the embed is fine again (a status clears the stall flag), a frozen
+  // clock is still not a correction: the player is loading, not out of place.
   app.status(250, true); // clears the stall flag, no forward progress yet
   assert.equal(app.seekCount(), before, 'still no seek: the clock has not moved');
-  app.status(253, true); // the player is running again
-  assert.equal(app.seekCount(), before + 1, 'and now the position is corrected');
+
+  // It is running again - but the join seek's cooldown is still burning, so it
+  // keeps playing instead of being dragged back and reloaded.
+  app.status(253, true);
+  assert.equal(app.seekCount(), before, 'a moving, genuinely behind player waits its turn');
+
+  // Its turn comes: the budget is spent, the player is moving, the gap is real.
+  app.sync._lastCorrectionAt = Date.now() - 20000;
+  app.status(256, true);
+  assert.equal(app.seekCount(), before + 1, 'and then the position is corrected');
+});
+
+test('a load that ends “obviously behind” does not buy another seek (the loop)', async () => {
+  const app = await guestWatching(); // the join seek to 300 happened at t0
+  assert.equal(app.seekCount(), 1, 'the join seek');
+  app.sync._settleUntil = 0;
+  app.sync._awaitingStart = false;
+
+  // A slow phone LOADING the join seek: the embed keeps re-reporting the
+  // position it had before it (0) and the room runs on, so the gap grows past
+  // CORRECTION_HARD_DRIFT (12s) exactly as the player's own clock "progresses"
+  // (0 -> 3.4). That combination - obvious AND progressed - used to jump the
+  // cooldown, so every finished load instantly bought another seek, which
+  // bought another load: the seek -> loading -> seek loop of the bug report.
+  app.sync._lastMsg.timestamp = Date.now();
+  for (const t of [0, 0, 0, 0.4, 1.1, 2.2]) app.status(t, true);
+  assert.equal(app.seekCount(), 1, 'loading is not drift: seek once, then let it load');
+  assert.equal(app.sync._correctionBackoff, 48000, 'the frozen reports climbed the backoff to its cap');
+
+  // A WAIT, not a surrender: with the (escalated) budget spent, the same drift
+  // is corrected - the phone really is 300s behind and its clock is running now.
+  app.sync._lastCorrectionAt = Date.now() - 60000;
+  app.status(3.4, true);
+  assert.equal(app.seekCount(), 2, 'the correction lands when the budget allows');
+  assertSeekedTo(app, 300, 'to the room\'s position');
 });
 
 

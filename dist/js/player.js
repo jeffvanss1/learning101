@@ -596,10 +596,14 @@
         this._correctionBackoff = Math.min(CORRECTION_MAX_COOLDOWN_MS, cooldown * 2);
         return false;
       }
-      const obviousNow = absDrift >= CORRECTION_HARD_DRIFT;
-      if (this._lastCorrectionAt && now - this._lastCorrectionAt < cooldown && !(obviousNow && progressed)) {
-        return false;
-      }
+      // THE COOLDOWN IS NEVER BYPASSED on the passive path. It used to let an
+      // "obvious" drift through when the clock had progressed, and THAT is how
+      // a slow phone kept looping: a load always ends with a forward jump
+      // (progressed) while the room has run ahead by the load time (obvious),
+      // so finishing a load instantly bought another seek - and another load.
+      // An explicit room command is the thing that must never wait, and it
+      // arrives through `force` above; passive drift-chasing waits its turn.
+      if (this._lastCorrectionAt && now - this._lastCorrectionAt < cooldown) return false;
 
       this._lastCorrectionAt = now;
       this._correctionBackoff = Math.min(CORRECTION_MAX_COOLDOWN_MS, cooldown * 2);

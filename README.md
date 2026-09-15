@@ -1949,7 +1949,7 @@ Tests 289/289, check clean. utils v10 / app v58 / social v59 / social css v20 /
 ui-2026-09-15.97. (tsc/checkJs also passes: the section carries a PresenceFriend
 typedef for the FLAT friend rows /api/friends returns.)
 
-## Room sync on a phone: correct the drift, don't fight the buffer (ui-2026-09-15.98)
+## Room sync on a phone: correct the drift, don't fight the buffer (ui-2026-09-15.99)
 - USER: "in mobile theres like bugging its sync in real time yes but it keep
   laging tryna sync many time , its not even playable, cause the loading".
 - WHAT WAS WRONG: the sync loop had ONE tolerance (0.75s) and it ran on every
@@ -1970,6 +1970,13 @@ typedef for the FLAT friend rows /api/friends returns.)
     and a player that stays wrong doubles it (16s, 32s, capped at 48s). A
     player that reports a FROZEN clock while `playing` is backed off, not
     hammered — that is a slow network, and seeking it is what caused the loop.
+    The cooldown is NEVER skipped for drift: an "obvious" gap (>= 12s) may skip
+    the two-observation rule, but it still waits its turn. (The first cut of
+    this fix let an obvious gap through when the clock had progressed — and a
+    slow phone walked straight back into the loop: a load always ENDS with the
+    player's clock jumping forward while the room has run on by the load time,
+    so "progressed AND obvious" arrived exactly once per load and instantly
+    bought another seek. Only an explicit room command bypasses anything.)
   - SETTLE WINDOWS: 5s after a seek and 3s after a play command the loop does
     not correct at all (the player is reloading/buffering, and its position is
     expected to be behind). Buffering is never "drift", and a bounded
@@ -1985,7 +1992,7 @@ typedef for the FLAT friend rows /api/friends returns.)
 - NOT CHANGED: no new dependencies, no CSP change (`script-src 'self'
   'unsafe-inline'` as before), no server changes, and the false-pause guards
   (clock credibility, 8s start latch, pause mirror) are untouched.
-- TESTS: tests/sync-loading.test.mjs (12 cases) EXECUTES the shipped manager
+- TESTS: tests/sync-loading.test.mjs (13 cases) EXECUTES the shipped manager
   against a fake room: a slow phone is seeked ONCE into position and then left
   to load (the old eager rule is pinned side by side, seeking on every poll),
   the 2.5s band is ignored while playing, a big progressing drift is corrected
@@ -1994,7 +2001,15 @@ typedef for the FLAT friend rows /api/friends returns.)
   command still lands while the budget is exhausted, a pause still lands, a
   skewed device clock produces no phantom seek, a stale tuple does not seek
   past the end, the host is protected by the same budget, and once in sync the
-  budget resets to zero. tests/player-seek + tests/false-pause stay green
+  budget resets to zero, and a load that ends "obviously behind" does NOT buy
+  another seek (it is a wait, not a surrender: the same drift is corrected once
+  the cooldown's turn comes). tests/player-seek + tests/false-pause stay green
   (26/26) — the budget did not soften any of the old guarantees.
-Tests 301/301, check clean. player v17 / utils v10 / app v58 / social v60 /
-social css v20 / ui-2026-09-15.98.
+- PREVIEW: scripts/sync-lab.html replays the bug and the fix side by side — the
+  BEFORE lane is the old 0.75s rule, the AFTER lane is the shipped bundle
+  executed against a scripted phone (its status lag and buffer refill are both
+  adjustable; the page's own replay engine reproduces the numbers below). On a
+  6s refill with 1.2s of lag: 11 corrections and 100% spinner before, 3
+  corrections and 65% playback after.
+Tests 302/302, check clean. player v18 / utils v10 / app v58 / social v60 /
+social css v20 / ui-2026-09-15.99.

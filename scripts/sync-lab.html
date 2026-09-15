@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty — sync lab (the mobile “keeps trying to sync” loop)</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <link rel="stylesheet" href="../dist/css/catalog.css" />
+    <link rel="stylesheet" href="../dist/css/social.css" />
+    <style>
+      /* Dev page chrome only: the manager under test is the SHIPPED one. */
+      body { padding: 26px 30px 70px; }
+      .lab { max-width: 1120px; margin: 0 auto; }
+      .lab h1 { font-size: 21px; margin: 0 0 8px; }
+      .lab__hint { color: var(--text-muted); font-size: 13px; line-height: 1.6; margin: 0 0 20px; max-width: 84ch; }
+      .lab__controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-end; margin-bottom: 20px; }
+      .lab__field { display: grid; gap: 5px; font-size: 12.5px; color: var(--text-muted); }
+      .lab__field select { background: var(--bg-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font: inherit; }
+      .lab__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+      @media (max-width: 880px) { .lab__grid { grid-template-columns: 1fr; } }
+      .lab__card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-soft); padding: 16px; margin-bottom: 20px; }
+      .lab__card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0 0 12px; }
+      .lab__card h3 { font-size: 14px; margin: 0 0 4px; }
+      .lab__pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      .lab__pill { border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); }
+      .lab__pill--bad { color: #ff8a8a; border-color: #ff8a8a55; background: #ff8a8a14; }
+      .lab__pill--good { color: #6ee7a8; border-color: #6ee7a855; background: #6ee7a814; }
+      .lab__pill--mid { color: #f5a524; border-color: #f5a52455; background: #f5a52414; }
+      .lab__strip { display: grid; grid-template-columns: repeat(60, minmax(0, 1fr)); gap: 2px; margin: 4px 0 8px; }
+      @media (max-width: 880px) { .lab__strip { grid-template-columns: repeat(30, minmax(0, 1fr)); } }
+      .lab__sec { height: 26px; border-radius: 3px; background: #6ee7a82e; position: relative; }
+      .lab__sec--spin { background: #ff8a8a33; }
+      .lab__sec--seek::after { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; border-radius: 3px; background: #ff5c5c; }
+      .lab__axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-muted); }
+      .lab__log { display: grid; gap: 5px; max-height: 190px; overflow: auto; font-size: 12.5px; margin-top: 12px; }
+      .lab__log div { padding: 4px 9px; border-radius: 7px; background: var(--bg-elev, #ffffff0a); border-left: 3px solid var(--border); }
+      .lab__log .is-bad { border-left-color: #ff5c5c; }
+      .lab__log .is-good { border-left-color: #6ee7a8; }
+      .lab__log code { color: var(--text-muted); }
+      .lab__note { color: var(--text-muted); font-size: 12.5px; margin: 10px 0 0; }
+      .lab__verdict { font-size: 13.5px; line-height: 1.6; margin: 0; }
+      .lab__rules { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.65; }
+      .lab__rules code { color: var(--text-muted); }
+      .lab__warn { color: #ff8a8a; font-size: 12.5px; margin: 8px 0 0; display: none; }
+      .lab__warn.is-on { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="lab">
+      <h1>Sync lab — the mobile “it keeps trying to sync” loop</h1>
+      <p class="lab__hint">
+        A drift correction <strong>is a seek</strong>, and a seek makes the embedded player refetch: it drops its
+        buffer, shows its loading state, and its status messages keep describing the position it had
+        <em>before</em> the seek. The phone model here does exactly that — a status report arrives
+        <code>lag</code> ms late, and a seek costs <code>load</code> ms of loading (with the old position being
+        re-reported in the meantime). The <strong>AFTER</strong> column runs the shipped
+        <code>dist/js/player.js</code>; the <strong>BEFORE</strong> column replays the rule that shipped before it
+        (a 0.75s tolerance, corrected on every status poll). Both see the same 60 seconds of the same phone.
+      </p>
+
+      <div class="lab__controls">
+        <label class="lab__field"
+          >what a seek costs this phone (buffer refill)
+          <select id="lab-load">
+            <option value="1000">1s</option>
+            <option value="3000" selected>3s</option>
+            <option value="6000">6s</option>
+            <option value="9000">9s</option>
+          </select></label
+        >
+        <label class="lab__field"
+          >how late its status reports arrive
+          <select id="lab-lag">
+            <option value="300">0.3s</option>
+            <option value="600">0.6s</option>
+            <option value="1200" selected>1.2s</option>
+            <option value="2000">2.0s</option>
+          </select></label
+        >
+        <button class="btn btn--primary btn--sm" id="lab-run">Run the 60s replay</button>
+        <button class="btn btn--sm" data-preset="1000:300">A good phone</button>
+        <button class="btn btn--sm" data-preset="3000:1200">A phone on 4G</button>
+        <button class="btn btn--sm" data-preset="6000:2000">A struggling phone</button>
+      </div>
+
+      <div class="lab__grid">
+        <div class="lab__card">
+          <h2>Before · the 0.75s rule (what shipped first)</h2>
+          <div class="lab__pills">
+            <span class="lab__pill" id="lab-before-seeks">—</span>
+            <span class="lab__pill" id="lab-before-spin">—</span>
+            <span class="lab__pill" id="lab-before-play">—</span>
+          </div>
+          <div class="lab__strip" id="lab-before-strip"></div>
+          <div class="lab__axis"><span>0:00</span><span>0:30</span><span>1:00</span></div>
+          <div class="lab__log" id="lab-before-log"></div>
+        </div>
+
+        <div class="lab__card">
+          <h2>After · the shipped correction budget</h2>
+          <div class="lab__pills">
+            <span class="lab__pill" id="lab-after-seeks">—</span>
+            <span class="lab__pill" id="lab-after-spin">—</span>
+            <span class="lab__pill" id="lab-after-play">—</span>
+          </div>
+          <div class="lab__strip" id="lab-after-strip"></div>
+          <div class="lab__axis"><span>0:00</span><span>0:30</span><span>1:00</span></div>
+          <div class="lab__log" id="lab-after-log"></div>
+          <p class="lab__warn" id="lab-warn">
+            The shipped lane never even posted its join seek — the harness is broken, not the budget.
+          </p>
+        </div>
+      </div>
+
+      <div class="lab__card">
+        <h2>The verdict</h2>
+        <p class="lab__verdict" id="lab-verdict">Run the replay.</p>
+        <p class="lab__note">
+          Green = the video is playing. Red = the player is loading (its spinner is up). A red bar on the left of a
+          second marks a seek — the correction itself. Note the shape: <strong>before</strong>, a correction at
+          every poll and the spinner never leaves; <strong>after</strong>, the join seek, then playback, with a
+          correction only once the budget's cooldown (8s, doubling to 48s) has been spent.
+        </p>
+      </div>
+
+      <div class="lab__card">
+        <h2>What the budget actually does</h2>
+        <ul class="lab__rules">
+          <li>Tolerances: <code>2.5s</code> while playing (a playing room keeps its own rhythm), <code>3.5s</code> in a paused room.</li>
+          <li>A drift needs <em>two</em> observations in the same direction — unless it is <code>≥12s</code>, which cannot be noise.</li>
+          <li>One correction per cooldown: <code>8s</code>, doubling to a <code>48s</code> cap while the player stays wrong. A drift never skips it.</li>
+          <li>Settle windows: <code>5s</code> after any seek, <code>3s</code> after a play command — that is the period in which the player is expected to be loading.</li>
+          <li>A frozen clock is loading, not drift: a playing player whose reported position does not advance is backed off, never seeked. Buffering is never a position.</li>
+          <li>The room's own commands (host seek / play / pause) bypass all of it: they arrive through <code>force</code> and land immediately.</li>
+          <li>The room position is projected with a measured clock offset, so a device whose clock is minutes off does not seek for minutes.</li>
+        </ul>
+        <p class="lab__note">
+          Model limits (deliberately pessimistic for the shipped lane): the embed's <code>BUFFERING</code> events
+          are not simulated — in the app they suppress corrections even earlier — and the phone is modelled as a
+          fixed lag plus a fixed load cost, with the room advancing in real time.
+        </p>
+      </div>
+    </div>
+
+    <script src="../dist/js/player.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        /* LAB-SIM-BEGIN
+           The replay engine. Kept free of DOM so a test can execute exactly this
+           text against the shipped bundle (see the block was verified in node).
+           Units: the LOOP counts relative ms (0..TOTAL); the TRANSPORT uses a
+           wall clock (CLOCK + relative) because the manager reads Date.now(). */
+        const POLL = 3000; // the app's STATUS_POLL_MS
+        const START = 300; // the room is 5 minutes into the movie
+        const TOTAL = 60000;
+        const STEP = 250;
+        const CLOCK = 1757940000000; // a real-looking wall clock: never 0
+        const OLD_TOLERANCE = 0.75; // the pre-fix constant
+
+        function runLane(kind, opts, make) {
+          const load = opts.load;
+          const lag = opts.lag;
+          const st = {
+            now: CLOCK,
+            stale: 0,
+            target: 0,
+            loadingUntil: CLOCK,
+            seeks: [],
+            loadingMs: 0,
+            loadingSeconds: new Array(Math.ceil(TOTAL / 1000)).fill(false),
+          };
+          const positionAt = (wall) =>
+            wall < st.loadingUntil ? st.stale : st.target + (wall - st.loadingUntil) / 1000;
+          const seek = (to, wall) => {
+            st.stale = positionAt(wall);
+            st.target = to;
+            st.loadingUntil = wall + load;
+            st.seeks.push({ at: wall - CLOCK, to: to, drift: to - st.stale });
+          };
+          // The fake clock goes in BEFORE the manager exists: it stamps its
+          // join seek/cooldown from Date.now(), and a real-world timestamp
+          // would put every later comparison "in the future".
+          const realNow = Date.now;
+          const realSetTimeout = globalThis.setTimeout;
+          const realSetInterval = globalThis.setInterval;
+          Date.now = () => st.now; // the manager reads the wall clock through Date.now
+          globalThis.setTimeout = () => 0; // this replay owns time; nothing else may schedule
+          globalThis.setInterval = () => 0;
+
+          const ctx = kind === 'new' ? make(st, seek) : null; // the shipped manager
+          if (kind !== 'new') seek(START, CLOCK); // the join seek the old code issued too
+
+          for (let ms = 0; ms <= TOTAL; ms += STEP) {
+            st.now = CLOCK + ms;
+            const behind = st.now - lag; // the position the embed was showing lag ms ago
+            if (behind < st.loadingUntil) {
+              st.loadingMs += STEP;
+              st.loadingSeconds[Math.floor(ms / 1000)] = true;
+            }
+            if (ms % POLL === 0) {
+              const reported = positionAt(behind);
+              if (ctx) ctx.deliver(reported);
+              else if (ms > 0 && st.now >= st.loadingUntil && Math.abs(START + ms / 1000 - reported) > OLD_TOLERANCE) {
+                seek(START + ms / 1000, st.now);
+              }
+            }
+          }
+
+          Date.now = realNow;
+          globalThis.setTimeout = realSetTimeout;
+          globalThis.setInterval = realSetInterval;
+          if (ctx && ctx.destroy) ctx.destroy();
+          st.spinnerPct = Math.round((st.loadingMs / TOTAL) * 100);
+          st.playablePct = 100 - st.spinnerPct;
+          return st;
+        }
+
+        var LAB_SIM = { runLane: runLane, POLL: POLL, START: START, TOTAL: TOTAL, STEP: STEP, OLD_TOLERANCE: OLD_TOLERANCE };
+        /* LAB-SIM-END */
+
+        /* The page's own harness: build the SHIPPED manager against a fake
+           iframe, capturing its window 'message' listener so the replay can
+           deliver reports with the source the manager filters on. */
+        function makePage(st, seek) {
+          const captured = {};
+          const realAdd = window.addEventListener.bind(window);
+          window.addEventListener = function (type, fn) {
+            if (type === 'message') (captured[type] || (captured[type] = [])).push(fn);
+          };
+          const contentWindow = {
+            postMessage: function (m) {
+              if (m && m.command === 'seek') seek(Number(m.time), st.now);
+            },
+          };
+          const iframeListeners = {};
+          const iframe = {
+            _src: 'https://bingr.one/watch/movie/603',
+            contentWindow: contentWindow,
+            addEventListener: function (type, fn) {
+              (iframeListeners[type] || (iframeListeners[type] = [])).push(fn);
+            },
+            removeEventListener: function () {},
+            getAttribute: function (k) {
+              return k === 'src' ? iframe._src : null;
+            },
+          };
+          Object.defineProperty(iframe, 'src', {
+            get: function () {
+              return this._src;
+            },
+            set: function (v) {
+              this._src = v;
+            },
+          });
+          const sync = new window.WP.PlaybackSyncManager(iframe);
+          window.addEventListener = realAdd;
+          sync.isController = false;
+          sync.loadVideo({ src: iframe._src });
+          (iframeListeners.load || []).forEach(function (fn) {
+            fn({}); // the embed document loaded: this is what arms the sync
+          });
+          sync.applyRemote({ time: START, isPlaying: true, timestamp: st.now });
+          return {
+            deliver: function (currentTime) {
+              (captured.message || []).forEach(function (fn) {
+                fn({
+                  source: contentWindow,
+                  data: {
+                    type: 'PLAYER_EVENT',
+                    data: { event: 'playerstatus', currentTime: currentTime, playing: true, duration: 3600 },
+                  },
+                });
+              });
+            },
+            destroy: function () {
+              if (typeof sync.destroy === 'function') sync.destroy();
+            },
+          };
+        }
+
+        // ---- rendering ------------------------------------------------------
+        const el = {
+          load: document.getElementById('lab-load'),
+          lag: document.getElementById('lab-lag'),
+          run: document.getElementById('lab-run'),
+          warn: document.getElementById('lab-warn'),
+          verdict: document.getElementById('lab-verdict'),
+        };
+
+        function fmt(ms) {
+          const s = Math.round(ms / 1000);
+          return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        }
+
+        function paintLane(prefix, st, isBefore) {
+          const seeks = document.getElementById(prefix + '-seeks');
+          const spin = document.getElementById(prefix + '-spin');
+          const play = document.getElementById(prefix + '-play');
+          seeks.textContent = st.seeks.length + ' corrections';
+          spin.textContent = 'loading ' + st.spinnerPct + '%';
+          play.textContent = 'playing ' + st.playablePct + '%';
+          const bad = isBefore ? st.playablePct < 50 : st.playablePct < 90;
+          const good = isBefore ? false : st.playablePct >= 90;
+          seeks.className = 'lab__pill ' + (bad ? 'lab__pill--bad' : good ? 'lab__pill--good' : 'lab__pill--mid');
+          spin.className = 'lab__pill ' + (bad ? 'lab__pill--bad' : 'lab__pill--mid');
+          play.className = 'lab__pill ' + (good ? 'lab__pill--good' : bad ? 'lab__pill--bad' : 'lab__pill--mid');
+
+          const strip = document.getElementById(prefix + '-strip');
+          strip.innerHTML = '';
+          const seekSeconds = new Set(st.seeks.map((s) => Math.floor(s.at / 1000)));
+          for (let sec = 0; sec < st.loadingSeconds.length; sec++) {
+            const cell = document.createElement('i');
+            cell.className =
+              'lab__sec' + (st.loadingSeconds[sec] ? ' lab__sec--spin' : '') + (seekSeconds.has(sec) ? ' lab__sec--seek' : '');
+            cell.title = fmt(sec * 1000) + (seekSeconds.has(sec) ? ' — seek' : '') + (st.loadingSeconds[sec] ? ' — loading' : ' — playing');
+            strip.appendChild(cell);
+          }
+
+          const log = document.getElementById(prefix + '-log');
+          log.innerHTML = '';
+          if (!st.seeks.length) {
+            const row = document.createElement('div');
+            row.className = 'is-good';
+            row.textContent = 'no corrections at all in 60s';
+            log.appendChild(row);
+          }
+          st.seeks.slice(0, 40).forEach(function (s) {
+            const row = document.createElement('div');
+            row.className = isBefore ? 'is-bad' : '';
+            row.innerHTML =
+              'at <code>' + fmt(s.at) + '</code> → seek to <code>' + s.to.toFixed(1) + 's</code>' +
+              ' <code>(' + s.drift.toFixed(1) + 's behind)</code>';
+            log.appendChild(row);
+          });
+        }
+
+        function replay() {
+          const load = Number(el.load.value);
+          const lag = Number(el.lag.value);
+          const before = LAB_SIM.runLane('old', { load: load, lag: lag }, null);
+          const after = LAB_SIM.runLane('new', { load: load, lag: lag }, makePage);
+          paintLane('lab-before', before, true);
+          paintLane('lab-after', after, false);
+          el.warn.className = 'lab__warn' + (after.seeks.length === 0 ? ' is-on' : '');
+          el.verdict.innerHTML =
+            'With a <code>' + (load / 1000) + 's</code> refill and <code>' + (lag / 1000).toFixed(1) + 's</code> of ' +
+            'status lag, the phone sits <code>' + ((load + lag) / 1000).toFixed(1) + 's</code> behind the room when it ' +
+            'reads a status. The old 0.75s rule therefore corrects at every poll: <strong>' + before.seeks.length +
+            ' corrections in a minute</strong> and the video is loading <strong>' + before.spinnerPct + '%</strong> of the time. ' +
+            'The shipped budget corrects <strong>' + after.seeks.length + ' time' + (after.seeks.length === 1 ? '' : 's') +
+            '</strong> and the video plays <strong>' + after.playablePct + '%</strong> of it.';
+        }
+
+        el.run.addEventListener('click', replay);
+        el.load.addEventListener('change', replay);
+        el.lag.addEventListener('change', replay);
+        document.querySelectorAll('[data-preset]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const parts = btn.getAttribute('data-preset').split(':');
+            el.load.value = parts[0];
+            el.lag.value = parts[1];
+            replay();
+          });
+        });
+        replay();
+      })();
+    </script>
+  </body>
+</html>

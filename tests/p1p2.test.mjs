@@ -436,7 +436,7 @@ test('host sovereignty: only external controller commands drive the host + expli
   const w = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
   assert.match(w, /style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline';/, 'CSP explicit elem/attr');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/player\.js\?v=17/, 'player cache-bumped');
+  assert.match(html, /js\/player\.js\?v=18/, 'player cache-bumped');
   assert.match(html, /js\/app\.js\?v=58/, 'app cache-bumped');
 });
 
