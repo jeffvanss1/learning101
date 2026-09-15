@@ -1997,6 +1997,7 @@
         container.classList.remove('is-open');
         if (backdrop) backdrop.hidden = true;
       }
+      emitToggled();
     }
 
     // ---- visibility ----------------------------------------------------------
@@ -2008,14 +2009,24 @@
       return container.classList.contains('is-open');
     }
 
+    // The mobile centre slot (bottom bar) reflects this panel's state, so every
+    // open/close/dock change announces itself once, from one place.
+    function emitToggled() {
+      try {
+        global.dispatchEvent(new CustomEvent('wp:friends-toggled', { detail: { open: railIsVisible() } }));
+      } catch (_) {}
+    }
+
     function openDrawer() {
       container.classList.add('is-open');
       if (backdrop) backdrop.hidden = false;
+      emitToggled();
     }
 
     function closeDrawer() {
       container.classList.remove('is-open');
       if (backdrop) backdrop.hidden = true;
+      emitToggled();
     }
 
     function toggle() {
@@ -2314,7 +2325,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-15.87';
+  global.WP.build = 'ui-2026-09-15.88';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);

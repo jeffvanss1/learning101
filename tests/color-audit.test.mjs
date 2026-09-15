@@ -31,7 +31,9 @@ test('colors: pastel accent texts are BANNED (they wash out in light mode)', () 
 test('colors: hardcoded literal allowlist is EXACT (any new literal must be reviewed)', () => {
   const allowed = {
     'dist/css/style.css': { '#fff': 6, '#0b0b0b': 1, '#e8c35a': 1, '#f5d76a': 1, '#cccccc': 1, '#f5c518': 1 },
-    'dist/css/catalog.css': { '#fff': 5, '#d4d4d4': 1 }, // on-media inks (the trailer audio toggle is a ghost button now)
+    // catalog.css #fff: on-media inks + the mobile centre-slot disc (white ink
+    // on the red friends disc, same treatment as .btn--primary).
+    'dist/css/catalog.css': { '#fff': 6, '#d4d4d4': 1 },
     'dist/css/social.css': { '#fff': 4, '#0b0b0b': 1, '#7ee08a': 1, '#444': 1 },
   };
   const style = readFileSync(join(ROOT, 'dist/css/style.css'), 'utf8');
@@ -88,7 +90,7 @@ test('stylesheet duplication is BANNED (stale second copy once overrode every th
   // ~2250 lines), NOT a style budget — raised 1400 -> 1500 when the trailer
   // audio toggle added its rules. The top-level marker counts above are the
   // real duplication detector.
-  assert.ok(catalog.split('\n').length < 1500, 'catalog.css stays deduplicated');
+  assert.ok(catalog.split('\n').length < 1750, 'catalog.css stays deduplicated');
   assert.equal(count(style, '.btn--primary {'), 1, 'style.css: no duplicate .btn--primary');
   assert.equal(count(social, '.presence--idle {'), 1, 'social.css: no duplicate .presence--idle');
 });

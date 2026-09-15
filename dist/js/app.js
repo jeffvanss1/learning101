@@ -2218,65 +2218,143 @@
     if (sideInput && sideInput.value) sideInput.value = '';
   }
 
+  // ---- Mobile "More" sheet ----------------------------------------------------
+  // On phones the rail is an off-canvas sheet: body.menu-open slides it in and
+  // shows the backdrop. Body-level classes keep this CSS-driven (and testable).
+  function mobileMenuOpen() {
+    return document.body.classList.contains('menu-open');
+  }
+
+  /** @param {boolean} open */
+  function setMobileMenu(open) {
+    document.body.classList.toggle('menu-open', open);
+    const backdrop = $('sidenav-backdrop');
+    if (backdrop) backdrop.hidden = !open;
+    const more = $('bottomnav-more');
+    if (more) more.setAttribute('aria-expanded', String(open));
+  }
+
+  function closeMobileMenu() {
+    if (mobileMenuOpen()) setMobileMenu(false);
+  }
+
+  function toggleMobileMenu() {
+    setMobileMenu(!mobileMenuOpen());
+  }
+
   function setupSidenav() {
     const nav = $('sidenav');
     if (!nav) return;
     const items = Array.from(nav.querySelectorAll('.sidenav__item[data-nav]'));
+    const barItems = Array.from(document.querySelectorAll('.bottomnav__item[data-nav]'));
+    // Active state is painted on BOTH bars from one call, so switching between
+    // the rail (desktop) and the bar (mobile) never shows a stale selection.
     const setActive = (key) => {
       items.forEach((it) => it.classList.toggle('is-active', it.dataset.nav === key));
+      const inBar = barItems.some((it) => it.dataset.nav === key);
+      const inRail = items.some((it) => it.dataset.nav === key);
+      barItems.forEach((it) => {
+        // "More" is a sheet trigger, but it LIGHTS UP while the user is on a
+        // destination the sheet owns (Trending, /history, ...) so the bar always
+        // shows where you are.
+        const active = it.dataset.nav === 'more' ? !inBar && inRail : it.dataset.nav === key;
+        it.classList.toggle('is-active', active);
+      });
     };
     setActiveNav = setActive;
 
+    /**
+     * ONE navigator: the desktop rail, the mobile bottom bar and the "More"
+     * sheet all route through here, so a destination can never behave
+     * differently depending on which bar the user tapped.
+     * @param {string} key
+     */
+    const navigate = (key) => {
+      const inRoom = !$('room').hidden;
+
+      if (key === 'home') {
+        if (inRoom) {
+          goHome();
+          return;
+        }
+        if (
+          !$('profile').hidden ||
+          !$('discovery').hidden ||
+          !$('history-page').hidden // DEAD END FIX: leaving /history had NO branch — Home did nothing.
+        ) {
+          // Leaving the profile/discovery/history page: push '/' so Back returns to it.
+          history.pushState(null, '', '/');
+          routeCurrent();
+          return;
+        }
+        clearSearchInputs();
+        if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
+        setActive('home');
+        scrollHomeTop();
+      } else if (key === 'history') {
+        // Dedicated page: real URL, back-button friendly.
+        if (inRoom) goHome();
+        if (location.pathname !== '/history') {
+          history.pushState(null, '', '/history');
+        }
+        routeCurrent();
+      } else if (key === 'admin') {
+        // Admin drawer (only visible when the signed-in user is_admin).
+        if (WP.Social && WP.Social.toggleAdminPanel) WP.Social.toggleAdminPanel();
+      } else if (key === 'friends') {
+        // Friends drawer: a global slide-over (right → left) on every
+        // surface — home, /discovery pages, profiles and rooms alike.
+        if (WP.Social) WP.Social.toggleFriendsRail();
+      } else if (key === 'start-room') {
+        startRoomWithVideo(null);
+      } else {
+        // Library entries own a /discovery/:key page (infinite scroll).
+        if (inRoom) goHome();
+        const route = '/discovery/' + key;
+        if (location.pathname !== route) {
+          history.pushState(null, '', route);
+          routeCurrent(); // also syncs the active nav item
+        }
+      }
+    };
+
+    // Desktop rail + the "More" sheet share the same nodes.
     items.forEach((it) => {
       it.addEventListener('click', () => {
-        const key = it.dataset.nav;
-        const inRoom = !$('room').hidden;
-
-        if (key === 'home') {
-          if (inRoom) {
-            goHome();
-            return;
-          }
-          if (
-            !$('profile').hidden ||
-            !$('discovery').hidden ||
-            !$('history-page').hidden // DEAD END FIX: leaving /history had NO branch — Home did nothing.
-          ) {
-            // Leaving the profile/discovery/history page: push '/' so Back returns to it.
-            history.pushState(null, '', '/');
-            routeCurrent();
-            return;
-          }
-          clearSearchInputs();
-          if (state.browseHandle && state.browseHandle.refresh) state.browseHandle.refresh();
-          setActive('home');
-          scrollHomeTop();
-        } else if (key === 'history') {
-          // Dedicated page: real URL, back-button friendly.
-          if (inRoom) goHome();
-          if (location.pathname !== '/history') {
-            history.pushState(null, '', '/history');
-          }
-          routeCurrent();
-        } else if (key === 'admin') {
-          // Admin drawer (only visible when the signed-in user is_admin).
-          if (WP.Social && WP.Social.toggleAdminPanel) WP.Social.toggleAdminPanel();
-        } else if (key === 'friends') {
-          // Friends drawer: a global slide-over (right → left) on every
-          // surface — home, /discovery pages, profiles and rooms alike.
-          if (WP.Social) WP.Social.toggleFriendsRail();
-        } else if (key === 'start-room') {
-          startRoomWithVideo(null);
-        } else {
-          // Library entries own a /discovery/:key page (infinite scroll).
-          if (inRoom) goHome();
-          const route = '/discovery/' + key;
-          if (location.pathname !== route) {
-            history.pushState(null, '', route);
-            routeCurrent(); // also syncs the active nav item
-          }
-        }
+        navigate(it.dataset.nav);
+        closeMobileMenu();
       });
+    });
+
+    // MOBILE BOTTOM BAR: the same five keys, one thumb away (barItems is shared
+    // with setActive above). "more" is not a destination — it opens the sheet
+    // that holds the rest of the rail.
+    barItems.forEach((it) => {
+      it.addEventListener('click', () => {
+        const key = it.dataset.nav;
+        if (key === 'more') {
+          toggleMobileMenu();
+          return;
+        }
+        navigate(key);
+        closeMobileMenu();
+      });
+    });
+
+    // Sheet dismissal: the X, the backdrop and Escape all close it.
+    const closeBtn = $('sidenav-close');
+    if (closeBtn) closeBtn.addEventListener('click', () => closeMobileMenu());
+    const backdrop = $('sidenav-backdrop');
+    if (backdrop) backdrop.addEventListener('click', () => closeMobileMenu());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && mobileMenuOpen()) closeMobileMenu();
+    });
+
+    // The friends drawer drives the centre slot's pressed look.
+    window.addEventListener('wp:friends-toggled', (e) => {
+      const on = !!(/** @type {any} */ (e).detail && /** @type {any} */ (e).detail.open);
+      const center = barItems.find((it) => it.classList.contains('bottomnav__item--center'));
+      if (center) center.classList.toggle('is-open', on);
     });
 
     // Collapse/expand toggle (desktop): remembered across visits.

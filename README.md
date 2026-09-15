@@ -1535,3 +1535,62 @@ button; and the SVG sweep covers EVERYTHING (buttons, chips and decorative art).
   /scripts/icon-preview.html.
 Tests 210/210, check clean. catalog js v30 / catalog css v27 / style css v25 /
 utils v9 / social v48 / subs v26 / app v56 / i18n v3 / ui-2026-09-15.87.
+
+## Mobile navigation: left rail becomes a bottom bar, friends in the centre (ui-2026-09-15.88)
+
+USER: "lets make mobile interface, how about we move left sidebar to buttom but
+make it not crowded only 5, and friends menu in the center" -> clarified as:
+bar = Home · Movies · FRIENDS · Series · More; the entries that don't fit live in
+a "More" sheet; the bar hides inside a room (the in-room peek brings it back).
+
+- BREAKPOINT: `<=720px` is the phone layout (the same width the old rules used).
+  Desktop is UNTOUCHED: the left rail is still the rail, the bar is
+  `display: none`, and the collapse toggle behaves exactly as before.
+- BOTTOM BAR (5 equal slots, no horizontal scroll): Home, Movies, FRIENDS,
+  Series, More. Friends is the CENTRE slot and the only accented element — a
+  single red disc (`.bottomnav__center-disc`) with the label under it, which is
+  what keeps the bar from looking crowded. Active slot = themed ink + weight;
+  a rail-only destination (Trending, /history, ...) lights the More slot so the
+  bar always says where you are.
+- THE BAR IS IN THE LAYOUT, NOT OVER IT: `#bottomnav` is the LAST flex child of
+  `.app-shell__main`, so every view shrinks by exactly its height instead of
+  being covered (no padding hacks, no z-index games). It carries
+  `padding-bottom: env(safe-area-inset-bottom)` for the iPhone home indicator and
+  `--bottomnav-h` (58px) for thumb-sized slots.
+- "MORE" SHEET: the rail node itself becomes an off-canvas sheet on phones
+  (`position: fixed` + `translateX(-102%)`, revealed by `body.menu-open`), with a
+  sheet header (title + X), the app dimmed by `#sidenav-backdrop`. It shows the
+  entries the bar does NOT carry — Anime, Watch history, Trending, Top Rated,
+  In Theaters, Airing Today, Admin — and Start a room moves to the TOP of the
+  sheet (`order: -1`) where a thumb reaches it. Dismissal: the X, the backdrop,
+  Escape, or choosing an entry.
+- ONE NAVIGATOR, THREE SURFACES: `setupSidenav()` now exposes a single
+  `navigate(key)` (the old per-item click body) used by the rail items, the bar
+  slots and the sheet, so a destination can never behave differently depending on
+  which bar was tapped. `setActive(key)` paints the active state on BOTH bars
+  from one call. The sheet also closes on any navigation.
+- IN A ROOM: `body.room-focus .bottomnav { display: none }` (the player/chat keep
+  the whole screen, same as the desktop rail) and
+  `body.room-focus.rail-peek .bottomnav { display: grid }` — the existing in-room
+  peek button brings it back.
+- TWO BUGS PREVENTED IN THE SAME PASS: (a) a persisted desktop collapse is now
+  gated behind `@media (min-width: 721px)`, so `sidenav-collapsed` can never
+  shrink the mobile sheet; (b) the old `<=720px` rules that hid the rail labels
+  and shrank the rail to a 56px strip are gone — that width is the bar layout now.
+- FRIENDS STATE: the rail's open/close/dock now emits `wp:friends-toggled`
+  (`include detail.open`), which paints the centre disc's `is-open` state.
+- i18n: `nav.more` added to all six locales (More / Lainnya / Más / Plus / Mais /
+  المزيد); the More slot and the sheet title both carry the key.
+- TESTS: tests/mobile-nav.test.mjs slices the SHIPPED `setupSidenav()` (+ the
+  sheet helpers) out of app.js and DRIVES it against a stub DOM: five slots with
+  friends dead centre, bar tap === rail tap routing, centre slot opens the
+  friends drawer, More lights up for rail-only destinations, bar Home exits a
+  room, sheet open/close via More/X/backdrop/Escape, navigation closes the sheet,
+  and the CSS layout contract (5-slot grid, off-canvas sheet, room hiding +
+  peek, safe area, desktop-gated collapse). 15 cases.
+- PREVIEW: scripts/mobile-preview.html renders a 390x780 phone frame
+  (scripts/mobile-frame.html = the shipped app shell in an iframe, because the
+  mobile rules are media queries) with buttons for the sheet, a room, the peek
+  and the theme — design review without a device.
+Tests 225/225, check clean. catalog css v28 / style css v26 / app v57 /
+social v50 / i18n v4 / ui-2026-09-15.88.

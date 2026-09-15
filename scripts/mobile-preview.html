@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty — mobile navigation preview</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <style>
+      /* Dev preview chrome only. The phone frame loads scripts/mobile-frame.html
+         in an IFRAME on purpose: the mobile rules are media queries, and an
+         iframe viewport is what makes them apply on a desktop screen. */
+      body {
+        padding: 26px 28px 60px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+      .hint {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin: 0 0 20px;
+        max-width: 74ch;
+        line-height: 1.55;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+      .stage {
+        display: flex;
+        gap: 28px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .phone {
+        flex: 0 0 auto;
+        width: 390px;
+        height: 780px;
+        border-radius: 34px;
+        border: 10px solid #000;
+        background: #000;
+        box-shadow: 0 26px 60px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+        position: relative;
+      }
+      .phone iframe {
+        width: 390px;
+        height: 780px;
+        border: 0;
+        display: block;
+        background: var(--bg);
+      }
+      .notes {
+        flex: 1 1 320px;
+        min-width: 300px;
+        max-width: 460px;
+      }
+      .notes h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin: 0 0 8px;
+      }
+      .notes ul {
+        margin: 0 0 20px;
+        padding-left: 18px;
+        color: var(--text-dim);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .notes code {
+        font-size: 11.5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mobile navigation preview</h1>
+    <p class="hint">
+      390&times;780 phone frame running the SHIPPED markup and stylesheets
+      (<code>dist/index.html</code>'s app shell + <code>catalog.css</code>): the left guide rail
+      becomes the bottom bar with <strong>Home &middot; Movies &middot; Friends &middot; Series &middot; More</strong>,
+      Friends sits in the centre disc, and the rest of the menu is the &ldquo;More&rdquo; sheet.
+    </p>
+    <div class="controls">
+      <button class="btn btn--primary btn--sm" id="open-more">Open More sheet</button>
+      <button class="btn btn--ghost btn--sm" id="close-more">Close sheet</button>
+      <button class="btn btn--ghost btn--sm" id="toggle-rail">Toggle desktop-collapsed class</button>
+      <button class="btn btn--ghost btn--sm" id="friends">Friends drawer open/closed state</button>
+      <button class="btn btn--ghost btn--sm" id="room">In a room (bar hidden)</button>
+      <button class="btn btn--ghost btn--sm" id="peek">In-room peek (bar back)</button>
+      <button class="btn btn--ghost btn--sm" id="theme">Toggle theme</button>
+    </div>
+    <div class="stage">
+      <div class="phone"><iframe id="frame" src="mobile-frame.html" title="Phone frame"></iframe></div>
+      <div class="notes">
+        <h2>What to look for</h2>
+        <ul>
+          <li>Five equal slots, no scrolling; Friends is the middle one and the only accent.</li>
+          <li>Tapping <strong>More</strong> slides the rail in from the left with the remaining
+            entries (Start a room first) and dims the app behind it.</li>
+          <li>A collapsed desktop rail can never shrink the sheet &mdash; labels always show.</li>
+          <li>Inside a room the bar disappears (the player keeps the whole screen); the in-room
+            peek brings it back.</li>
+          <li>The bar sits below the content, not over it, and adds the iPhone safe-area padding.</li>
+        </ul>
+        <h2>How it is wired</h2>
+        <ul>
+          <li>One navigator (<code>setupSidenav</code>) feeds the rail, the bar and the sheet, so a
+            destination behaves identically wherever it is tapped.</li>
+          <li>The active slot is painted on both bars from one call; a rail-only destination lights
+            <strong>More</strong>.</li>
+          <li><code>body.menu-open</code> reveals the sheet; the X, the backdrop and Escape close it.</li>
+        </ul>
+      </div>
+    </div>
+    <script>
+      const frame = document.getElementById('frame');
+      const doc = () => frame.contentDocument;
+      const body = () => doc().body;
+      document.getElementById('open-more').onclick = () => {
+        body().classList.add('menu-open');
+        const bd = doc().getElementById('sidenav-backdrop');
+        if (bd) bd.hidden = false;
+      };
+      document.getElementById('close-more').onclick = () => {
+        body().classList.remove('menu-open');
+        const bd = doc().getElementById('sidenav-backdrop');
+        if (bd) bd.hidden = true;
+      };
+      document.getElementById('toggle-rail').onclick = () => body().classList.toggle('sidenav-collapsed');
+      let friendsOpen = false;
+      document.getElementById('friends').onclick = () => {
+        friendsOpen = !friendsOpen;
+        const disc = doc().querySelector('.bottomnav__item--center');
+        if (disc) disc.classList.toggle('is-open', friendsOpen);
+      };
+      document.getElementById('room').onclick = () => {
+        body().classList.add('room-focus');
+        body().classList.remove('rail-peek');
+      };
+      document.getElementById('peek').onclick = () => body().classList.toggle('rail-peek');
+      document.getElementById('theme').onclick = () => {
+        const html = doc().documentElement;
+        html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+      };
+    </script>
+  </body>
+</html>

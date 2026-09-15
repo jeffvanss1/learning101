@@ -209,21 +209,25 @@
   background: rgba(255, 0, 51, 0.14);
 }
 
-/* Collapsed: icon-only rail (labels slide away), driven by body.sidenav-collapsed. */
-body.sidenav-collapsed .sidenav {
-  flex-basis: var(--sidenav-w-collapsed);
-  width: var(--sidenav-w-collapsed);
-}
+/* Collapsed: icon-only rail (labels slide away), driven by body.sidenav-collapsed.
+   DESKTOP ONLY: on phones the same node is the "More" sheet and always shows its
+   labels — a desktop preference must never shrink the mobile sheet. */
+@media (min-width: 721px) {
+  body.sidenav-collapsed .sidenav {
+    flex-basis: var(--sidenav-w-collapsed);
+    width: var(--sidenav-w-collapsed);
+  }
 
-body.sidenav-collapsed .sidenav__item {
-  justify-content: center;
-  gap: 0;
-}
+  body.sidenav-collapsed .sidenav__item {
+    justify-content: center;
+    gap: 0;
+  }
 
-body.sidenav-collapsed .sidenav__label,
-body.sidenav-collapsed .sidenav__heading,
-body.sidenav-collapsed .sidenav__search {
-  display: none;
+  body.sidenav-collapsed .sidenav__label,
+  body.sidenav-collapsed .sidenav__heading,
+  body.sidenav-collapsed .sidenav__search {
+    display: none;
+  }
 }
 
 /* ---- Room focus: the guide rail is HIDDEN entirely ----------------------------
@@ -243,6 +247,193 @@ body.room-focus .sidenav {
 
 body.room-focus.rail-peek .sidenav {
   display: flex;
+}
+
+/* ---- Bottom bar (mobile) --------------------------------------------------------
+   On phones the guide rail moves to the bottom edge as a 5-slot bar: Home,
+   Movies, FRIENDS (centre slot), Series and More. Only the centre slot carries
+   the accent, so the bar reads as five destinations instead of a crowded strip.
+   Desktop keeps the left rail — the bar is display:none there. */
+.bottomnav {
+  display: none;
+}
+
+.sidenav__sheet-head {
+  display: none;
+}
+
+.sidenav-backdrop {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .bottomnav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: stretch;
+    flex: 0 0 auto;
+    background: var(--bg-soft);
+    border-top: 1px solid var(--border);
+    /* iPhone home-indicator safe area: the bar grows, the layout follows. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    z-index: 40;
+  }
+
+  .bottomnav__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: var(--bottomnav-h);
+    padding: 7px 2px 5px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 500;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.12s ease;
+  }
+
+  .bottomnav__item svg {
+    flex: 0 0 auto;
+  }
+
+  .bottomnav__item.is-active {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .bottomnav__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Centre slot = the friends drawer: one accent disc, nothing else loud. */
+  .bottomnav__item--center {
+    color: var(--text);
+  }
+
+  .bottomnav__center-disc {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin-top: -3px;
+    border-radius: 50%;
+    background: var(--red);
+    color: #fff;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .bottomnav__item--center.is-open .bottomnav__center-disc {
+    background: rgba(255, 0, 51, 0.16);
+    color: var(--red);
+  }
+
+  /* Rooms get the whole screen (same rule as the desktop rail); the in-room
+     peek (#room-nav-toggle) brings the bar back. */
+  body.room-focus .bottomnav {
+    display: none;
+  }
+
+  body.room-focus.rail-peek .bottomnav {
+    display: grid;
+  }
+
+  /* ---- The rail IS the "More" sheet here: off-canvas, full labels ----------- */
+  .sidenav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(304px, 86vw);
+    max-width: 100%;
+    flex: none;
+    overflow-y: auto;
+    padding: 10px 10px calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    box-shadow: 18px 0 42px rgba(0, 0, 0, 0.45);
+    z-index: 60;
+    transform: translateX(-102%);
+    transition: transform 0.24s ease;
+  }
+
+  body.menu-open .sidenav {
+    transform: none;
+  }
+
+  .sidenav__sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 4px 8px;
+  }
+
+  .sidenav__sheet-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .sidenav__close {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+
+  .sidenav__close:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+
+  /* The sheet carries what the BAR does not: Anime, Watch history, the Library
+     rows, Admin. Home/Movies/Series/Friends are the bar's job, and Start a room
+     moves to the top where a thumb reaches it. */
+  .sidenav [data-nav='home'],
+  .sidenav [data-nav='movies'],
+  .sidenav [data-nav='series'],
+  .sidenav [data-nav='friends'] {
+    display: none;
+  }
+
+  .sidenav__group--bottom {
+    order: -1;
+    margin-top: 0;
+  }
+
+  .sidenav__item {
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 12px;
+    font-size: 14.5px;
+  }
+
+  .sidenav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(0, 0, 0, 0.55);
+    border: none;
+    padding: 0;
+  }
+
+  .sidenav-backdrop[hidden] {
+    display: none;
+  }
 }
 
 /* ---- Search -------------------------------------------------------------------- */
@@ -1256,26 +1447,12 @@ body.room-focus.rail-peek .sidenav {
     font-size: 13.5px;
   }
 
-  /* On small screens the guide rail collapses to a slim icon-only strip so the
-     player/content keeps the screen — the rail is still always visible. */
-  .sidenav {
-    flex-basis: 56px;
-    width: 56px;
-    padding: 8px 6px;
-    gap: 6px;
-  }
-  .sidenav__search,
-  .sidenav__heading,
-  .sidenav__label {
-    display: none;
-  }
-  .sidenav__item {
-    justify-content: center;
-    gap: 0;
-    padding: 11px 0;
-  }
+  /* The old <=720px treatment (a 56px icon-only strip pinned to the LEFT) is
+     gone: that width is the bottom-bar layout now — the rail is the "More"
+     sheet and the destinations it used to squeeze into icons live in the bar.
+     The hamburger stays hidden; "More" is the sheet's front door. */
   .topnav__hamburger {
-    display: none; /* the icon rail is already as slim as it gets */
+    display: none;
   }
 }
 

@@ -1,36 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="WatchParty — browse movies, series and anime, then watch together in perfect sync with live chat." />
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f0f0f" />
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-  <title>WatchParty — Watch together, live</title>
-  <script>
-    /* Theme: system dark/light is respected BY DEFAULT via CSS
-       @media (prefers-color-scheme). An explicit pick (profile editor) is
-       stored in wp:theme:explicit and applied here BEFORE first paint so
-       overriding never flashes the wrong theme. */
-    (function () {
-      try {
-        var t = localStorage.getItem('wp:theme:explicit');
-        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-      } catch (_) {}
-    })();
-  </script>
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-  <!-- Type is the system stack Apple uses (SF Pro on Apple devices, Segoe UI /
-       Roboto elsewhere) — no web font download, so it matches apple.com. -->
-  <link rel="stylesheet" href="/css/style.css?v=26" />
-  <link rel="stylesheet" href="/css/catalog.css?v=28" />
-  <link rel="stylesheet" href="/css/social.css?v=19" />
-</head>
-<body>
-  <!-- Toast / notification surface -->
-  <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
-
-  <div class="app-shell">
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty mobile frame (design preview)</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <link rel="stylesheet" href="../dist/css/catalog.css" />
+    <link rel="stylesheet" href="../dist/css/social.css" />
+    <!-- Dev preview only: a phone-sized window onto the SHIPPED markup + CSS.
+         The app treats this iframe exactly like a phone (the mobile rules are
+         media queries, so they key off THIS viewport). -->
+  </head>
+  <body>
+<div class="app-shell">
     <aside class="sidenav" id="sidenav" aria-label="Explore">
       <!-- Mobile sheet header (hidden on desktop, where the rail is a column). -->
       <div class="sidenav__sheet-head">
@@ -141,7 +123,24 @@
   </nav>
 
   <main id="home" class="home">
-    <div id="browse" class="browse"></div>
+    <div id="browse" class="browse">
+        <div style="padding:16px 14px 10px">
+          <div style="font-size:20px;font-weight:700;margin:0 0 4px">Browse</div>
+          <div style="font-size:12.5px;color:var(--text-dim)">Mobile frame preview &mdash; shipped markup + CSS</div>
+        </div>
+        <div class="row">
+          <h2 class="row__title" style="padding:0 14px">Trending Now</h2>
+          <div class="row__scroller">
+            <div style="display:flex;gap:10px;padding:8px 14px 18px" id="mock-row"></div>
+          </div>
+        </div>
+        <div class="row">
+          <h2 class="row__title" style="padding:0 14px">Top Rated Movies</h2>
+          <div class="row__scroller">
+            <div style="display:flex;gap:10px;padding:8px 14px 18px" id="mock-row2"></div>
+          </div>
+        </div>
+      </div>
   </main>
 
   <!-- Watch room -->
@@ -367,115 +366,36 @@
     </div>
   </div>
 
-  <!-- Backdrop for the mobile "More" sheet (the rail as a slide-over). -->
-  <div id="sidenav-backdrop" class="sidenav-backdrop" hidden></div>
-
-  <!-- Friends drawer — global slide-over (right → left), opened from the side
-       nav "Friends" item on ANY surface. Kept at body level (outside every
-       view) so it overlays home, /discovery, profile and room alike. -->
-  <aside id="friends-rail" class="friends-rail" hidden aria-label="Friends"></aside>
-  <div id="friends-backdrop" class="friends-rail-backdrop" hidden></div>
-
-  <!-- Name modal -->
-  <div class="modal" id="name-modal" hidden>
-    <div class="modal__card">
-      <h2 class="modal__title" data-i18n="name.title">What should we call you?</h2>
-      <div class="avatar-preview">
-        <img id="name-avatar" alt="" />
-      </div>
-      <form id="name-form" autocomplete="off">
-        <label class="field">
-          <span class="field__label" data-i18n="name.label">Your name</span>
-          <div class="field__row">
-            <input id="name-input" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" required />
-            <button id="name-shuffle" class="btn btn--ghost btn--sm shuffle-btn" type="button" aria-label="Random name" title="Random name">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line>
-                <polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line>
-                <line x1="4" y1="4" x2="9" y2="9"></line>
-              </svg>
-            </button>
-          </div>
-          <span class="field__error" id="name-error"></span>
-        </label>
-        <button class="btn btn--primary btn--block" type="submit" data-i18n="name.continue">Continue</button>
-      </form>
-      <div class="name-modal__alt" id="name-modal-alt">
-        <button type="button" id="name-code-toggle" class="btn-link" data-i18n="name.haveCode">Have an access code? Sign in instead</button>
-      </div>
-      <form id="name-code-form" hidden autocomplete="off">
-        <label class="field">
-          <span class="field__label" data-i18n="code.label">Access code</span>
-          <input id="name-code-input" class="field__input code-input" type="text" maxlength="25"
-                 placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" />
-          <span class="field__hint" data-i18n="code.hint">The code you saved when your profile was created.</span>
-          <span class="field__error" id="name-code-error"></span>
-        </label>
-        <button class="btn btn--primary btn--block" type="submit" data-i18n="code.signin">Sign in</button>
-        <button type="button" id="name-code-back" class="btn btn--ghost btn--block" data-i18n="code.useNew">Use a new name instead</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Access-code reveal modal (signup / rotation — the only time it is shown) -->
-  <div class="modal" id="code-modal" hidden>
-    <div class="modal__card modal__card--code"></div>
-  </div>
-
-  <!-- Join modal -->
-  <div class="modal" id="join-modal" hidden>
-    <div class="modal__card">
-      <div class="modal__head">
-        <h2 class="modal__title">Join a room</h2>
-        <button class="modal__close" type="button" data-close="join-modal" aria-label="Close">&times;</button>
-      </div>
-      <form id="join-form" autocomplete="off">
-        <label class="field">
-          <span class="field__label" data-i18n="name.label">Your name</span>
-          <div class="field__row">
-            <input id="join-name" class="field__input" type="text" maxlength="40" placeholder="e.g. Alex" />
-            <button id="join-shuffle" class="btn btn--ghost btn--sm shuffle-btn" type="button" aria-label="Random name" title="Random name">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line>
-                <polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line>
-                <line x1="4" y1="4" x2="9" y2="9"></line>
-              </svg>
-            </button>
-          </div>
-        </label>
-        <label class="field">
-          <span class="field__label">Room link</span>
-          <input id="join-code" class="field__input" type="text" placeholder="Paste a WatchParty link" />
-          <span class="field__error" id="join-error"></span>
-        </label>
-        <button class="btn btn--primary btn--block" type="submit">Join room</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Change-video browse modal -->
-  <div class="modal" id="browse-modal" hidden>
-    <div class="modal__card modal__card--wide">
-      <div class="modal__head">
-        <h2 class="modal__title" id="browse-modal-title">Choose a video</h2>
-        <button class="modal__close" type="button" data-close="browse-modal" aria-label="Close">&times;</button>
-      </div>
-      <div id="browse-modal-body" class="browse"></div>
-    </div>
-  </div>
-
-  <!-- Profile editor modal (social.js renders the form into the card) -->
-  <div class="modal" id="profile-modal" hidden>
-    <div class="modal__card modal__card--profile"></div>
-  </div>
-
-  <script src="/js/utils.js?v=9"></script>
-  <script src="/js/i18n.js?v=4"></script>
-  <script src="/js/api.js?v=5"></script>
-  <script src="/js/player.js?v=15"></script>
-  <script src="/js/subs.js?v=26"></script>
-  <script src="/js/catalog.js?v=30"></script>
-  <script src="/js/social.js?v=50"></script>
-  <script src="/js/app.js?v=57"></script>
-</body>
+      <script>
+      // Mock poster cards so the rows read like the real feed.
+      const colors = ['#2b3a55', '#4a2b55', '#553a2b', '#2b5545', '#55502b', '#3a2b55'];
+      const mk = (host, n, offset) => {
+        for (let i = 0; i < n; i++) {
+          const card = document.createElement('div');
+          card.className = 'card-item';
+          card.style.flex = '0 0 auto';
+          const poster = document.createElement('div');
+          poster.className = 'card-item__poster';
+          poster.style.background = colors[(i + offset) % colors.length];
+          const body = document.createElement('div');
+          body.className = 'card-item__body';
+          const title = document.createElement('div');
+          title.className = 'card-item__title';
+          title.textContent = 'Title ' + (i + 1 + offset);
+          const meta = document.createElement('div');
+          meta.className = 'card-item__meta';
+          meta.textContent = '2026 \u00b7 Movie';
+          body.appendChild(title);
+          body.appendChild(meta);
+          card.appendChild(poster);
+          card.appendChild(body);
+          host.appendChild(card);
+        }
+      };
+      mk(document.getElementById('mock-row'), 6, 0);
+      mk(document.getElementById('mock-row2'), 6, 3);
+      // Centre slot: reflect a friends drawer that is open (is-open disc).
+      // Nothing else is scripted here: the nav is static markup + CSS.
+    </script>
+  </body>
 </html>
