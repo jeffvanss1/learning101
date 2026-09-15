@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty — icon &amp; control design preview</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <link rel="stylesheet" href="../dist/css/catalog.css" />
+    <link rel="stylesheet" href="../dist/css/social.css" />
+    <style>
+      /* Dev preview chrome only — the components below use the SHIPPED classes. */
+      body {
+        padding: 28px 32px 80px;
+      }
+      .pv-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 22px;
+      }
+      .pv-hint {
+        color: var(--text-muted);
+        font-size: 13px;
+        margin: 0 0 26px;
+        max-width: 70ch;
+        line-height: 1.55;
+      }
+      .pv-h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin: 34px 0 14px;
+      }
+      .pv-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .pv-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 12px;
+      }
+      .pv-cell {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 6px 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        background: var(--bg-elev);
+      }
+      .pv-cell code {
+        font-size: 10.5px;
+        color: var(--text-muted);
+      }
+      /* The tooltip is positioned by JS in the app; here it just sits inline. */
+      .pv-tooltip-wrap {
+        width: 360px;
+      }
+      .pv-tooltip-wrap .card-preview {
+        width: 360px;
+      }
+      .pv-stage {
+        border-radius: 14px;
+        padding: 24px;
+        background: linear-gradient(135deg, #101015, #1b1b26);
+        border: 1px solid var(--border);
+      }
+      html[data-theme='light'] .pv-stage {
+        background: linear-gradient(135deg, #eef0f6, #f8f9fc);
+      }
+      .pv-media-fake {
+        height: 178px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #2a2a3a, #3d3d55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #8f93a8;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="pv-head">
+      <h1 style="font-size: 21px; margin: 0">Icon &amp; control design preview</h1>
+      <button id="theme" class="btn btn--ghost btn--sm">Toggle theme</button>
+    </div>
+    <p class="pv-hint">
+      Everything below uses the SHIPPED markup + CSS from <code>dist/</code>. Icons are real inline
+      SVG (<code>WP.icon</code> from <code>utils.js</code>) that inherit <code>currentColor</code> —
+      no emoji glyphs, no icon font. The trailer audio toggle is the ghost speaker button pinned to
+      the right of the tooltip's text area (never over the video).
+    </p>
+
+    <h2 class="pv-h2">Hover tooltip — audio toggle ON (default)</h2>
+    <div class="pv-stage">
+      <div class="pv-tooltip-wrap">
+        <div class="card-preview" id="tip-on">
+          <div class="card-preview__media"><div class="pv-media-fake">trailer frame (video)</div></div>
+          <div class="card-preview__body">
+            <div class="card-preview__text">
+              <div class="card-preview__title">Blade Runner 2049</div>
+              <div class="card-preview__meta" id="meta-on"></div>
+              <p class="card-preview__overview">
+                A young blade runner's discovery of a long-buried secret leads him to track down
+                former blade runner Rick Deckard, who has been missing for thirty years.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="pv-h2">Hover tooltip — audio toggle OFF (muted)</h2>
+    <div class="pv-stage">
+      <div class="pv-tooltip-wrap">
+        <div class="card-preview" id="tip-off">
+          <div class="card-preview__media"><div class="pv-media-fake">trailer frame (video)</div></div>
+          <div class="card-preview__body">
+            <div class="card-preview__text">
+              <div class="card-preview__title">Blade Runner 2049</div>
+              <div class="card-preview__meta" id="meta-off"></div>
+              <p class="card-preview__overview">Same tooltip with the persisted muted preference.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="pv-h2">Icon buttons (hover them — ghost + wash)</h2>
+    <div class="pv-row">
+      <button class="modal__close" data-icon="x" data-size="20" aria-label="Close"></button>
+      <button class="friends-rail__icon-btn" data-icon="rotate-cw" data-size="16" aria-label="Refresh"></button>
+      <button class="friends-rail__icon-btn" data-icon="x" data-size="18" aria-label="Close rail"></button>
+      <button class="subs-panel__x" data-icon="x" data-size="18" aria-label="Close subtitles"></button>
+      <button class="btn btn--primary btn--sm" data-icon="zap" data-size="15" data-label="Sync"></button>
+      <button class="btn btn--primary btn--sm" data-icon="check" data-size="15" data-label="Friends"></button>
+      <button class="btn btn--ghost btn--sm" data-icon="rotate-cw" data-size="15" data-label="Regenerate code"></button>
+      <button class="btn btn--primary btn--sm" data-icon="edit" data-size="15" data-label="Edit profile"></button>
+      <button class="btn btn--primary btn--sm" data-icon="play" data-size="15" data-label="Join room"></button>
+      <a class="btn btn--ghost btn--sm" data-icon="arrow-left" data-size="15" data-label="Back to browsing" href="#"></a>
+      <button class="card-item__like" data-icon="heart" data-size="18" aria-label="Like"></button>
+      <button class="card-item__like" data-icon="heart-fill" data-size="18" aria-label="Liked"></button>
+      <span class="history-card__remove" data-icon="x" data-size="13" style="position: static"></span>
+      <span class="pin-editor__remove" data-icon="x" data-size="13" style="position: static"></span>
+    </div>
+
+    <h2 class="pv-h2">Player bar — Like (outline / filled) + auto-next</h2>
+    <div class="pv-row">
+      <button class="btn btn--ghost btn--sm"><span class="btn__icon" data-icon="heart" data-size="14"></span> Like</button>
+      <button class="btn btn--ghost btn--sm is-liked"><span class="btn__icon" data-icon="heart-fill" data-size="14"></span> Liked</button>
+      <button class="btn btn--ghost btn--sm"><span class="btn__icon" data-icon="skip-forward" data-size="14"></span> Auto-next</button>
+      <button class="btn btn--ghost btn--sm"><span class="btn__icon" data-icon="volume-2" data-size="14"></span> Sound on</button>
+      <button class="btn btn--ghost btn--sm"><span class="btn__icon" data-icon="volume-x" data-size="14"></span> Muted</button>
+    </div>
+
+    <h2 class="pv-h2">Text runs with icons</h2>
+    <div class="pv-row" style="align-items: stretch; flex-direction: column; gap: 10px">
+      <div class="video-bar__meta" id="meta-line" style="font-size: 13.5px"></div>
+      <div class="subs-panel__status" id="status-line" style="font-size: 12.5px"></div>
+      <div class="history-row__done" style="font-size: 13px" id="done-line"></div>
+      <p class="code-modal__warn" style="margin: 0" id="warn-line"></p>
+      <div class="chat-message chat-message--system" style="font-size: 13px" id="chat-line"></div>
+      <h2 class="modal__title" id="title-line"></h2>
+    </div>
+
+    <h2 class="pv-h2">Empty states (decorative icons, muted ink)</h2>
+    <div class="pv-row">
+      <div class="friends-rail__empty" style="width: 240px">
+        <div class="friends-rail__empty-icon" data-icon="users" data-size="30"></div>
+        <p class="friends-rail__empty-text">No friends in this room yet</p>
+      </div>
+      <div class="friends-rail__empty" style="width: 240px">
+        <div class="friends-rail__empty-icon" data-icon="user" data-size="30"></div>
+        <p class="friends-rail__empty-text">Sign in to see friends</p>
+      </div>
+      <div class="friends-rail__empty" style="width: 240px">
+        <div class="friends-rail__empty-icon" data-icon="alert" data-size="30"></div>
+        <p class="friends-rail__empty-text">Could not load friends</p>
+      </div>
+    </div>
+
+    <h2 class="pv-h2">Every icon in the table</h2>
+    <div class="pv-grid" id="all-icons"></div>
+
+    <script src="../dist/js/utils.js"></script>
+    <script>
+      const icon = (name, size) => window.WP.icon(name, size);
+
+      // meta lines (star + words) exactly like the shipped renderers do
+      const metaParts = [
+        { icon: 'star' },
+        '8.0',
+        { t: '\u00b7' },
+        '2017',
+        { t: '\u00b7' },
+        'Movie',
+      ];
+      const metaEl = document.getElementById('meta-on');
+      const metaEl2 = document.getElementById('meta-off');
+      const fill = (el) => {
+        metaParts.forEach((p) => {
+          if (typeof p === 'string' || p.t) {
+            el.appendChild(document.createTextNode((p.t ? ' ' : '') + (p.t || p) + ' '));
+          } else {
+            const svg = icon(p.icon, 12);
+            svg.classList.add('meta__icon');
+            el.appendChild(svg);
+          }
+        });
+      };
+      fill(metaEl);
+      fill(metaEl2);
+
+      // the ghost audio toggle, both states
+      const soundBtn = (host, on) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'card-preview__sound' + (on ? ' is-on' : '');
+        b.setAttribute('aria-pressed', String(on));
+        b.title = on ? 'Trailer sound: on' : 'Trailer sound: muted';
+        b.setAttribute('aria-label', b.title);
+        b.appendChild(icon(on ? 'volume-2' : 'volume-x', 18));
+        host.querySelector('.card-preview__body').appendChild(b);
+      };
+      soundBtn(document.getElementById('tip-on'), true);
+      soundBtn(document.getElementById('tip-off'), false);
+
+      // generic painters
+      document.querySelectorAll('[data-icon]').forEach((el) => {
+        const size = Number(el.dataset.size || 16);
+        if (el.dataset.label) {
+          el.appendChild(icon(el.dataset.icon, size));
+          el.appendChild(document.createTextNode(el.dataset.label));
+        } else {
+          el.appendChild(icon(el.dataset.icon, size));
+        }
+      });
+
+      const word = (txt) => document.createTextNode(txt);
+      const line = (id, name, size, text) => {
+        const el = document.getElementById(id);
+        el.appendChild(icon(name, size));
+        el.appendChild(word(text));
+      };
+      line('meta-line', 'star', 12, ' 8.0 \u00b7 2017 \u00b7 Series \u00b7 S2E4');
+      line('status-line', 'zap', 13, ' Synced: +1.20s \u00b7 matched by host');
+      line('done-line', 'check', 12, ' finished');
+      line('warn-line', 'alert', 16, ' We cannot show this again. Lost code = lost profile.');
+      line('chat-line', 'film', 13, ' Now playing: Blade Runner 2049');
+      line('title-line', 'key', 18, 'Your access code');
+
+      // full icon table
+      const names = ['volume-2','volume-x','star','heart','heart-fill','check','x','zap','edit','alert','key','users','user','play','pause','fast-forward','skip-forward','rotate-cw','arrow-left','copy','film'];
+      const grid = document.getElementById('all-icons');
+      names.forEach((n) => {
+        const cell = document.createElement('div');
+        cell.className = 'pv-cell';
+        const svg = icon(n, 22);
+        svg.classList.add('pv-icon');
+        cell.appendChild(svg);
+        const code = document.createElement('code');
+        code.textContent = n;
+        cell.appendChild(code);
+        grid.appendChild(cell);
+      });
+      const style = document.createElement('style');
+      style.textContent = '.pv-icon { display: block; }';
+      document.head.appendChild(style);
+
+      document.getElementById('theme').addEventListener('click', () => {
+        const html = document.documentElement;
+        html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+      });
+    </script>
+  </body>
+</html>

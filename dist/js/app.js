@@ -4,6 +4,11 @@
 
   const WP = global.WP;
   const $ = (id) => document.getElementById(id);
+  /**
+   * Inline SVG icon (utils.js table) — the UI chrome renders no emoji.
+   * @param {string} name @param {number} [size] @returns {Element}
+   */
+  const ic = (name, size) => (WP && WP.icon ? WP.icon(name, size) : document.createElement('span'));
 
   const state = {
     name: '',
@@ -790,9 +795,15 @@
   // --------------------------------------------------------------------------
   // Video UI
   // --------------------------------------------------------------------------
-  function videoMetaLine(v) {
+  /**
+   * Room video bar meta. A rating is `{ icon: 'star' }` so the line renders a
+   * real SVG star (no "\u2605" text glyph); everything else stays a string.
+   * @param {any} v @returns {Array<string | { icon: string }>}
+   */
+  function videoMetaParts(v) {
+    /** @type {Array<string | { icon: string }>} */
     const parts = [];
-    if (v.rating) parts.push('\u2605 ' + Number(v.rating).toFixed(1));
+    if (v.rating) parts.push({ icon: 'star' }, Number(v.rating).toFixed(1));
     if (v.year) parts.push(String(v.year));
     if (v.type === 'movie') parts.push('Movie');
     else if (v.type === 'anime') parts.push('Anime');
@@ -802,7 +813,29 @@
     } else if (v.type === 'tv' && v.season) {
       parts.push('S' + v.season + (v.episode ? 'E' + v.episode : ''));
     }
-    return parts.filter(Boolean).join(' \u00b7 ');
+    return parts;
+  }
+
+  /**
+   * @param {HTMLElement | null} el @param {any} v
+   */
+  function paintVideoMeta(el, v) {
+    if (!el) return;
+    const parts = videoMetaParts(v);
+    if (!parts.length) {
+      el.textContent = v.type === 'movie' ? 'Movie' : v.type === 'anime' ? 'Anime' : 'Series';
+      return;
+    }
+    el.textContent = '';
+    parts.forEach((part, i) => {
+      if (i) el.appendChild(document.createTextNode(' \u00b7 '));
+      if (typeof part === 'string') el.appendChild(document.createTextNode(part));
+      else {
+        const star = ic(part.icon, 12);
+        star.classList.add('meta__icon');
+        el.appendChild(star);
+      }
+    });
   }
 
   // Player LIKE: hoisted so initRoomUI (wiring) and updateVideoUI (enable +
@@ -811,7 +844,7 @@
   const likeIcon = $('like-video-icon');
   const likeLabel = $('like-video-label');
   const paintLike = (/** @type {boolean} */ on) => {
-    if (likeIcon) likeIcon.textContent = on ? '\u2665' : '\u2661';
+    if (likeIcon && WP.setIcon) WP.setIcon(likeIcon, on ? 'heart-fill' : 'heart', 14);
     if (likeLabel) likeLabel.textContent = on ? 'Liked' : 'Like';
     if (likeBtn) likeBtn.classList.toggle('is-liked', on);
   };
@@ -848,7 +881,7 @@
 
     if (v && v.src) {
       $('video-title').textContent = v.title || 'Now playing';
-      $('video-meta-line').textContent = videoMetaLine(v) || (v.type === 'movie' ? 'Movie' : v.type === 'anime' ? 'Anime' : 'Series');
+      paintVideoMeta($('video-meta-line'), v);
 
       // Overview / description box (collapsed to a few lines, YouTube-style).
       const desc = $('video-desc');
@@ -1096,10 +1129,19 @@
     const meta = document.createElement('div');
     meta.className = 'upnext-item__meta';
     const parts = [];
-    if (item.rating) parts.push('\u2605 ' + Number(item.rating).toFixed(1));
+    if (item.rating) parts.push({ icon: 'star' }, Number(item.rating).toFixed(1));
     if (item.year) parts.push(String(item.year));
     parts.push(item.type === 'movie' ? 'Movie' : 'Series');
-    meta.textContent = parts.filter(Boolean).join(' \u00b7 ');
+    meta.classList.add('meta-line');
+    parts.forEach((part, i) => {
+      if (i) meta.appendChild(document.createTextNode(' \u00b7 '));
+      if (typeof part === 'string') meta.appendChild(document.createTextNode(part));
+      else {
+        const star = ic(part.icon, 11);
+        star.classList.add('meta__icon');
+        meta.appendChild(star);
+      }
+    });
     body.appendChild(title);
     body.appendChild(meta);
 
@@ -1180,7 +1222,7 @@
     if (!messages.length) {
       const empty = document.createElement('div');
       empty.className = 'chat-empty';
-      empty.textContent = 'No messages yet \u2014 say hi \u{1F44B}';
+      empty.textContent = 'No messages yet \u2014 say hi';
       chat.appendChild(empty);
       return;
     }
@@ -1958,7 +2000,9 @@
         // Per-item remove (does not nuke the whole history).
         const rm = document.createElement('span');
         rm.className = 'history-card__remove';
-        rm.textContent = '\u00d7';
+        // Guarded WP.icon (no free identifier): renderHistory is executed
+        // standalone by the behavioral harness, which injects WP.
+        if (WP.icon) rm.appendChild(WP.icon('x', 13));
         rm.title = 'Remove from history';
         rm.setAttribute('role', 'button');
         rm.setAttribute('aria-label', 'Remove ' + v.title + ' from history');

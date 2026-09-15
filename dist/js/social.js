@@ -18,6 +18,21 @@
 
   const WP = global.WP;
   const $ = (/** @type {string} */ id) => document.getElementById(id);
+  /**
+   * Inline SVG icon (the utils.js table) — UI chrome never renders emoji.
+   * @param {string} name @param {number} [size] @returns {Element}
+   */
+  const ic = (name, size) => (WP && WP.icon ? WP.icon(name, size) : document.createElement('span'));
+  /**
+   * Replace an element's content with [icon][label].
+   * @param {HTMLElement} el @param {string} iconName @param {string} label @param {number} [size]
+   */
+  function iconLabel(el, iconName, label, size) {
+    el.textContent = '';
+    el.appendChild(ic(iconName, size || 16));
+    if (label) el.appendChild(document.createTextNode(label));
+    return el;
+  }
 
   // Must mirror AVATAR_FRAMES in src/routes/users.ts (validated server-side).
   const FRAMES = ['default', 'gold', 'neon', 'rainbow', 'flame', 'ice'];
@@ -237,7 +252,7 @@
       card.innerHTML = '';
 
       const head = h('div', 'modal__head');
-      head.appendChild(h('h2', 'modal__title', '🔑 Your access code'));
+      head.appendChild(iconLabel(h('h2', 'modal__title'), 'key', 'Your access code', 18));
       card.appendChild(head);
 
       card.appendChild(
@@ -260,8 +275,8 @@
       copy.addEventListener('click', async () => {
         try {
           await WP.copyText(String(code).replace(/-/g, ''));
-          copy.textContent = 'Copied ✓';
-          setTimeout(() => (copy.textContent = 'Copy code'), 1600);
+          iconLabel(copy, 'check', 'Copied', 15);
+          setTimeout(() => iconLabel(copy, 'copy', 'Copy code', 15), 1600);
         } catch (_) {
           toast('Copy failed — write it down instead', true);
         }
@@ -269,7 +284,9 @@
       row.appendChild(copy);
       card.appendChild(row);
 
-      const warn = h('p', 'code-modal__warn', '⚠️ We cannot show this again. Lost code = lost profile.');
+      const warn = h('p', 'code-modal__warn');
+      warn.appendChild(ic('alert', 16));
+      warn.appendChild(document.createTextNode(' We cannot show this again. Lost code = lost profile.'));
       card.appendChild(warn);
 
       const ack = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--block', "I've saved it — continue"));
@@ -798,7 +815,7 @@
       btn.disabled = false;
       btn.classList.remove('btn--primary', 'is-busy');
       if (st === 'accepted') {
-        btn.textContent = '✓ Friends';
+        iconLabel(btn, 'check', 'Friends', 15);
         btn.title = 'Click to remove friend';
       } else if (st === 'pending-out') {
         btn.textContent = 'Requested';
@@ -872,7 +889,7 @@
     actions.appendChild(view);
 
     if (hit.presence.room_id) {
-      const join = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', '▶ Join room'));
+      const join = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'btn btn--primary btn--sm'), 'play', 'Join room', 15));
       join.title = hit.presence.media_title ? 'Join and watch “' + hit.presence.media_title + '”' : 'Join the room';
       join.addEventListener('click', () => {
         location.assign('/room/' + encodeURIComponent(hit.presence.room_id));
@@ -1057,7 +1074,7 @@
           h('h2', 'profile__missing-title', staleDeploy ? 'Deployment out of date' : 'Profile not found')
         );
         empty.appendChild(h('p', 'muted', errMsg || 'No user goes by @' + username + '.'));
-        const back = /** @type {HTMLAnchorElement} */ (h('a', 'btn btn--ghost btn--sm', '← Back to browsing'));
+        const back = /** @type {HTMLAnchorElement} */ (iconLabel(h('a', 'btn btn--ghost btn--sm'), 'arrow-left', 'Back to browsing', 15));
         back.href = '/';
         empty.appendChild(back);
         container.appendChild(empty);
@@ -1235,7 +1252,7 @@
     banner.appendChild(info);
 
     if (p.room_id) {
-      const join = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary', '⏩ Join Watch Party'));
+      const join = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'btn btn--primary'), 'play', 'Join Watch Party', 16));
       join.addEventListener('click', () => {
         location.assign('/room/' + encodeURIComponent(p.room_id));
       });
@@ -1309,7 +1326,7 @@
 
     const actions = h('div', 'profile-hero__actions');
     if (own) {
-      const edit = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', '✎ Edit profile'));
+      const edit = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'btn btn--primary btn--sm'), 'edit', 'Edit profile', 15));
       edit.addEventListener('click', () => openProfileEditor(user, onEdited));
       actions.appendChild(edit);
       const out = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', 'Sign out'));
@@ -1426,7 +1443,12 @@
             : '';
         meta.appendChild(document.createTextNode(ep));
         meta.appendChild(h('span', 'history-row__ago', WP.timeAgo(item.watchedAt)));
-        if (item.completed) meta.appendChild(h('span', 'history-row__done', '✓ finished'));
+        if (item.completed) {
+          const done = h('span', 'history-row__done');
+          done.appendChild(ic('check', 12));
+          done.appendChild(document.createTextNode(' finished'));
+          meta.appendChild(done);
+        }
         body.appendChild(meta);
         li.appendChild(body);
         list.appendChild(li);
@@ -1550,7 +1572,7 @@
 
     const head = h('div', 'modal__head');
     head.appendChild(h('h2', 'modal__title', 'Edit profile'));
-    const closeBtn = /** @type {HTMLButtonElement} */ (h('button', 'modal__close', '×'));
+    const closeBtn = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'modal__close'), 'x', '', 20));
     closeBtn.type = 'button';
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.addEventListener('click', () => closeModal('profile-modal'));
@@ -1655,7 +1677,7 @@
             slot.appendChild(im);
           }
           slot.appendChild(h('div', 'pin-editor__title', fav.mediaTitle));
-          const rm = /** @type {HTMLButtonElement} */ (h('button', 'pin-editor__remove', '×'));
+          const rm = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'pin-editor__remove'), 'x', '', 13));
           rm.type = 'button';
           rm.setAttribute('aria-label', 'Remove ' + fav.mediaTitle);
           rm.addEventListener('click', () => {
@@ -1782,7 +1804,7 @@
         'Your code is shown once when created — we store only a hash. Rotating gives you a new code and instantly retires the old one.'
       )
     );
-    const rotate = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', '↻ Regenerate code'));
+    const rotate = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'btn btn--ghost btn--sm'), 'rotate-cw', 'Regenerate code', 15));
     rotate.type = 'button';
     rotate.addEventListener('click', async () => {
       rotate.disabled = true;
@@ -1791,10 +1813,10 @@
       if (!res.ok) {
         toast(res.message || 'Could not rotate code.', true);
         rotate.disabled = false;
-        rotate.textContent = '↻ Regenerate code';
+        iconLabel(rotate, 'rotate-cw', 'Regenerate code', 15);
         return;
       }
-      rotate.textContent = '↻ Regenerate code';
+      iconLabel(rotate, 'rotate-cw', 'Regenerate code', 15);
       rotate.disabled = false;
     });
     codeField.appendChild(rotate);
@@ -1934,7 +1956,7 @@
     refreshBtn.setAttribute('aria-label', 'Refresh friends');
     head.appendChild(refreshBtn);
 
-    const closeBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '×'));
+    const closeBtn = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'friends-rail__icon-btn'), 'x', '', 18));
     closeBtn.type = 'button';
     closeBtn.title = 'Hide panel';
     closeBtn.setAttribute('aria-label', 'Hide friends panel');
@@ -2062,7 +2084,7 @@
         }
       } else {
         const empty = h('div', 'friends-rail__empty');
-        empty.appendChild(h('div', 'friends-rail__empty-icon', '👀'));
+        empty.appendChild(iconLabel(h('div', 'friends-rail__empty-icon'), 'users', '', 30));
         empty.appendChild(h('p', 'friends-rail__empty-text', 'No friends yet.'));
         empty.appendChild(
           h('p', 'friends-rail__empty-hint', 'Search people by name — their cards have an “Add friend” button.')
@@ -2093,7 +2115,7 @@
       count.textContent = '';
       body.innerHTML = '';
       const box = h('div', 'friends-rail__signin');
-      box.appendChild(h('div', 'friends-rail__empty-icon', '👋'));
+      box.appendChild(iconLabel(h('div', 'friends-rail__empty-icon'), 'user', '', 30));
       box.appendChild(
         h('p', 'friends-rail__empty-text', 'You are browsing anonymously.')
       );
@@ -2143,7 +2165,7 @@
       row.appendChild(main);
 
       const actions = h('div', 'friend-row__actions');
-      const yes = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', '✓'));
+      const yes = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'btn btn--primary btn--sm'), 'check', '', 15));
       yes.type = 'button';
       yes.title = 'Accept';
       yes.setAttribute('aria-label', 'Accept friend request from ' + u.displayName);
@@ -2159,7 +2181,7 @@
           toast(e instanceof Error ? e.message : 'Could not accept', true);
         }
       });
-      const no = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', '×'));
+      const no = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'btn btn--ghost btn--sm'), 'x', '', 15));
       no.type = 'button';
       no.title = 'Decline';
       no.setAttribute('aria-label', 'Decline friend request from ' + u.displayName);
@@ -2292,7 +2314,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-15.86';
+  global.WP.build = 'ui-2026-09-15.87';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2408,12 +2430,12 @@
     titleWrap.appendChild(h('h2', 'friends-rail__title', 'Admin'));
     titleWrap.appendChild(h('span', 'friends-rail__count', 'rooms \u00b7 users'));
     head.appendChild(titleWrap);
-    const refreshBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '\u27f3'));
+    const refreshBtn = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'friends-rail__icon-btn'), 'rotate-cw', '', 16));
     refreshBtn.type = 'button';
     refreshBtn.title = 'Refresh';
     refreshBtn.addEventListener('click', () => refreshAdminPanel());
     head.appendChild(refreshBtn);
-    const closeBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '\u00d7'));
+    const closeBtn = /** @type {HTMLButtonElement} */ (iconLabel(h('button', 'friends-rail__icon-btn'), 'x', '', 18));
     closeBtn.type = 'button';
     closeBtn.title = 'Close';
     closeBtn.setAttribute('aria-label', 'Close admin panel');
@@ -2498,7 +2520,14 @@
         const row = h('div', 'admin-row');
         row.appendChild(avatarWithFrame(u.display_name || u.username, u.avatar_url, u.avatar_frame_id || 'default', ''));
         const info = h('div', 'admin-row__main');
-        info.appendChild(h('div', 'admin-row__title', (u.display_name || u.username) + (u.is_admin ? ' \u2605' : '')));
+                const title = h('div', 'admin-row__title', u.display_name || u.username);
+        if (u.is_admin) {
+          const adminStar = ic('star', 12);
+          adminStar.classList.add('meta__icon');
+          title.appendChild(document.createTextNode(' '));
+          title.appendChild(adminStar);
+        }
+        info.appendChild(title);
         info.appendChild(
           h('div', 'admin-row__meta', '@' + u.username + ' \u00b7 joined ' + joinedOrSeen(u.created_at) + ' \u00b7 seen ' + joinedOrSeen(u.last_seen_at))
         );

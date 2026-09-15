@@ -27,6 +27,231 @@
     return PALETTE[hashStr(name || 'anon') % PALETTE.length];
   }
 
+  // ---------------------------------------------------------------------------
+  // Icons — inline SVG (Feather geometry: 24x24 grid, stroke=currentColor)
+  // ---------------------------------------------------------------------------
+  // The UI ships NO icon font and NO emoji glyphs in its chrome: every control,
+  // status chip and empty state renders a real <svg>, so icons inherit the
+  // current ink (and therefore theme in light/dark) and never depend on the
+  // platform's emoji font rendering.
+  //
+  // Spec format: [tag, attrs] primitives, `solid: true` fills instead of
+  // strokes (heart-fill / star).
+  /** @type {Record<string, { p: Array<[string, Record<string, string|number>]>, solid?: boolean }>} */
+  const ICONS = {
+    'volume-2': {
+      p: [
+        ['polygon', { points: '11 5 6 9 2 9 2 15 6 15 11 19 11 5' }],
+        ['path', { d: 'M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07' }],
+      ],
+    },
+    'volume-x': {
+      p: [
+        ['polygon', { points: '11 5 6 9 2 9 2 15 6 15 11 19 11 5' }],
+        ['line', { x1: 23, y1: 9, x2: 17, y2: 15 }],
+        ['line', { x1: 17, y1: 9, x2: 23, y2: 15 }],
+      ],
+    },
+    star: {
+      solid: true,
+      p: [
+        ['polygon', { points: '12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2' }],
+      ],
+    },
+    heart: {
+      p: [
+        ['path', { d: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z' }],
+      ],
+    },
+    'heart-fill': {
+      solid: true,
+      p: [
+        ['path', { d: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z' }],
+      ],
+    },
+    check: { p: [['polyline', { points: '20 6 9 17 4 12' }]] },
+    x: {
+      p: [
+        ['line', { x1: 18, y1: 6, x2: 6, y2: 18 }],
+        ['line', { x1: 6, y1: 6, x2: 18, y2: 18 }],
+      ],
+    },
+    zap: { p: [['polygon', { points: '13 2 3 14 12 14 11 22 21 10 12 10 13 2' }]] },
+    edit: { p: [['path', { d: 'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z' }]] },
+    copy: {
+      p: [
+        ['rect', { x: 9, y: 9, width: 13, height: 13, rx: 2, ry: 2 }],
+        ['path', { d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }],
+      ],
+    },
+    alert: {
+      p: [
+        ['path', { d: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }],
+        ['line', { x1: 12, y1: 9, x2: 12, y2: 13 }],
+        ['line', { x1: 12, y1: 17, x2: 12.01, y2: 17 }],
+      ],
+    },
+    key: {
+      p: [
+        ['path', { d: 'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4' }],
+      ],
+    },
+    users: {
+      p: [
+        ['path', { d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' }],
+        ['circle', { cx: 9, cy: 7, r: 4 }],
+        ['path', { d: 'M23 21v-2a4 4 0 0 0-3-3.87' }],
+        ['path', { d: 'M16 3.13a4 4 0 0 1 0 7.75' }],
+      ],
+    },
+    user: {
+      p: [
+        ['path', { d: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2' }],
+        ['circle', { cx: 12, cy: 7, r: 4 }],
+      ],
+    },
+    play: { solid: true, p: [['polygon', { points: '6 3 20 12 6 21 6 3' }]] },
+    pause: {
+      solid: true,
+      p: [
+        ['rect', { x: 6, y: 4, width: 4, height: 16, rx: 1 }],
+        ['rect', { x: 14, y: 4, width: 4, height: 16, rx: 1 }],
+      ],
+    },
+    'fast-forward': {
+      solid: true,
+      p: [
+        ['polygon', { points: '13 19 22 12 13 5 13 19' }],
+        ['polygon', { points: '2 19 11 12 2 5 2 19' }],
+      ],
+    },
+    'skip-forward': {
+      p: [
+        ['polygon', { points: '5 4 15 12 5 20 5 4' }],
+        ['line', { x1: 19, y1: 5, x2: 19, y2: 19 }],
+      ],
+    },
+    'rotate-cw': {
+      p: [
+        ['polyline', { points: '23 4 23 10 17 10' }],
+        ['path', { d: 'M20.49 15a9 9 0 1 1-2.12-9.36L23 10' }],
+      ],
+    },
+    'arrow-left': {
+      p: [
+        ['line', { x1: 19, y1: 12, x2: 5, y2: 12 }],
+        ['polyline', { points: '12 19 5 12 12 5' }],
+      ],
+    },
+    film: {
+      p: [
+        ['rect', { x: 2, y: 2, width: 20, height: 20, rx: 2.18 }],
+        ['line', { x1: 7, y1: 2, x2: 7, y2: 22 }],
+        ['line', { x1: 17, y1: 2, x2: 17, y2: 22 }],
+        ['line', { x1: 2, y1: 12, x2: 22, y2: 12 }],
+        ['line', { x1: 2, y1: 7, x2: 7, y2: 7 }],
+        ['line', { x1: 2, y1: 17, x2: 7, y2: 17 }],
+        ['line', { x1: 17, y1: 17, x2: 22, y2: 17 }],
+        ['line', { x1: 17, y1: 7, x2: 22, y2: 7 }],
+      ],
+    },
+  };
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /**
+   * Build an icon element. Unknown names return an empty <svg> (never throw —
+   * a stale bundle must not take a surface down).
+   * @param {string} name
+   * @param {number} [size] px, square
+   * @returns {SVGElement}
+   */
+  function icon(name, size) {
+    const px = Number(size) > 0 ? Number(size) : 16;
+    const svg = /** @type {SVGElement} */ (document.createElementNS(SVG_NS, 'svg'));
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(px));
+    svg.setAttribute('height', String(px));
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.setAttribute('class', 'wp-icon');
+    const spec = ICONS[name];
+    if (spec) {
+      if (spec.solid) {
+        svg.setAttribute('fill', 'currentColor');
+        svg.setAttribute('stroke', 'none');
+      } else {
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+      }
+      for (const [tag, attrs] of spec.p) {
+        const node = document.createElementNS(SVG_NS, tag);
+        for (const k of Object.keys(attrs)) node.setAttribute(k, String(attrs[k]));
+        svg.appendChild(node);
+      }
+    }
+    return svg;
+  }
+
+  /**
+   * Replace an element's content with one icon (dynamic swaps: heart on/off,
+   * speaker on/off, ...).
+   * @param {Element | null} el
+   * @param {string} name
+   * @param {number} [size]
+   */
+  function setIcon(el, name, size) {
+    if (!el) return;
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.appendChild(icon(name, size));
+  }
+
+  /** @param {string} name @returns {boolean} */
+  function hasIcon(name) {
+    return Object.prototype.hasOwnProperty.call(ICONS, name);
+  }
+
+  /**
+   * Icon names for the chat/status glyphs the room Durable Object emits
+   * (they ride in plain text, so the client swaps them for real SVG).
+   */
+  const TEXT_ICONS = [
+    ['\u25b6\ufe0f', 'play'],
+    ['\u25b6', 'play'],
+    ['\u23f8\ufe0f', 'pause'],
+    ['\u23f8', 'pause'],
+    ['\u23e9', 'fast-forward'],
+    ['\ud83c\udf9f\ufe0f', 'film'],
+  ];
+
+  /**
+   * Build a fragment for a text line whose FIRST glyph is one of the known
+   * status glyphs: that glyph becomes an inline SVG, the rest stays text.
+   * Text without a known glyph is returned as a single text node.
+   * @param {string} text
+   * @param {number} [size]
+   * @returns {DocumentFragment}
+   */
+  function iconText(text, size) {
+    const frag = document.createDocumentFragment();
+    const str = String(text == null ? '' : text);
+    for (const [glyph, name] of TEXT_ICONS) {
+      if (str.indexOf(glyph) === 0) {
+        const svg = icon(name, size || 13);
+        svg.classList.add('wp-icon--inline');
+        frag.appendChild(svg);
+        const rest = str.slice(glyph.length).replace(/^\s+/, '');
+        if (rest) frag.appendChild(document.createTextNode(' ' + rest));
+        return frag;
+      }
+    }
+    frag.appendChild(document.createTextNode(str));
+    return frag;
+  }
+
   // ---- DiceBear avatars --------------------------------------------------------
   // Same seed -> same avatar, so each name keeps one consistent picture.
   const DICEBEAR_STYLE = 'critters';
@@ -315,7 +540,9 @@
       body.className = 'chat-msg__body';
       const text = document.createElement('span');
       text.className = 'chat-msg__text';
-      text.textContent = msg.text || '';
+      // Server lines lead with a status glyph (play/pause/forward/film) —
+      // render those as inline SVG instead of emoji.
+      text.appendChild(iconText(msg.text || ''));
       body.appendChild(text);
       wrap.appendChild(body);
       return wrap;
@@ -499,5 +726,9 @@
     historyKey,
     historyClear,
     timeAgo,
+    icon,
+    setIcon,
+    hasIcon,
+    iconText,
   };
 })(window);

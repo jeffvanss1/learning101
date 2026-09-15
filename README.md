@@ -1481,3 +1481,57 @@ out of catalog.js and drives it (toggle present + ON by default, persistence,
 command order, persisted-OFF silence, the boot-delay race). 4/5 of its cases
 fail without the feature. Tests 205/205, check clean. catalog v29 /
 css v25 / ui-2026-09-15.86.
+
+## Icons: inline SVG everywhere, and the toggle moves into the tooltip text (ui-2026-09-15.87)
+
+USER (on .86): "i dont like the design that you using not svg but icon, change
+that, also make it below toggle below it now on it" -> clarified as: the audio
+toggle goes in the tooltip's TEXT AREA, right side; it is an icon-only GHOST
+button; and the SVG sweep covers EVERYTHING (buttons, chips and decorative art).
+
+- ONE ICON SYSTEM: dist/js/utils.js now owns an ICONS table (volume-2, volume-x,
+  star, heart, heart-fill, check, x, zap, edit, alert, key, users, user, play,
+  pause, fast-forward, skip-forward, rotate-cw, arrow-left, copy, film) plus
+  WP.icon(name, size), WP.setIcon(el, name, size), WP.hasIcon(name) and
+  WP.iconText(text, size). Every icon is a real inline `<svg viewBox="0 0 24 24">`
+  that inherits `currentColor` (stroke 2, round caps; ratings/hearts/play draw
+  filled), so it themes with the surrounding ink in both light and dark. 24x24
+  arrow glyphs and emoji were the old look: gone. Unknown icon names render an
+  empty svg instead of throwing, so a stale cached bundle can never take a
+  surface down.
+- THE SWEEP ("everything"): catalog (meta star, card + modal close buttons, the
+  like heart, the tooltip), social (access-code title + copy/copied swap, code
+  warning, rail toggle/close/refresh, join buttons, back link, edit profile,
+  "finished" chip, empty friends/signed-out art, accept/decline, admin star),
+  subs (zap on the sync button and the three "Synced" status lines, panel close),
+  app (player Like heart on/off, video-bar + up-next stars, history remove),
+  i18n (the "⚡ Sync" labels lost the glyph — the SVG carries it now) and
+  index.html (the room-bar Like/auto-next glyphs are inline SVG). Chat system
+  lines from the Durable Object still arrive as plain text with a leading glyph
+  (▶️/⏸️/⏩/🎟️) — WP.iconText() translates them to SVG client-side.
+- TOGGLE POSITION + LOOK: the trailer audio control left the video. The tooltip
+  body is now a flex row — `.card-preview__text` (title/meta/plot) plus the
+  `.card-preview__sound` ghost button pinned on the right. Transparent
+  background, no border, 30x30 hit area, `var(--bg-hover)` wash on hover, dim ink
+  when muted and full-strength when on (the sidenav-icon treatment). No chip, no
+  red circle.
+- CSS: shared `.wp-icon` / `.wp-icon--inline` / `.meta__icon` rules and flex
+  centering for the icon-only buttons live in style.css; the two dead
+  `#f5c518` text-`.star` rules are gone (the star is SVG now, inked by
+  `.meta__icon`). catalog.css `.modal__close` is a fixed 32x32 target instead of
+  26px text; the empty-friends art is muted `currentColor`, not a 26px emoji.
+- TESTS: new tests/icons.test.mjs executes the shipped utils.js and enforces the
+  contract — every icon name the bundles ask for exists in the table (the
+  ternary swaps like `setIcon(el, on ? 'volume-2' : 'volume-x')` included), the
+  SVG is 24x24/currentColor/aria-hidden, unknown names fail safe, the server's
+  emoji status glyphs translate, and NO bundle or index.html line ships an emoji
+  as UI. tests/preview-audio.test.mjs asserts the new placement (toggle inside
+  the text area, right-most child, absent from the media box) and the ghost CSS
+  instead of the old chip. Behavioral harnesses (subs/episodes-modal/ui-smoke)
+  gained the SVG/text-node DOM APIs the bundles now use.
+- PREVIEW: scripts/icon-preview.html is a dev page that renders the shipped
+  markup (tooltip both states, every icon button, text runs, the full icon
+  table) for design review: `python3 -m http.server 8010` and open
+  /scripts/icon-preview.html.
+Tests 210/210, check clean. catalog js v30 / catalog css v27 / style css v25 /
+utils v9 / social v48 / subs v26 / app v56 / i18n v3 / ui-2026-09-15.87.

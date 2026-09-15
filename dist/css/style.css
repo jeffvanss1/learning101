@@ -53,6 +53,51 @@
 }
 
 /* ---------------------------------------------------------------------------
+   ICONS — inline SVG (WP.icon). No icon font, no emoji glyphs anywhere: the
+   icons inherit currentColor, so they theme with the surrounding ink.
+   -------------------------------------------------------------------------- */
+.wp-icon {
+  display: inline-block;
+  vertical-align: -0.18em; /* sits on the text baseline inside word runs */
+  pointer-events: none;
+}
+
+/* Slightly lower optical seat for icons that lead a line of text. */
+.wp-icon--inline {
+  vertical-align: -2px;
+}
+
+/* Rating stars etc. carry their own accent ink. */
+.meta__icon {
+  color: var(--amber);
+}
+
+/* Icon-only buttons centre the SVG in a square hit area. */
+.modal__close,
+.subs-panel__x,
+.friends-rail__icon-btn,
+.pin-editor__remove,
+.history-card__remove,
+.card-item__like {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Titles that pair an icon with words. */
+.modal__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Icon + label inside a button (the .btn row already has its own gap). */
+.btn__icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---------------------------------------------------------------------------
    LIGHT THEME — explicit pick (html[data-theme='light']) or the system
    preference by default (prefers-color-scheme). An explicit data-theme wins;
    with no attribute the media query below follows the OS. The inline head

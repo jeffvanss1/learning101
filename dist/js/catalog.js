@@ -483,12 +483,62 @@
     return item.type === 'movie' ? 'Movie' : 'Series';
   }
 
-  function metaText(item) {
+  // ---- icons (WP.icon; see utils.js) ------------------------------------------
+  /**
+   * @param {string} name @param {number} [size] @returns {Element}
+   */
+  function ic(name, size) {
+    return global.WP && global.WP.icon ? global.WP.icon(name, size) : document.createElement('span');
+  }
+
+  /**
+   * Card meta pieces. Strings stay strings; a rating is `{ icon: 'star' }` so
+   * the line renders a real SVG star instead of a "\u2605" glyph.
+   * @param {{ rating?: any, year?: any, type?: string, isAnime?: boolean }} item
+   * @returns {Array<string | { icon: string }>}
+   */
+  function metaPartsFor(item) {
+    /** @type {Array<string | { icon: string }>} */
     const parts = [];
-    if (item.rating) parts.push('★ ' + Number(item.rating).toFixed(1));
+    if (item.rating) parts.push({ icon: 'star' }, Number(item.rating).toFixed(1));
     if (item.year) parts.push(String(item.year));
     parts.push(typeLabel(item));
-    return parts.join(' · ');
+    return parts;
+  }
+
+  /**
+   * Render meta pieces into an element, separated by ' · '.
+   * @param {HTMLElement} el
+   * @param {Array<string | { icon: string }>} parts
+   */
+  function fillMeta(el, parts) {
+    el.textContent = '';
+    parts.forEach((part, i) => {
+      if (i) el.appendChild(document.createTextNode(' \u00b7 '));
+      if (typeof part === 'string') {
+        el.appendChild(document.createTextNode(part));
+      } else {
+        const svg = ic(part.icon, 12);
+        svg.classList.add('meta__icon');
+        el.appendChild(svg);
+      }
+    });
+    return el;
+  }
+
+  /**
+   * @param {any} item @param {string} cls @returns {HTMLElement}
+   */
+  function metaNode(item, cls) {
+    return fillMeta(h('div', cls), metaPartsFor(item));
+  }
+
+  /** Meta line as plain text (tooltips, aria labels: no icons possible). */
+  function metaText(item) {
+    return metaPartsFor(item)
+      .map((part) => (typeof part === 'string' ? part : ''))
+      .filter(Boolean)
+      .join(' \u00b7 ');
   }
 
   // ---- recommendations --------------------------------------------------------
@@ -620,34 +670,42 @@
       im.alt = '';
       media.appendChild(im);
     }
-    // AUDIO TOGGLE: the trailer starts muted (autoplay policy) — this control
-    // is the user's one-click way to get sound, and it doubles as the visible
-    // mute state. Default ON for every new preview; the choice persists so it
-    // is not re-decided on every hover.
+    el.appendChild(media);
+
+    const body = h('div', 'card-preview__body');
+    const text = h('div', 'card-preview__text');
+    text.appendChild(h('div', 'card-preview__title', item.title));
+    text.appendChild(metaNode(item, 'card-preview__meta'));
+    if (item.overview) text.appendChild(h('p', 'card-preview__overview', item.overview));
+    body.appendChild(text);
+
+    // AUDIO TOGGLE: lives in the TEXT AREA (right side), not over the video.
+    // The trailer starts muted (autoplay policy) — this control is the user's
+    // one-click way to get sound and doubles as the visible mute state.
+    // Default ON for every new preview; the choice persists, so it is not
+    // re-decided on every hover. Ghost icon button (SVG, no emoji).
     const sound = document.createElement('button');
     sound.type = 'button';
-    sound.className = 'card-preview__sound' + (trailerSoundOn() ? ' is-on' : '');
+    sound.className = 'card-preview__sound';
     sound.setAttribute('aria-pressed', String(trailerSoundOn()));
-    sound.title = trailerSoundOn() ? 'Trailer sound: on' : 'Trailer sound: muted';
-    sound.textContent = trailerSoundOn() ? '🔊' : '🔇';
+    /** @param {boolean} on */
+    const paintSound = (on) => {
+      sound.classList.toggle('is-on', on);
+      sound.setAttribute('aria-pressed', String(on));
+      sound.title = on ? 'Trailer sound: on' : 'Trailer sound: muted';
+      sound.setAttribute('aria-label', sound.title);
+      if (global.WP && global.WP.setIcon) global.WP.setIcon(sound, on ? 'volume-2' : 'volume-x', 18);
+    };
+    paintSound(trailerSoundOn());
     sound.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
       const on = !sound.classList.contains('is-on');
       setTrailerSound(on);
-      sound.classList.toggle('is-on', on);
-      sound.setAttribute('aria-pressed', String(on));
-      sound.title = on ? 'Trailer sound: on' : 'Trailer sound: muted';
-      sound.textContent = on ? '🔊' : '🔇';
+      paintSound(on);
       commandPreview(on ? 'unMute' : 'mute');
     });
-    media.appendChild(sound);
-    el.appendChild(media);
-
-    const body = h('div', 'card-preview__body');
-    body.appendChild(h('div', 'card-preview__title', item.title));
-    body.appendChild(h('div', 'card-preview__meta', metaText(item)));
-    if (item.overview) body.appendChild(h('p', 'card-preview__overview', item.overview));
+    body.appendChild(sound);
     el.appendChild(body);
 
     el.addEventListener('mouseenter', () => {
@@ -751,7 +809,7 @@
     likeBtn.setAttribute('aria-label', 'Like');
     const syncHeart = (/** @type {boolean} */ on) => {
       likeBtn.classList.toggle('is-liked', on);
-      likeBtn.textContent = on ? '\u2665' : '\u2661';
+      if (global.WP && global.WP.setIcon) global.WP.setIcon(likeBtn, on ? 'heart-fill' : 'heart', 18);
     };
     if (global.WP && global.WP.Social && global.WP.Social.getLikeIds) {
       global.WP.Social.getLikeIds().then((set) => {
@@ -786,7 +844,7 @@
 
     const body = h('div', 'card-item__body');
     body.appendChild(h('div', 'card-item__title', item.title));
-    body.appendChild(h('div', 'card-item__meta', metaText(item)));
+    body.appendChild(metaNode(item, 'card-item__meta'));
 
     card.appendChild(poster);
     card.appendChild(body);
@@ -834,7 +892,7 @@
     const content = h('div', 'hero__content');
     content.appendChild(h('span', 'hero__badge', typeLabel(item)));
     content.appendChild(h('h1', 'hero__title', item.title));
-    content.appendChild(h('div', 'hero__meta', metaText(item)));
+    content.appendChild(metaNode(item, 'hero__meta'));
     if (item.overview) content.appendChild(h('p', 'hero__overview', item.overview));
 
     const actions = h('div', 'hero__actions');
@@ -857,9 +915,10 @@
 
     const head = h('div', 'modal__head');
     head.appendChild(h('h2', 'modal__title', 'Details'));
-    const closeBtn = h('button', 'modal__close', '\u00d7');
-    closeBtn.type = 'button';
+    const closeBtn = h('button', 'modal__close');
     closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.appendChild(ic('x', 20));
+    closeBtn.type = 'button';
     head.appendChild(closeBtn);
     card.appendChild(head);
 
@@ -958,14 +1017,14 @@
     const info = h('div', 'detail__info');
     info.appendChild(h('div', 'detail__title', (extra && (extra.title || extra.name)) || item.title));
     const metaParts = [];
-    if ((extra && extra.vote_average) || item.rating) metaParts.push('★ ' + Number((extra && extra.vote_average) || item.rating).toFixed(1));
+    if ((extra && extra.vote_average) || item.rating) metaParts.push({ icon: 'star' }, Number((extra && extra.vote_average) || item.rating).toFixed(1));
     if ((extra && extra.release_date) || (extra && extra.first_air_date) || item.year) {
       metaParts.push(String(((extra && (extra.release_date || extra.first_air_date)) || item.year || '').slice(0, 4)));
     }
     if (extra && extra.runtime) metaParts.push(extra.runtime + ' min');
     if (extra && extra.genres && extra.genres.length) metaParts.push(extra.genres[0].name);
     metaParts.push(typeLabel(item));
-    info.appendChild(h('div', 'detail__meta', metaParts.join(' · ')));
+    info.appendChild(fillMeta(h('div', 'detail__meta'), metaParts));
 
     const overview = (extra && extra.overview) || item.overview || '';
     if (overview) info.appendChild(h('p', 'detail__overview', overview));
@@ -1070,13 +1129,13 @@
     );
     const metaParts = [];
     if ((extra && extra.vote_average) || item.rating) {
-      metaParts.push('★ ' + Number((extra && extra.vote_average) || item.rating).toFixed(1));
+      metaParts.push({ icon: 'star' }, Number((extra && extra.vote_average) || item.rating).toFixed(1));
     }
     const y = (extra && extra.first_air_date) || item.year || '';
     if (y) metaParts.push(String(y).slice(0, 4));
     metaParts.push('Anime');
     metaParts.push(count + ' eps');
-    infoEl.appendChild(h('div', 'detail__meta', metaParts.join(' · ')));
+    infoEl.appendChild(fillMeta(h('div', 'detail__meta'), metaParts));
 
     const overview = (extra && extra.overview) || item.overview || '';
     if (overview) infoEl.appendChild(h('p', 'detail__overview', overview));
@@ -1699,7 +1758,9 @@
     const card = h('div', 'modal__card detail episodes-modal');
     const head = h('div', 'modal__head');
     head.appendChild(h('h2', 'modal__title', (video.title || 'Series') + ' \u00b7 episodes'));
-    const closeBtn = h('button', 'modal__close', '\u00d7');
+    const closeBtn = h('button', 'modal__close');
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.appendChild(ic('x', 20));
     closeBtn.type = 'button';
     closeBtn.setAttribute('aria-label', 'Close');
     head.appendChild(closeBtn);

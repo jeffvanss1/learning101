@@ -35,6 +35,25 @@ import {
   WYZIE_TV_ONLY_SOURCES,
 } from '../src/subs.js';
 
+// DOM-faithful textContent for the stub elements: assigning clears children
+// (like the real DOM) and reading aggregates them, so an element that received
+// an inline-SVG icon + a text node still reports its words to a test.
+function modelText(el) {
+  let text = '';
+  Object.defineProperty(el, 'textContent', {
+    get() {
+      return el.children && el.children.length
+        ? el.children.map((c) => (c && c.textContent) || '').join('')
+        : text;
+    },
+    set(v) {
+      text = String(v == null ? '' : v);
+      if (el.children) el.children.length = 0;
+    },
+    configurable: true,
+  });
+}
+
 const SRT = `1
 00:00:20,000 --> 00:00:22,400
 Hello <i>world</i>
@@ -334,7 +353,7 @@ const El2 = class El {
     this.children = [];
     this.style = {};
     this.hidden = false;
-    this.textContent = '';
+    modelText(this);
     this.className = '';
     this.classList = {
       add: (c) => (this._cls || (this._cls = new Set())).add(c),
@@ -385,7 +404,7 @@ async function freshSubs() {
       this.children = [];
       this.style = {};
       this.hidden = false;
-      this.textContent = '';
+      modelText(this);
       this.className = '';
       this.classList = {
         add: (c) => (this._cls || (this._cls = new Set())).add(c),
@@ -436,6 +455,9 @@ async function freshSubs() {
   };
   const doc = {
     createElement: (t) => new El(t),
+    createElementNS: (_n, t) => new El(t),
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t) }),
+    createDocumentFragment: () => new El('#fragment'),
     getElementById: () => null,
     querySelectorAll: () => [],
     documentElement: new El('html'),
@@ -1130,7 +1152,7 @@ test('subs.js overlay follows the player clock and the offset (runtime)', async 
       this.children = [];
       this.style = {};
       this.hidden = false;
-      this.textContent = '';
+      modelText(this);
       this.className = '';
       this.classList = {
         add: (c) => (this._cls || (this._cls = new Set())).add(c),
@@ -1171,6 +1193,9 @@ test('subs.js overlay follows the player clock and the offset (runtime)', async 
   };
   const doc = {
     createElement: (t) => new El(t),
+    createElementNS: (_n, t) => new El(t),
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t) }),
+    createDocumentFragment: () => new El('#fragment'),
     getElementById: () => null,
     querySelectorAll: () => [],
     documentElement: new El('html'),
@@ -1241,7 +1266,7 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
       this.children = [];
       this.style = {};
       this.hidden = false;
-      this.textContent = '';
+      modelText(this);
       this.className = '';
       this._listeners = {};
       this.addEventListener = (type, fn) => ((this._listeners[type] || (this._listeners[type] = [])).push(fn));
@@ -1254,6 +1279,9 @@ test('mini-map thread sync: drag the cue strip like a Premiere clip (panel-inter
   const store3 = {};
   const doc3 = {
     createElement: (t) => new El3(t),
+    createElementNS: (_n, t) => new El3(t),
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t) }),
+    createDocumentFragment: () => new El3('#fragment'),
     getElementById: () => null,
     querySelectorAll: () => [],
     querySelector: () => null,
@@ -1349,6 +1377,9 @@ test('mini-map zoom toggle: 60s centered window, persisted across loads', async 
   const storeZ = {};
   const docZ = {
     createElement: (tag) => new El2(tag),
+    createElementNS: (_n, tag) => new El2(tag),
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t) }),
+    createDocumentFragment: () => new El2('#fragment'),
     getElementById: () => null,
     querySelectorAll: () => [],
     querySelector: () => null,
@@ -1456,6 +1487,9 @@ test('first-load fix: inherited host file failing to download FALLS BACK to loca
   const storeF = {};
   const docF = {
     createElement: (t) => new El2(t),
+    createElementNS: (_n, t) => new El2(t),
+    createTextNode: (t2) => ({ nodeType: 3, textContent: String(t2) }),
+    createDocumentFragment: () => new El2('#fragment'),
     getElementById: () => null,
     querySelectorAll: () => [],
     querySelector: () => null,

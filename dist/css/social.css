@@ -1187,7 +1187,7 @@
 }
 
 .friends-rail__empty-icon {
-  font-size: 26px;
+  color: var(--text-dim);
 }
 
 .friends-rail__empty-text {

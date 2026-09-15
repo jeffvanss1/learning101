@@ -31,10 +31,7 @@ test('colors: pastel accent texts are BANNED (they wash out in light mode)', () 
 test('colors: hardcoded literal allowlist is EXACT (any new literal must be reviewed)', () => {
   const allowed = {
     'dist/css/style.css': { '#fff': 6, '#0b0b0b': 1, '#e8c35a': 1, '#f5d76a': 1, '#cccccc': 1, '#f5c518': 1 },
-    // catalog.css #fff: 5 themed on-media inks + card-preview__sound (the new
-    // trailer audio chip — black chip over ANY video frame, so it stays literal
-    // white ink in both themes, like history-card__remove).
-    'dist/css/catalog.css': { '#fff': 6, '#d4d4d4': 1, '#f5c518': 2 }, // +1: history-card__remove ink on its on-media black chip
+    'dist/css/catalog.css': { '#fff': 5, '#d4d4d4': 1 }, // on-media inks (the trailer audio toggle is a ghost button now)
     'dist/css/social.css': { '#fff': 4, '#0b0b0b': 1, '#7ee08a': 1, '#444': 1 },
   };
   const style = readFileSync(join(ROOT, 'dist/css/style.css'), 'utf8');

@@ -84,6 +84,10 @@ class FakeEl {
 const store = {};
 const doc = {
   createElement: (tag) => new FakeEl(tag),
+  // The bundles build inline SVG icons + text nodes (WP.icon / meta lines).
+  createElementNS: (_ns, tag) => new FakeEl(tag),
+  createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
+  createDocumentFragment: () => new FakeEl('#fragment'),
   getElementById: () => null,
   querySelector: () => null,
   querySelectorAll: () => [],

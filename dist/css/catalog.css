@@ -802,10 +802,6 @@ body.room-focus.rail-peek .sidenav {
   text-overflow: ellipsis;
 }
 
-.card-item__meta .star {
-  color: #f5c518;
-}
-
 /* ---- Hover preview (trailer + plot) ----------------------------------------------------- */
 .card-preview {
   position: fixed;
@@ -843,44 +839,41 @@ body.room-focus.rail-peek .sidenav {
   border: 0;
 }
 
-/* Trailer audio toggle (bottom-right of the media box, always visible so the
-   muted/unmuted state is readable at a glance). A CIRCLE by design; the chip
-   keeps the black-chip + white-ink on-media treatment in both themes. */
+/* Text area = title/meta/plot + the trailer AUDIO TOGGLE pinned to its right
+   (the control lives with the text, never over the video). */
+.card-preview__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 12px 15px 15px;
+}
+.card-preview__text {
+  flex: 1 1 auto;
+  min-width: 0; /* lets the title ellipsize instead of pushing the button out */
+}
+/* Ghost icon button (Feather speaker), square hit area in the link style. */
 .card-preview__sound {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  z-index: 2;
-  width: 32px;
-  height: 32px;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  line-height: 1;
   cursor: pointer;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  color: #fff;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .card-preview__sound:hover {
-  background: rgba(0, 0, 0, 0.86);
-  border-color: rgba(255, 255, 255, 0.6);
+  background: var(--bg-hover);
+  color: var(--text);
 }
-.card-preview__sound:active {
-  transform: scale(0.94);
-}
-/* Sound ON is the accented state (the default). */
+/* Sound ON = live state (the icon is bright; OFF stays muted-dim). */
 .card-preview__sound.is-on {
-  background: var(--red);
-  border-color: var(--red);
-}
-
-.card-preview__body {
-  padding: 13px 15px 15px;
+  color: var(--text);
 }
 
 .card-preview__title {
@@ -1038,13 +1031,15 @@ body.room-focus.rail-peek .sidenav {
 }
 
 .modal__close {
+  width: 32px;
+  height: 32px;
   border: none;
   background: transparent;
   color: var(--text-dim);
-  font-size: 26px;
   line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0;
+  border-radius: var(--radius-sm);
 }
 .modal__close:hover {
   color: var(--text);
@@ -1101,9 +1096,6 @@ body.room-focus.rail-peek .sidenav {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-}
-.detail__meta .star {
-  color: #f5c518;
 }
 
 .detail__overview {

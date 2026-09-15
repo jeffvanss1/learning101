@@ -52,6 +52,7 @@ class FakeEl {
     this._listeners = {};
     this.parentNode = null;
     this.posted = [];
+    this.dataset = {};
     this.contentWindow = { postMessage: (msg) => this.posted.push(JSON.parse(msg)) };
     // className and classList share ONE class set (like a real element), so a
     // className assignment is visible through classList.contains().
@@ -154,19 +155,37 @@ function harness(o = {}) {
     if (text !== undefined && text !== null) el.textContent = text;
     return el;
   };
-  const metaText = () => '2026 · Movie';
-  const globalObj = { location: { origin: 'https://example.test' } };
+  // buildPreview builds its meta line through metaNode() (the bundle's shared
+  // meta helper) — it must be bound or the whole preview throws.
+  const metaNode = (_item, cls) => h('div', cls || '', '2026 \u00b7 Movie');
+  // Icon spy: the bundle paints icons with WP.icon / WP.setIcon (utils.js), so
+  // recording the calls is how these tests prove "inline SVG, never emoji".
+  const icons = [];
+  const WP = {
+    icon: (name, size) => {
+      const svg = h('svg', 'wp-icon');
+      svg.dataset.icon = name;
+      svg.dataset.size = String(size);
+      return svg;
+    },
+    setIcon: (el, name, size) => {
+      icons.push({ el, name, size });
+      el.children.length = 0; // replace, like the real painter
+      el.appendChild(WP.icon(name, size));
+    },
+  };
+  const globalObj = { location: { origin: 'https://example.test' }, WP };
   const fn = new Function(
     'window',
     'document',
     'localStorage',
     'api',
     'h',
-    'metaText',
+    'metaNode',
     'global',
     sliceHoverPreview()
-  )(window, doc, localStorage, api, h, metaText, globalObj);
-  return { attachHoverPreview: fn.attachHoverPreview, closePreview: fn.closePreview, body, store };
+  )(window, doc, localStorage, api, h, metaNode, globalObj);
+  return { attachHoverPreview: fn.attachHoverPreview, closePreview: fn.closePreview, body, store, icons };
 }
 
 const ITEM = { id: 42, type: 'movie', title: 'Fixture', poster: '/p.jpg', backdrop: '/b.jpg' };
@@ -183,6 +202,12 @@ async function openPreview(app) {
 
 const postedFuncs = (iframe) => iframe.posted.map((m) => m && m.func);
 
+/** Name of the icon MOST RECENTLY painted onto `el` (via WP.setIcon). */
+const iconName = (app, el) => {
+  const rec = app.icons.filter((r) => r.el === el).pop();
+  return rec && rec.name;
+};
+
 test('trailer audio: the toggle is present and defaults to ON (sound)', async () => {
   const app = harness(); // no stored preference
   const { preview } = await openPreview(app);
@@ -193,7 +218,24 @@ test('trailer audio: the toggle is present and defaults to ON (sound)', async ()
   assert.ok(sound, 'audio toggle exists on the preview');
   assert.ok(sound.classList.contains('is-on'), 'default state is ON for every new preview');
   assert.equal(sound.getAttribute('aria-pressed'), 'true');
-  assert.equal(sound.textContent, '🔊');
+  // The toggle is a REAL inline SVG (Feather speaker), not an emoji glyph.
+  const svg = sound.children[0];
+  assert.ok(svg, 'the toggle carries an icon element');
+  assert.equal(svg.tagName, 'svg');
+  assert.equal(svg.className, 'wp-icon');
+  assert.equal(iconName(app, sound), 'volume-2', 'ON paints the speaker-with-waves icon');
+  assert.equal(sound.textContent, '', 'no emoji text content');
+
+  // Placement contract: in the TEXT AREA (right side), never over the video.
+  assert.equal(
+    preview.querySelector('.card-preview__media').querySelector('.card-preview__sound'),
+    null,
+    'the toggle is not on top of the video'
+  );
+  const body = preview.querySelector('.card-preview__body');
+  assert.ok(body.children.indexOf(sound) !== -1, 'the toggle lives in the tooltip text area');
+  assert.ok(body.children.indexOf(preview.querySelector('.card-preview__text')) !== -1, 'title/meta/plot text box present');
+  assert.equal(body.children[body.children.length - 1], sound, 'the toggle sits on the RIGHT of the text area');
   assert.equal(app.store['wp:trailersound'], undefined, 'no write until the user clicks');
 
   const iframe = preview.querySelector('iframe');
@@ -232,12 +274,13 @@ test('trailer audio: clicking the toggle flips state, persists it, and commands 
   assert.equal(app.store['wp:trailersound'], '0', 'preference persisted (off)');
   assert.ok(!sound.classList.contains('is-on'), 'chip drops the ON state');
   assert.equal(sound.getAttribute('aria-pressed'), 'false');
-  assert.equal(sound.textContent, '🔇');
+  assert.equal(iconName(app, sound), 'volume-x', 'muted paints the crossed speaker icon');
   assert.deepEqual(postedFuncs(iframe), ['unMute', 'mute'], 'mute command sent');
 
   sound.fire('click'); // -> sound on again
   assert.equal(app.store['wp:trailersound'], '1', 'preference persisted (on)');
   assert.ok(sound.classList.contains('is-on'));
+  assert.equal(iconName(app, sound), 'volume-2', 'ON paints the speaker icon again');
   assert.deepEqual(postedFuncs(iframe), ['unMute', 'mute', 'unMute'], 'unMute command sent');
 });
 
@@ -247,8 +290,8 @@ test('trailer audio: a persisted OFF keeps the next preview silent (no unMute)',
   const iframe = preview.querySelector('iframe');
   const sound = preview.querySelector('.card-preview__sound');
 
-  assert.ok(!sound.classList.contains('is-on'), 'stored OFF is reflected on the chip');
-  assert.equal(sound.textContent, '🔇');
+  assert.ok(!sound.classList.contains('is-on'), 'stored OFF is reflected on the button');
+  assert.equal(iconName(app, sound), 'volume-x', 'stored OFF paints the muted icon');
   iframe.fire('load');
   await sleep(780);
   assert.deepEqual(postedFuncs(iframe), [], 'no audio command when sound is off');
@@ -268,15 +311,38 @@ test('trailer audio: muting during the boot delay is not undone by the late unMu
   assert.deepEqual(postedFuncs(iframe), ['mute'], 'the deferred unMute was cancelled by the preference');
 });
 
-test('trailer audio: CSS ships the bigger tooltip + the toggle chip (theme-safe)', () => {
+test('trailer audio: CSS ships the bigger tooltip + the ghost icon toggle (theme-safe)', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   const preview = css.slice(css.indexOf('.card-preview {'), css.indexOf('.card-preview__media {'));
   assert.match(preview, /width: 360px;/, 'tooltip got bigger (was 304px)');
-  assert.match(css, /\.card-preview__sound \{[^}]*border-radius: 50%;/, 'the chip is a circle');
-  assert.match(css, /\.card-preview__sound \{[^}]*background: rgba\(0, 0, 0, 0\.62\);/, 'on-media black chip (legible over any frame)');
-  assert.match(css, /\.card-preview__sound \{[^}]*color: #fff;/, 'white ink on the dark chip (both themes)');
-  assert.match(css, /\.card-preview__sound\.is-on \{[^}]*background: var\(--red\);/, 'ON state uses the themed accent');
+  // Text area = flex row so title/meta/plot flow on the left and the toggle
+  // is pinned on the right (never absolutely positioned over the video).
+  assert.match(css, /\.card-preview__body \{[^}]*display: flex;/, 'text area is a flex row');
+  assert.match(css, /\.card-preview__text \{[^}]*flex: 1 1 auto;/, 'text takes the free space');
+  const sound = css.slice(css.indexOf('.card-preview__sound {'), css.indexOf('.card-preview__sound.is-on {'));
+  assert.match(sound, /flex: 0 0 auto;/, 'the toggle keeps its size next to the text');
+  assert.match(sound, /background: transparent;/, 'ghost button (no chip)');
+  assert.match(sound, /border: 0;/, 'ghost button (no border)');
+  assert.ok(!/position: absolute/.test(sound), 'no longer floats over the video frame');
+  assert.ok(!/border-radius: 50%/.test(sound), 'not a circle chip');
+  assert.match(sound, /\.card-preview__sound:hover \{[^}]*background: var\(--bg-hover\);/, 'hover wash like the sidenav icons');
+  assert.match(css, /\.card-preview__sound\.is-on \{[^}]*color: var\(--text\);/, 'ON state brightens the icon (themed ink)');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/catalog\.js\?v=29/, 'catalog js cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=25/, 'catalog css cache-bumped');
+  assert.match(html, /js\/catalog\.js\?v=30/, 'catalog js cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=27/, 'catalog css cache-bumped');
+});
+
+test('icons: the shipped UI carries NO emoji glyphs (inline SVG only)', () => {
+  // The user rejected emoji-as-icon: every glyph in the UI chrome must now be a
+  // real inline SVG. utils.js is exempt: TEXT_ICONS there is the deliberate
+  // translation table for the SERVER's emoji in chat system lines.
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2665}\u{2661}\u{2605}\u{2606}\u{2713}\u{2717}\u{00D7}\u{270E}]/u;
+  for (const f of ['dist/js/catalog.js', 'dist/js/social.js', 'dist/js/subs.js', 'dist/js/app.js', 'dist/js/i18n.js', 'dist/index.html']) {
+    const src = readFileSync(join(ROOT, f), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      // comments are not UI, and the arrows in prose are harmless
+      if (/^\s*(\/\/|\*|\/\*|<!--)/.test(line)) return;
+      assert.ok(!EMOJI.test(line), f + ':' + (i + 1) + ' still ships an emoji glyph: ' + line.trim().slice(0, 80));
+    });
+  }
 });

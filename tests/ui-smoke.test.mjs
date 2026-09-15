@@ -82,6 +82,11 @@ function installDomStubs({ fetchImpl }) {
   };
   const doc = {
     createElement: (tag) => new FakeEl(tag),
+    // Inline SVG icons (WP.icon) + text nodes: the bundles use the namespaced
+    // and text-node DOM APIs, so the stub must model them too.
+    createElementNS: (_ns, tag) => new FakeEl(tag),
+    createTextNode: (text) => ({ nodeType: 3, textContent: String(text) }),
+    createDocumentFragment: () => new FakeEl('#fragment'),
     getElementById: () => null,
     querySelectorAll: () => [],
     documentElement: new FakeEl('html'),

@@ -25,6 +25,11 @@
   const $ = (/** @type {string} */ id) => document.getElementById(id);
   const tr = (/** @type {string} */ key, /** @type {string} */ fb) =>
     WP.I18N ? WP.I18N.t(key, fb) : fb;
+  /**
+   * Inline SVG icon (utils.js table) — no emoji in the UI chrome.
+   * @param {string} name @param {number} [size] @returns {Element}
+   */
+  const ic = (name, size) => (WP.icon ? WP.icon(name, size) : document.createElement('span'));
 
   const LANGS = [
     ['en', 'English'], ['id', 'Bahasa Indonesia'], ['es', 'Español'],
@@ -191,10 +196,19 @@
 
   // ---- data -----------------------------------------------------------------
 
-  /** @param {string} msg @param {boolean} [isError] */
-  function setStatus(msg, isError) {
+  /**
+   * @param {string} msg @param {boolean} [isError] @param {string} [iconName] leading inline SVG
+   */
+  function setStatus(msg, isError, iconName) {
     if (!statusEl) return;
-    statusEl.textContent = msg;
+    statusEl.textContent = '';
+    if (iconName) {
+      const svg = ic(iconName, 13);
+      svg.classList.add('wp-icon--inline');
+      statusEl.appendChild(svg);
+      statusEl.appendChild(document.createTextNode(' '));
+    }
+    statusEl.appendChild(document.createTextNode(msg));
     statusEl.className = 'subs-panel__status' + (isError ? ' subs-panel__status--err' : '');
   }
 
@@ -402,8 +416,10 @@
     if (!isFinite(n)) return;
     applyOffsetValue(n, { remote: true });
     setStatus(
-      '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
-        ' \u00b7 ' + tr('subs.byHostMatch', 'matched by host')
+      tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+        ' \u00b7 ' + tr('subs.byHostMatch', 'matched by host'),
+      false,
+      'zap'
     );
   }
 
@@ -567,8 +583,10 @@
     const playerTime = t + offset; // true player time at the tap
     applyOffsetValue(playerTime - target.start);
     setStatus(
-      '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
-        ' \u00b7 ' + tr('subs.snapAgain', 'Still off? Press again while someone speaks.')
+      tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+        ' \u00b7 ' + tr('subs.snapAgain', 'Still off? Press again while someone speaks.'),
+      false,
+      'zap'
     );
   }
 
@@ -666,7 +684,9 @@
 
     const head = h('div', 'subs-panel__head');
     head.appendChild(h('h3', 'subs-panel__title', tr('subs.title', 'Subtitles')));
-    const close = /** @type {HTMLButtonElement} */ (h('button', 'subs-panel__x', '×'));
+    const close = /** @type {HTMLButtonElement} */ (h('button', 'subs-panel__x', ''));
+    close.setAttribute('aria-label', 'Close');
+    close.appendChild(ic('x', 18));
     close.type = 'button';
     close.addEventListener('click', () => togglePanel(false));
     head.appendChild(close);
@@ -770,7 +790,9 @@
     row3.appendChild(mk('+1s', 1, 'Advance subtitles'));
     // One-press sync lives on the SAME row (hint as tooltip) - the panel
     // had five button rows and felt crowded.
-    syncBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm', tr('subs.tapSync', '\u26a1 Sync')));
+    syncBtn = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm'));
+    syncBtn.appendChild(ic('zap', 15));
+    syncBtn.appendChild(document.createTextNode(tr('subs.tapSync', 'Sync')));
     syncBtn.type = 'button';
     syncBtn.title = tr('subs.snapHint', 'Press exactly when someone starts speaking \u2014 the next line snaps to now.');
     syncBtn.addEventListener('click', syncSnap); // ONE press = synced. No arming.
@@ -805,8 +827,10 @@
       const matched = cues[edSelected];
       applyOffsetValue(t - matched.start);
       setStatus(
-        '\u26a1 ' + tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
-          ' (' + fmtTS(matched.start) + ' \u2192 ' + tr('subs.now', 'now') + ')'
+        tr('subs.tapDone', 'Synced') + ': ' + (offset > 0 ? '+' : '') + offset.toFixed(2) + 's' +
+          ' (' + fmtTS(matched.start) + ' \u2192 ' + tr('subs.now', 'now') + ')',
+        false,
+        'zap'
       );
       // Release the pick: the window resumes following the playhead.
       edSelected = null;
