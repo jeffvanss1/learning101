@@ -1948,3 +1948,53 @@ ui-2026-09-15.96.
 Tests 289/289, check clean. utils v10 / app v58 / social v59 / social css v20 /
 ui-2026-09-15.97. (tsc/checkJs also passes: the section carries a PresenceFriend
 typedef for the FLAT friend rows /api/friends returns.)
+
+## Room sync on a phone: correct the drift, don't fight the buffer (ui-2026-09-15.98)
+- USER: "in mobile theres like bugging its sync in real time yes but it keep
+  laging tryna sync many time , its not even playable, cause the loading".
+- WHAT WAS WRONG: the sync loop had ONE tolerance (0.75s) and it ran on every
+  status poll. A drift correction IS a seek — and a seek makes the player drop
+  its buffer and show the loading spinner, while the phone's status message
+  still describes the OLD position for a beat. So the loop was: seek ->
+  buffering/loading -> status still reports the stale position -> seek again,
+  forever. On a fast desktop the poll usually lands after the buffer is back,
+  which is why this only ever looked like a phone bug.
+- THE FIX is a CORRECTION BUDGET in `PlaybackSyncManager` (dist/js/player.js),
+  not a bigger hammer:
+  - WIDER, ROLE-AWARE TOLERANCES: 2.5s while playing (a small offset is not
+    worth a reload), 3.5s when paused (a paused room should be exact).
+  - ONE OBSERVATION IS NOT EVIDENCE: a drift has to be seen twice in the same
+    direction before it is corrected, so a single laggy status cannot trigger a
+    seek.
+  - COOLDOWN + BACKOFF: after a correction the next one is at least 8s away,
+    and a player that stays wrong doubles it (16s, 32s, capped at 48s). A
+    player that reports a FROZEN clock while `playing` is backed off, not
+    hammered — that is a slow network, and seeking it is what caused the loop.
+  - SETTLE WINDOWS: 5s after a seek and 3s after a play command the loop does
+    not correct at all (the player is reloading/buffering, and its position is
+    expected to be behind). Buffering is never "drift", and a bounded
+    awaiting-start latch (8s) keeps a room that has not started yet quiet.
+  - CLOCK SKEW: the server's `current_timestamp` is projected with a measured
+    offset (min of arrival-minus-timestamp over a rolling 8-sample window)
+    instead of trusting `Date.now()`, so a device clock that is minutes off no
+    longer becomes a minutes-long seek; the projected target is clamped to
+    `duration - 1` (a stale tuple can no longer seek past the end).
+  - THE HOST IS NEVER HELD BACK: an explicit room command (seek/play/pause)
+    still lands IMMEDIATELY through a force path that clears the budget and
+    corrects on sight; the budget only governs the passive drift loop.
+- NOT CHANGED: no new dependencies, no CSP change (`script-src 'self'
+  'unsafe-inline'` as before), no server changes, and the false-pause guards
+  (clock credibility, 8s start latch, pause mirror) are untouched.
+- TESTS: tests/sync-loading.test.mjs (12 cases) EXECUTES the shipped manager
+  against a fake room: a slow phone is seeked ONCE into position and then left
+  to load (the old eager rule is pinned side by side, seeking on every poll),
+  the 2.5s band is ignored while playing, a big progressing drift is corrected
+  at most once per cooldown, a frozen clock backs the player off instead of
+  hitting it, a `BUFFERING` stall blocks the next attempt, an explicit host
+  command still lands while the budget is exhausted, a pause still lands, a
+  skewed device clock produces no phantom seek, a stale tuple does not seek
+  past the end, the host is protected by the same budget, and once in sync the
+  budget resets to zero. tests/player-seek + tests/false-pause stay green
+  (26/26) — the budget did not soften any of the old guarantees.
+Tests 301/301, check clean. player v17 / utils v10 / app v58 / social v60 /
+social css v20 / ui-2026-09-15.98.

@@ -45,8 +45,39 @@
 (function (global) {
   'use strict';
 
-  const DRIFT_TOLERANCE = 0.75; // seconds before nudging the local player
+  // ---- drift corrections are EXPENSIVE: budget them ------------------------
+  // A "correction" is a seek, and a seek makes the embedded player refetch from
+  // a new offset (it drops its buffer and shows its loading state). The old
+  // 0.75s tolerance corrected on EVERY 3s status poll, and on a phone - where
+  // the status lags the player by a few hundred ms and the buffer is slow - the
+  // measured drift sits above 0.75s permanently, so the guest sought forever:
+  // seek -> loading -> a status still reporting the OLD position -> seek again.
+  // That is the "it keeps trying to sync and the video is never playable" bug.
+  //
+  // The rules below make a seek the LAST resort instead of the first reflex:
+  //   1. a playing room tolerates real drift (the player's own clock keeps the
+  //      room's rhythm, so a small offset is invisible on screen);
+  //   2. a correction needs the drift to PERSIST (two observations), unless it
+  //      is so large that it is certainly not measurement noise;
+  //   3. never while the player is buffering, and never inside the SETTLE
+  //      window that follows any seek/load/play - until a seek lands, the
+  //      player still reports the old position, which reads as fresh drift;
+  //   4. one correction per cooldown, with exponential backoff, and the
+  //      backoff only resets when a status shows us in sync again;
+  //   5. a correction also requires the clock to have MOVED since the last one:
+  //      a frozen clock is a player still loading, not a player out of place;
+  //   6. an explicit room command (host seek/play/pause) clears the whole
+  //      budget - following the room must never wait on a damping timer.
+  const DRIFT_TOLERANCE = 2.5; // seconds of drift a PLAYING room simply ignores
   const SEEK_THRESHOLD = 3.5; // seconds before forcing a hard seek (paused rooms)
+  const CORRECTION_HARD_DRIFT = 12; // seconds: obvious, correct on sight
+  const CORRECTION_STREAK = 2; // observations of the same drift before a seek
+  const CORRECTION_BASE_COOLDOWN_MS = 8000; // first correction -> next allowed
+  const CORRECTION_MAX_COOLDOWN_MS = 48000; // backoff cap (a stuck player waits)
+  const CORRECTION_SETTLE_MS = 5000; // after a seek: the player is reloading
+  const PLAY_SETTLE_MS = 3000; // after a play command: buffering, not mismatched
+  const CORRECTION_RECHECK_MS = 1200; // look again once the seek has landed
+  const SKEW_SAMPLES = 8; // clock-offset samples kept (see estimate)
   const STATUS_POLL_MS = 3000;
   const READY_TIMEOUT_MS = 10000;
   const PAUSE_ASSERT_MS = 2500; // min gap between pause re-asserts (anti-loop)
@@ -98,6 +129,14 @@
       this._mirrorCandidate = { playing: null, since: 0, confirmations: 0 };
       this._lastStatus = { time: -1, at: 0 }; // native-seek detection baseline
       this._pauseClock = null; // { t, at } = last "paused" report's position (credibility check)
+      // Drift-correction budget (see the constants above).
+      this._settleUntil = 0; // no corrections at all until this timestamp
+      this._lastCorrectionAt = 0; // when we last seeked to correct drift
+      this._correctionBackoff = 0; // current cooldown (grows, resets when in sync)
+      this._driftStreak = { dir: 0, n: 0 }; // consecutive same-direction observations
+      this._clockMovedAt = 0; // last status whose position actually MOVED
+      this._lastReportedTime = -1; // the player's own last reported position
+      this._skewSamples = []; // arrival - server timestamp, recent window
       this._lastStatusReqAt = 0; // throttle for the confirm-my-pause status requests
       this._mirrorTimer = null;
       this._statusTimer = null;
@@ -157,6 +196,15 @@
       this._pauseClock = null; // a new title starts with a clean pause-credibility window
       this._lastStatusReqAt = 0;
       this._lastBufferingAt = 0;
+      // A new title: the budget starts over (a fresh load is welcome to seek)
+      // and the clock-skew window is re-sampled for this session.
+      this._settleUntil = 0;
+      this._lastCorrectionAt = 0;
+      this._correctionBackoff = 0;
+      this._driftStreak = { dir: 0, n: 0 };
+      this._clockMovedAt = 0;
+      this._lastReportedTime = -1;
+      this._skewSamples = [];
       this._mirrorCandidate = { playing: null, since: 0, confirmations: 0 };
       if (this._mirrorTimer) {
         clearTimeout(this._mirrorTimer);
@@ -205,6 +253,9 @@
       this._suppressed = Date.now(); // our own command — don't mirror it back
       this._awaitingStart = true; // until the embed confirms playing, a pause is boot lag
       this._playCmdAt = Date.now();
+      // A just-started player buffers before it reports anything useful, so its
+      // first statuses are news about loading, not about being out of position.
+      this._settleUntil = Math.max(this._settleUntil, Date.now() + PLAY_SETTLE_MS);
     }
 
     pause() {
@@ -221,6 +272,10 @@
       this.localTime = Number(time) || 0;
       this.localUpdatedAt = Date.now();
       this._suppressed = Date.now(); // a seek can flicker play state; don't mirror
+      // A seek drops the player's buffer: until it lands, every status still
+      // reports the PREVIOUS position. Correcting that read-back is what turned
+      // one seek into a seek loop on a slow connection.
+      this._settleUntil = Math.max(this._settleUntil, Date.now() + CORRECTION_SETTLE_MS);
     }
 
     // Seek only when the target is meaningfully different from where we are.
@@ -315,8 +370,43 @@
       const now = Date.now();
       let time = Number(msg.time) || 0;
       const timestamp = Number(msg.timestamp) || now;
-      if (msg.isPlaying) time += (now - timestamp) / 1000;
-      return { time: Math.max(0, time), isPlaying: !!msg.isPlaying };
+      // `msg.timestamp` is the SERVER's clock, so projecting the room's position
+      // onto "now" needs the offset between the two clocks - otherwise a device
+      // whose clock is off by minutes computes a target minutes away and seeks
+      // to it on every poll (a phone with a wrong clock was unplayable this
+      // way). The offset is estimated from the messages themselves: the
+      // SMALLEST observed (arrival - timestamp) is the offset plus the least
+      // network latency, and a sliding window of samples follows a device clock
+      // that later corrects itself.
+      const skew = this._clockSkew();
+      if (msg.isPlaying) time += Math.max(0, now - timestamp - skew) / 1000;
+      let target = Math.max(0, time);
+      // Never project past the media: a stale tuple plus a skew must not seek
+      // the room to the end (which looks like "it skipped the movie").
+      if (this.duration > 0 && target > this.duration - 1) target = this.duration - 1;
+      return { time: target, isPlaying: !!msg.isPlaying };
+    }
+
+    /** Median-free, robust clock offset (ms) from the last few messages. */
+    _clockSkew() {
+      const list = this._skewSamples;
+      if (!list || !list.length) return 0;
+      let min = list[0];
+      for (const v of list) if (v < min) min = v;
+      return min;
+    }
+
+    /**
+     * Record one (arrival - server timestamp) sample. Messages arrive after some
+     * latency, so the minimum over the window approaches the true offset.
+     * @param {number} timestampMs
+     */
+    _noteClockSample(timestampMs) {
+      const sample = Date.now() - Number(timestampMs);
+      if (!Number.isFinite(sample) || Math.abs(sample) > 12 * 60 * 60 * 1000) return; // nonsense
+      if (!this._skewSamples) this._skewSamples = [];
+      this._skewSamples.push(sample);
+      if (this._skewSamples.length > SKEW_SAMPLES) this._skewSamples.shift();
     }
 
     applyRemote(msg) {
@@ -331,12 +421,20 @@
       // against the current wall clock whenever we actually apply it — a
       // joiner's player can take seconds to load.
       this._lastMsg = msg;
+      this._noteClockSample(msg.timestamp);
       this._remoteAppliedAt = Date.now();
       this._freshUntil = Date.now() + FRESH_ASSERT_MS;
+      // An explicit room command CLEARS the drift budget: following the room
+      // (host seek / room play / room pause) must land immediately, never wait
+      // out a damping timer that exists only to stop drift-chasing.
+      this._settleUntil = 0;
+      this._lastCorrectionAt = 0;
+      this._correctionBackoff = 0;
+      this._driftStreak = { dir: 0, n: 0 };
       // For a controller, whatever the room state is now becomes the mirror
       // baseline, so only a later in-player change gets broadcast.
       if (this.isController) this._mirroredPlaying = !!msg.isPlaying;
-      this._syncToTarget(true);
+      this._syncToTarget(true, true);
       // Players mid-buffer can swallow the first command: re-assert shortly
       // (freshUntil keeps the re-asserts throttle-exempt for a bounded time).
       this._scheduleSync(700);
@@ -347,13 +445,17 @@
     // call repeatedly (status polls, iframe load, follow-up timers): play is
     // only sent when we think we're paused (so it self-stops once playing),
     // and pause re-asserts are throttled so they can never loop.
-    /** @param {boolean} [fresh] true = authoritative broadcast just arrived; bypass the pause-assert throttle once */
-    _syncToTarget(fresh) {
+    /**
+     * @param {boolean} [fresh] true = authoritative broadcast just arrived; bypass the pause-assert throttle once
+     * @param {boolean} [force] true = an EXPLICIT room command: its seek must
+     *   land now, whatever the drift budget says (following the room is not
+     *   drift-chasing). Only applyRemote sets this, and only once per message.
+     */
+    _syncToTarget(fresh, force) {
       const msg = this._lastMsg;
       if (!msg || !this._iframeLoaded) return;
       if (!fresh && Date.now() < this._freshUntil) fresh = true; // bounded re-assert window
       const target = this.estimate(msg);
-      const absDrift = Math.abs(target.time - this.localTime);
 
       if (this.isController) {
         // HOST SOVEREIGNTY (user directive): once the host's player is up and
@@ -366,14 +468,10 @@
         // seek-then-pause sequence).
         if (Date.now() < this._externalUntil) {
           if (target.isPlaying) {
-            if (Math.abs(target.time - this.localTime) > DRIFT_TOLERANCE && !this.isBuffering) {
-              this.seek(target.time);
-            }
+            this._correctDrift(target, { force: force });
             if (!this.localPlaying) this.play();
           } else {
-            if (Math.abs(target.time - this.localTime) > SEEK_THRESHOLD && !this.isBuffering) {
-              this.seek(target.time);
-            }
+            this._correctDrift(target, { paused: true, force: force });
             if (this.localPlaying) this.pause();
           }
           return;
@@ -398,12 +496,12 @@
         if (target.isPlaying) {
           if (!this.localPlaying && !noForce) {
             // Autoplay a fresh load, or follow a guest/room that started play.
-            if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) this.seek(target.time);
+            this._correctDrift(target, { force: force });
             this.play();
-          } else if (this.localPlaying && absDrift > DRIFT_TOLERANCE && !this.isBuffering) {
-            // Playing and drifted: correct the position (safe while playing).
-            this.seek(target.time);
-            this._scheduleSync(600);
+          } else if (this.localPlaying) {
+            // Playing and drifted: correct the position - through the budget,
+            // so a slow connection is not seeked into a loading loop.
+            this._correctDrift(target, { force: force });
           }
         } else {
           // Position correction respects the don't-force window too: the
@@ -411,10 +509,7 @@
           // them back to the room's position mid-decision is exactly the
           // "it fights me and loops" feeling. `_maybeMirrorControl` runs
           // BEFORE this in the status handler, so the window is already set.
-          if (absDrift > SEEK_THRESHOLD && !this.isBuffering && (!this.localPlaying || !noForce)) {
-            this.seek(target.time);
-            this._scheduleSync(600);
-          }
+          if (!this.localPlaying || !noForce) this._correctDrift(target, { paused: true, force: force });
           if (this.localPlaying && !noForce && (fresh || Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS)) {
             this.pause();
             this._lastPauseAssert = Date.now();
@@ -427,16 +522,10 @@
       if (target.isPlaying) {
         // Autoplay a joiner: seek into position first, then resume. A
         // redundant play is harmless, so assert it whenever we're not playing.
-        if (absDrift > DRIFT_TOLERANCE && !this.isBuffering) {
-          this.seek(target.time);
-          this._scheduleSync(600); // re-check once the seek settles
-        }
+        this._correctDrift(target, { force: force });
         if (!this.localPlaying) this.play();
       } else {
-        if (absDrift > SEEK_THRESHOLD && !this.isBuffering) {
-          this.seek(target.time);
-          this._scheduleSync(600);
-        }
+        this._correctDrift(target, { paused: true, force: force });
         // Pause a client landing in a paused room — the throttle guards
         // POLL-driven asserts; a fresh broadcast acts immediately.
         if (this.localPlaying && (fresh || Date.now() - this._lastPauseAssert > PAUSE_ASSERT_MS)) {
@@ -444,6 +533,80 @@
           this._lastPauseAssert = Date.now();
         }
       }
+    }
+
+    /**
+     * Correct the local position toward the room's clock - but only when such a
+     * seek is worth its cost. A correction seeks, a seek reloads the buffer, and
+     * on a phone a correction every poll means the video never finishes loading.
+     * Returns true when the local player is already close enough.
+     * @param {{ time: number, isPlaying: boolean }} target
+     * @param {{ paused?: boolean, force?: boolean }} [opts] paused = use the
+     *   wider paused threshold; force = an explicit room command, seek now
+     * @returns {boolean} true when the player is in sync (no seek needed)
+     */
+    _correctDrift(target, opts) {
+      const o = opts || {};
+      const now = Date.now();
+      const drift = target.time - this.localTime;
+      const absDrift = Math.abs(drift);
+      const tolerance = o.paused ? SEEK_THRESHOLD : DRIFT_TOLERANCE;
+
+      if (absDrift <= tolerance) {
+        // In sync: the budget starts over, so a later genuine jump corrects fast.
+        this._correctionBackoff = 0;
+        this._driftStreak = { dir: 0, n: 0 };
+        return true;
+      }
+      if (!this._iframeLoaded) return false;
+      if (o.force) {
+        // An explicit room command: seek now. The whole point of the budget is
+        // to stop DRIFT-CHASING, never to make the room's own commands late.
+        this._driftStreak = { dir: 0, n: 0 };
+        this._correctionBackoff = CORRECTION_BASE_COOLDOWN_MS;
+        this._lastCorrectionAt = now;
+        this.seek(target.time);
+        return false;
+      }
+      if (this.isBuffering) return false; // a stall is not a position
+      // We commanded play and the embed has not confirmed it yet: give the boot
+      // a bounded window (the same 8s latch the pause/seek guards use).
+      if (this._awaitingStart && now - this._playCmdAt < START_LATCH_MS) return false;
+      if (now < this._settleUntil) return false; // a seek/load/play is settling
+
+      // The drift has to PERSIST to count as a position error rather than
+      // measurement noise (...unless it is so large it cannot be noise).
+      const dir = drift > 0 ? 1 : -1;
+      if (this._driftStreak.dir === dir) this._driftStreak.n += 1;
+      else this._driftStreak = { dir: dir, n: 1 };
+      if (absDrift < CORRECTION_HARD_DRIFT && this._driftStreak.n < CORRECTION_STREAK) return false;
+
+      const cooldown = this._correctionBackoff || CORRECTION_BASE_COOLDOWN_MS;
+      // A seek only helps a player that is RUNNING and merely behind. If the
+      // clock has not ADVANCED since our last correction, the player is still
+      // loading (or stalled) - seeking it again just restarts the load, which
+      // is precisely the loop this budget exists to break. Back off instead.
+      // (A paused room reports a frozen clock by definition, so this rule is
+      // for playing rooms only; the cooldown damps those.)
+      // (>= on purpose: a status that lands in the same millisecond as the
+      // correction still carries a position that ADVANCED, which is exactly the
+      // evidence we are after - a strict > made that a coin flip.)
+      const progressed = this._clockMovedAt >= this._lastCorrectionAt;
+      if (!o.paused && this._lastCorrectionAt && !progressed) {
+        this._correctionBackoff = Math.min(CORRECTION_MAX_COOLDOWN_MS, cooldown * 2);
+        return false;
+      }
+      const obviousNow = absDrift >= CORRECTION_HARD_DRIFT;
+      if (this._lastCorrectionAt && now - this._lastCorrectionAt < cooldown && !(obviousNow && progressed)) {
+        return false;
+      }
+
+      this._lastCorrectionAt = now;
+      this._correctionBackoff = Math.min(CORRECTION_MAX_COOLDOWN_MS, cooldown * 2);
+      this._driftStreak = { dir: 0, n: 0 };
+      this.seek(target.time); // stamps the settle window
+      this._scheduleSync(CORRECTION_RECHECK_MS); // look again once it lands
+      return false;
     }
 
     // For the controller only: detect a genuine in-player play/pause (not a
@@ -651,6 +814,16 @@
       switch (d.event) {
         case 'playerstatus':
           if (typeof d.currentTime === 'number') {
+            // Did the player's OWN clock advance since its last report? Only
+            // forward movement is evidence of playback: a player that is still
+            // loading re-reports the stale position it last managed to buffer,
+            // and seeking that again only restarts the load. (Measured against
+            // the player's previous report, never against the position WE asked
+            // for - a seek that silently failed must still be retried.)
+            if (this._lastReportedTime >= 0 && d.currentTime > this._lastReportedTime + 0.2) {
+              this._clockMovedAt = Date.now();
+            }
+            this._lastReportedTime = d.currentTime;
             this.localTime = d.currentTime;
             this.localUpdatedAt = Date.now();
           }
