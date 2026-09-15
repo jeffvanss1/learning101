@@ -572,7 +572,14 @@
   // node is never removed: it carries the accessible name and is visually
   // clipped once the logo is on screen.
   const LOGO_LANGS = ['en', 'null']; // catalog content is pinned to en-US
-  const logoPaths = new Map(); // "movie:157336" -> logo path | '' (miss)
+  // WIDE art (a wordmark, 2:1 or wider) fits the text column as it is. SQUARE
+  // or SHORT art (a monogram/emblem) rendered as a postage stamp at the old
+  // 44px cap, so it gets a real box — and in the hover tooltip it straddles
+  // the fold between the trailer and the title text (see the CSS).
+  const LOGO_SMALL_ASPECT = 2;
+  // The tooltip's big box: matches .card-preview__logo.is-logo-big in the CSS.
+  const LOGO_BIG_BOX = { maxH: 104, maxWRatio: 0.88, pad: 14 };
+  const logoPaths = new Map(); // "movie:157336" -> { path, aspect } (miss: path '')
 
   /** @param {any} item @returns {string} API path for the details payload. */
   function detailPath(item) {
@@ -586,9 +593,9 @@
    * Best logo in a TMDB image set: the pinned language first, then the
    * textless (null-language) art, then anything else — and inside a language,
    * the community-voted winner. Wide art wins over square marks.
-   * @param {any} images @returns {string} file path ('' when there is none)
+   * @param {any} images @returns {{ path: string, aspect: number }}
    */
-  function pickLogoPath(images) {
+  function pickLogo(images) {
     const all = (images && images.logos) || [];
     const rank = (l) => {
       const i = LOGO_LANGS.indexOf(l.iso_639_1 || 'null');
@@ -596,58 +603,117 @@
     };
     const wide = all.filter((l) => !l.aspect_ratio || l.aspect_ratio >= 1.2);
     const pool = (wide.length ? wide : all).filter((l) => l && l.file_path);
-    if (!pool.length) return '';
+    if (!pool.length) return { path: '', aspect: 0 };
     const best = pool
       .slice()
       .sort((a, b) => rank(a) - rank(b) || (b.vote_average || 0) - (a.vote_average || 0))[0];
-    return best.file_path || '';
+    return { path: best.file_path || '', aspect: Number(best.aspect_ratio) || 0 };
   }
 
-  /** Logo path for an item (memoized; a miss is memoized too). Never throws. */
-  async function fetchLogoPath(item) {
-    if (!item || item.id == null) return '';
+  /** @param {any} images @returns {string} just the file path */
+  function pickLogoPath(images) {
+    return pickLogo(images).path;
+  }
+
+  /**
+   * Does this art need the big box? A missing aspect ratio counts as small
+   * (the wider box is the safe side: art is capped by the CSS either way).
+   * @param {number} aspect @returns {boolean}
+   */
+  function isSmallLogoArt(aspect) {
+    return !(Number(aspect) >= LOGO_SMALL_ASPECT);
+  }
+
+  /**
+   * Logo for an item (memoized; a miss is memoized too). Never throws.
+   * @param {any} item @returns {Promise<{ path: string, aspect: number }>}
+   */
+  async function fetchLogo(item) {
+    if (!item || item.id == null) return { path: '', aspect: 0 };
     const key = (item.type === 'movie' ? 'movie' : 'tv') + ':' + item.id;
-    if (logoPaths.has(key)) return logoPaths.get(key);
-    logoPaths.set(key, ''); // in-flight guard: one request per title
-    let path = '';
+    const cached = logoPaths.get(key);
+    if (cached) return cached;
+    logoPaths.set(key, { path: '', aspect: 0 }); // in-flight guard: one request per title
+    let picked = { path: '', aspect: 0 };
     try {
       const data = await api(detailPath(item));
-      path = pickLogoPath(data && data.images);
+      picked = pickLogo(data && data.images);
     } catch (_) {
-      path = '';
+      picked = { path: '', aspect: 0 };
     }
-    logoPaths.set(key, path);
-    return path;
+    logoPaths.set(key, picked);
+    return picked;
+  }
+
+  /** @param {any} item @returns {Promise<string>} just the file path */
+  async function fetchLogoPath(item) {
+    return (await fetchLogo(item)).path;
+  }
+
+  /**
+   * Put the art's CENTRE on the line where the trailer ends and the text
+   * begins, so half of it covers the trailer's bottom edge (left-aligned with
+   * the text column, like the rest of the lockup). The margin comes from the
+   * art's aspect ratio — known from the same API response — so it lands
+   * exactly on the fold for any shape: no waiting for the image to decode and
+   * no jump after it does. Without a measurable DOM the CSS fallback margin
+   * keeps the same look.
+   * @param {HTMLImageElement} logo @param {number} aspect
+   */
+  function straddleFold(logo, aspect) {
+    if (!logo.closest || !logo.style) return;
+    const body = logo.closest('.card-preview__body');
+    const col = logo.parentNode;
+    if (!body || !col || !col.getBoundingClientRect) return;
+    const width = col.getBoundingClientRect().width || 0;
+    const ratio = Number(aspect) || 0;
+    if (!width || !ratio) return;
+    const height = Math.min(LOGO_BIG_BOX.maxH, (width * LOGO_BIG_BOX.maxWRatio) / ratio);
+    let pad = LOGO_BIG_BOX.pad;
+    try {
+      const cs = global.getComputedStyle && global.getComputedStyle(body);
+      if (cs && cs.paddingTop) pad = parseFloat(cs.paddingTop) || pad;
+    } catch (_) {}
+    // A negative top margin on the FIRST child pulls the art up over the
+    // trailer; the title text then flows right under it.
+    logo.style.marginTop = '-' + Math.round(height / 2 + pad) + 'px';
   }
 
   /**
    * Insert a title-logo image BEFORE the text title and clip the text.
-   * @param {string} path @param {HTMLElement | null} textEl @param {string} cls
+   * @param {{ path: string, aspect: number }} logo @param {HTMLElement | null} textEl @param {string} cls
    */
-  function paintTitleLogo(path, textEl, cls) {
-    if (!path || !textEl || !textEl.parentNode) return;
-    const logo = document.createElement('img');
-    logo.className = cls;
-    logo.src = img(path, 'w500');
-    logo.alt = '';
-    logo.decoding = 'async';
-    logo.setAttribute('aria-hidden', 'true');
+  function paintTitleLogo(logo, textEl, cls) {
+    if (!logo || !logo.path || !textEl || !textEl.parentNode) return;
+    const im = document.createElement('img');
+    im.className = cls;
+    im.src = img(logo.path, 'w500');
+    im.alt = '';
+    im.decoding = 'async';
+    im.setAttribute('aria-hidden', 'true');
+    // SMALL/SQUARE art gets the big box; a wide wordmark keeps its in-column
+    // size.
+    const bigBox = isSmallLogoArt(logo.aspect);
+    if (bigBox) im.classList.add('is-logo-big');
     // A broken logo means the text title is the UI (never an empty banner).
-    logo.onerror = () => {
-      logo.remove();
+    im.onerror = () => {
+      im.remove();
       textEl.classList.remove('is-title-hidden');
     };
-    logo.onload = () => textEl.classList.add('is-title-hidden');
-    textEl.parentNode.insertBefore(logo, textEl);
-    // The text is hidden from the start too: the logo is already in the DOM,
-    // so the swap cannot flash a duplicate title while the image decodes.
+    im.onload = () => textEl.classList.add('is-title-hidden');
+    textEl.parentNode.insertBefore(im, textEl);
+    // ...and in the tooltip it straddles the fold. Measured AFTER insertion:
+    // the margin has to be computed against the laid-out text column.
+    if (bigBox && cls === 'card-preview__logo') straddleFold(im, logo.aspect);
+    // The text is hidden from the start too: the image is already in the DOM,
+    // so the swap cannot flash a duplicate title while it decodes.
     textEl.classList.add('is-title-hidden');
   }
 
   /** Async path: fetch the logo for an item, then paint it. */
   function applyTitleLogo(item, textEl, cls) {
-    fetchLogoPath(item).then((path) => {
-      if (path && textEl && textEl.parentNode) paintTitleLogo(path, textEl, cls);
+    fetchLogo(item).then((logo) => {
+      if (logo && logo.path && textEl && textEl.parentNode) paintTitleLogo(logo, textEl, cls);
     });
   }
 
@@ -1124,7 +1190,7 @@
     const detailTitle = h('div', 'detail__title', (extra && (extra.title || extra.name)) || item.title);
     info.appendChild(detailTitle);
     // The details payload already carries the logo set — no second request.
-    paintTitleLogo(pickLogoPath(extra && extra.images), detailTitle, 'detail__logo');
+    paintTitleLogo(pickLogo(extra && extra.images), detailTitle, 'detail__logo');
     const metaParts = [];
     if ((extra && extra.vote_average) || item.rating) metaParts.push({ icon: 'star' }, Number((extra && extra.vote_average) || item.rating).toFixed(1));
     if ((extra && extra.release_date) || (extra && extra.first_air_date) || item.year) {
@@ -2074,7 +2140,10 @@
     openDetail,
     openEpisodes,
     fetchRecommendations,
+    pickLogo,
     pickLogoPath,
+    isSmallLogoArt,
+    fetchLogo,
     fetchLogoPath,
     detailPath,
   };

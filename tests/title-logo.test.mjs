@@ -26,8 +26,9 @@ function sliceLogoHelpers() {
   assert.ok(end > start, 'the section ends at the hover preview');
   return (
     src.slice(start, end) +
-    '\nreturn { detailPath: detailPath, pickLogoPath: pickLogoPath, ' +
-    'fetchLogoPath: fetchLogoPath, applyTitleLogo: applyTitleLogo };'
+    '\nreturn { detailPath: detailPath, pickLogo: pickLogo, pickLogoPath: pickLogoPath, ' +
+    'isSmallLogoArt: isSmallLogoArt, fetchLogo: fetchLogo, fetchLogoPath: fetchLogoPath, ' +
+    'paintTitleLogo: paintTitleLogo, LOGO_BIG_BOX: LOGO_BIG_BOX, applyTitleLogo: applyTitleLogo };'
   );
 }
 
@@ -40,6 +41,7 @@ class FakeEl {
     this.src = '';
     this.alt = '';
     this.dataset = {};
+    this.style = {};
     this._attrs = {};
     this._classes = new Set();
     const self = this;
@@ -74,6 +76,21 @@ class FakeEl {
     if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((c) => c !== this);
     this.parentNode = null;
   }
+  /** Walk up by class selector (the fold straddle looks for .card-preview__body). */
+  closest(sel) {
+    const want = String(sel).replace(/^\./, ''); // real closest() takes a selector
+    let node = this;
+    while (node) {
+      if (String(node.className || '').split(/\s+/).includes(want)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+  /** Settable layout box: the straddle measures the text column. */
+  setRect(rect) {
+    this.getBoundingClientRect = () => rect;
+    return this;
+  }
 }
 
 function makeBundle(o = {}) {
@@ -88,8 +105,14 @@ function makeBundle(o = {}) {
       return Promise.resolve({ images: { logos: [] } });
     });
   const img = (path, size) => 'https://image.tmdb.org/t/p/' + size + path;
-  const fn = new Function('document', 'api', 'img', sliceLogoHelpers())(doc, api, img);
-  return { ...fn, apiCalls, doc };
+  const globalObj = o.global || { getComputedStyle: null };
+  const fn = new Function('document', 'api', 'img', 'global', sliceLogoHelpers())(
+    doc,
+    api,
+    img,
+    globalObj
+  );
+  return { ...fn, apiCalls, doc, globalObj };
 }
 
 const EN_LOGO = { file_path: '/en.png', iso_639_1: 'en', aspect_ratio: 3.4, vote_average: 5.2 };
@@ -192,6 +215,91 @@ test('applyTitleLogo: a title without art keeps its text title untouched', async
   assert.ok(!title.classList.contains('is-title-hidden'), 'and nothing was hidden');
 });
 
+test('pickLogo carries the art aspect; under 2:1 counts as SMALL art', () => {
+  const { pickLogo, pickLogoPath, isSmallLogoArt, LOGO_BIG_BOX } = makeBundle();
+  assert.deepEqual(pickLogo({ logos: [EN_LOGO] }), { path: '/en.png', aspect: 3.4 }, 'the chosen art reports its shape');
+  assert.deepEqual(pickLogo({ logos: [SQUARE] }), { path: '/square.png', aspect: 0.8 }, 'a square mark too');
+  assert.deepEqual(pickLogo({ logos: [] }), { path: '', aspect: 0 }, 'no art -> no path, no aspect');
+  assert.deepEqual(pickLogo(null), { path: '', aspect: 0 }, 'a missing image block is not a crash');
+  assert.equal(pickLogoPath({ logos: [EN_LOGO] }), '/en.png', 'the path-only helper is unchanged');
+
+  // The size rule: a wordmark (2:1 or wider) fits the text column; a square or
+  // short mark gets the big box (it rendered as a postage stamp at 44px).
+  assert.equal(isSmallLogoArt(0.8), true, 'a square mark');
+  assert.equal(isSmallLogoArt(1.99), true, 'a short mark just under the line');
+  assert.equal(isSmallLogoArt(2), false, '2:1 is a wordmark');
+  assert.equal(isSmallLogoArt(3.4), false, 'and so is a wide wordmark');
+  assert.equal(isSmallLogoArt(undefined), true, 'an unknown shape takes the safe (bigger) box');
+  assert.equal(isSmallLogoArt(0), true, 'a missing ratio too');
+  assert.equal(LOGO_BIG_BOX.maxH, 104, 'the tooltip box matches .card-preview__logo.is-logo-big');
+});
+
+test('small/square art takes the big box; a wide wordmark is left alone', async () => {
+  const square = { file_path: '/sq.png', iso_639_1: 'en', aspect_ratio: 0.9, vote_average: 5 };
+  const paint = async (logos) => {
+    const bundle = makeBundle({ api: () => Promise.resolve({ images: { logos } }) });
+    const parent = new FakeEl('div');
+    const title = new FakeEl('div');
+    title.className = 'card-preview__title';
+    title.textContent = 'Interstellar';
+    parent.appendChild(title);
+    bundle.applyTitleLogo({ id: 1, type: 'movie' }, title, 'card-preview__logo');
+    await new Promise((r) => setTimeout(r, 10));
+    return { logo: parent.children[0], title };
+  };
+
+  const small = await paint([square]);
+  assert.equal(small.logo.tagName, 'img');
+  assert.ok(small.logo.classList.contains('is-logo-big'), 'a square mark gets the big box');
+  assert.ok(small.title.classList.contains('is-title-hidden'), 'and the text title still yields to it');
+
+  const wide = await paint([EN_LOGO]);
+  assert.ok(!wide.logo.classList.contains('is-logo-big'), 'a wide wordmark keeps its in-column size');
+});
+
+test('the tooltip art is centred on the fold (measured from the aspect ratio)', async () => {
+  const square = { file_path: '/sq.png', iso_639_1: 'en', aspect_ratio: 1, vote_average: 5 };
+  const { paintTitleLogo, LOGO_BIG_BOX } = makeBundle({
+    api: () => Promise.resolve({ images: { logos: [square] } }),
+    // the tooltip body's real padding (top) is read from the computed style
+    global: { getComputedStyle: () => ({ paddingTop: '14px' }) },
+  });
+
+  // The shipped tooltip structure: panel > media + body > text > title.
+  const panel = new FakeEl('div');
+  panel.className = 'card-preview';
+  const media = new FakeEl('div');
+  media.className = 'card-preview__media';
+  panel.appendChild(media);
+  const body = new FakeEl('div');
+  body.className = 'card-preview__body';
+  panel.appendChild(body);
+  const text = new FakeEl('div');
+  text.className = 'card-preview__text';
+  text.setRect({ width: 300, height: 120, top: 0, bottom: 0 });
+  body.appendChild(text);
+  const title = new FakeEl('div');
+  title.className = 'card-preview__title';
+  text.appendChild(title);
+
+  paintTitleLogo({ path: '/sq.png', aspect: 1 }, title, 'card-preview__logo');
+  const logo = text.children[0];
+  assert.ok(logo.classList.contains('is-logo-big'), 'square art in the tooltip is a big-box logo');
+  // height = min(104, 300 * 0.88 / 1) = 104  ->  margin = -(104/2 + 14) = -66
+  assert.equal(logo.style.marginTop, '-66px', 'half of the art sits over the trailer, on the fold');
+
+  // A wide wordmark never gets a straddle margin (it stays in the column).
+  const wide = new FakeEl('div');
+  wide.className = 'card-preview__text';
+  wide.setRect({ width: 300, height: 120, top: 0, bottom: 0 });
+  const wideTitle = new FakeEl('div');
+  wideTitle.className = 'card-preview__title';
+  wide.appendChild(wideTitle);
+  paintTitleLogo({ path: '/en.png', aspect: 3.4 }, wideTitle, 'card-preview__logo');
+  assert.equal(wide.children[0].style.marginTop, undefined, 'no negative margin for a wordmark');
+  assert.equal(LOGO_BIG_BOX.maxWRatio, 0.88, 'the measured width ratio matches the CSS max-width');
+});
+
 test('the surfaces use the shared helpers (hero, tooltip, details)', () => {
   const catalog = read('dist/js/catalog.js');
   assert.match(
@@ -206,7 +314,7 @@ test('the surfaces use the shared helpers (hero, tooltip, details)', () => {
   );
   assert.match(
     catalog,
-    /paintTitleLogo\(pickLogoPath\(extra && extra\.images\), detailTitle, 'detail__logo'\)/,
+    /paintTitleLogo\(pickLogo\(extra && extra\.images\), detailTitle, 'detail__logo'\)/,
     'the details modal reuses the payload it already fetched'
   );
   // The hero art goes up to 4K: srcset, so a phone never downloads the original.
@@ -232,6 +340,17 @@ test('CSS: the banner is bigger, the logo is bounded, the text clip is accessibl
   assert.match(css, /\.card-preview__logo \{[^}]*max-height: 44px;/, 'tooltip logo bounded');
   assert.match(css, /\.detail__logo \{[^}]*max-height: clamp\(46px, 5vw, 84px\);/, 'details logo bounded');
 
+  // ...and the SMALL/SQUARE art gets the bigger box on all three surfaces, with
+  // the tooltip straddling the fold (left-aligned, above the trailer).
+  const big = css.slice(css.indexOf('.card-preview__logo.is-logo-big {'));
+  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*max-height: 104px;/, 'tooltip big box (was 44px)');
+  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*max-width: 88%;/, 'and wider than the column cap');
+  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*margin-top: -52px;/, 'the no-JS fold straddle');
+  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*position: relative;/, 'paints above the trailer');
+  assert.match(big, /\.hero__logo\.is-logo-big \{[^}]*max-height: clamp\(120px, 12vw, 210px\);/, 'hero big box');
+  assert.match(big, /\.detail__logo\.is-logo-big \{[^}]*max-height: clamp\(90px, 8vw, 150px\);/, 'details big box');
+  assert.match(big, /\.modal__card--wide \.hero__logo\.is-logo-big \{[^}]*max-height: 92px;/, 'the compact picker banner keeps its own cap');
+
   // The clip keeps the text readable by a screen reader (never display:none).
   const util = style.slice(style.indexOf('.is-title-hidden {'), style.indexOf('/* Icon + label inside a button'));
   assert.match(util, /clip-path: inset\(50%\)/, 'classic visually-hidden clip');
@@ -245,13 +364,20 @@ test('CSS: the whole sheet scales from a phone to a 4K TV', () => {
   assert.match(phone, /min-height: clamp\(240px, 62vw, 320px\)/, 'a hero that fits above the fold on a phone');
   assert.match(phone, /padding-bottom: calc\(var\(--bottomnav-h\) \+ env\(safe-area-inset-bottom, 0px\)\)/, 'the last row clears the bottom bar');
 
+  const phoneBig = phone;
+  assert.match(phoneBig, /\.hero__logo\.is-logo-big \{[^}]*max-height: 132px;/, 'the big box scales down on a phone');
+  assert.match(phoneBig, /\.detail__logo\.is-logo-big \{[^}]*max-height: 118px;/, 'and in the phone detail header');
+
   const tv = css.slice(css.indexOf('@media (min-width: 1600px) {'), css.indexOf('@media (min-width: 2400px) {'));
   assert.match(tv, /--card-w: 182px;/, 'desktop-large posters grow');
   assert.match(tv, /\.hero \{\s*\n\s*height: clamp\(420px, 30vw, 620px\);/, 'and the banner grows with them');
+  assert.match(tv, /\.hero__logo\.is-logo-big \{[^}]*max-height: clamp\(180px, 14vw, 280px\);/, 'the big box grows on a TV');
+  assert.match(tv, /\.card-preview__logo\.is-logo-big \{[^}]*max-height: 116px;/, 'tooltip too');
 
   const uhd = css.slice(css.indexOf('@media (min-width: 2400px) {'));
   assert.match(uhd, /--card-w: 214px;/, '4K keeps scaling instead of shrinking into a corner');
   assert.match(uhd, /\.hero \{\s*\n\s*height: clamp\(520px, 26vw, 720px\);/, '4K banner');
+  assert.match(uhd, /\.hero__logo\.is-logo-big \{[^}]*max-height: 320px;/, '4K big box');
   assert.match(read('dist/css/style.css'), /--page-max: 1560px;/, 'the content column token lives in the shell sheet');
   assert.match(read('dist/css/style.css'), /@media \(min-width: 2400px\) \{\s*\n\s*:root \{\s*\n\s*--topnav-h: 78px;/, 'the top bar scales too');
   assert.match(css, /orientation: landscape/, 'landscape phones are handled (banner must not eat the screen)');

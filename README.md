@@ -1712,3 +1712,45 @@ netflix" → and then: "make it responsive from mobile to TV full hd and 4k".
   tooltip and the detail card, in both themes.
 Tests 247/247, check clean. player v16 / catalog v31 / catalog css v30 / style v27 /
 social v52 / ui-2026-09-15.90.
+
+## Small/square title art gets a real box: the tooltip lockup straddles the fold (ui-2026-09-15.91)
+
+USER: "sometimes when the logo too small it, can we bypass the size of that can
+be display like make it outside the border and in the middle of between trailer
+overlay and the title text" -> clarified, answered: placement = C (straddle the
+fold, LEFT-aligned), scope = tooltip + details + hero, text title stays hidden,
+trigger = only SMALL/SQUARE art.
+
+- THE RULE: a wide wordmark (2:1 or wider) fits the text column as it always did.
+  Art under 2:1 — a monogram or an emblem — rendered as a postage stamp at the
+  old `max-height: 44px`, so it now gets `.is-logo-big`: a bigger box (up to 88%
+  wide / 104px tall in the tooltip, `clamp(120px, 12vw, 210px)` in the hero,
+  `clamp(90px, 8vw, 150px)` in the detail header) with the same treatment scaled
+  per breakpoint (phone, ≥1600px, ≥2400px/4K). A missing aspect ratio counts as
+  small: the bigger box is the safe side, art is capped by CSS either way.
+- THE FOLD STRADDLE (tooltip): the art's CENTRE sits on the line where the
+  trailer ends and the text begins, so half of it covers the trailer's bottom
+  edge, left-aligned with the text column — and the title text flows right under
+  it. The negative top margin is MEASURED in JS
+  (`straddleFold`, height = min(104, column × 0.88 / aspect) then `-(h/2 + body
+  padding)`) from the aspect ratio that arrives with the same API response, so
+  it lands exactly on the fold for any shape: no waiting for the image to decode
+  and no jump after it does. The CSS `margin-top: -52px` is the no-JS fallback,
+  and the art paints above the trailer (`position: relative; z-index: 2`).
+- WHY NOT ABSOLUTE POSITIONING: the logo stays in the flow (a negative margin),
+  so the text below follows it automatically and no DOM restructuring is needed
+  — the trailer loader keeps deleting only the placeholder image it owns.
+- PLUMBING: `pickLogo(images)` now returns `{ path, aspect }` (the chosen art's
+  shape, the same ranking as before) and `fetchLogo(item)` memoizes that object;
+  `pickLogoPath`/`fetchLogoPath` stay as the path-only helpers. The details
+  modal reuses `pickLogo(extra.images)` from the payload it already fetched.
+- TESTS: tests/title-logo.test.mjs grew to 11 cases — the aspect ranking, the
+  2:1 threshold (including "unknown ratio = small"), the class on square vs wide
+  art, and the MEASURED straddle margin (-66px for a 300px column / 1:1 art with
+  a 14px body padding) plus "a wordmark never gets a margin". All three surfaces
+  and every breakpoint tier are pinned in CSS.
+- PREVIEW: scripts/logo-options.html now shows the chosen rule as SHIPPED next
+  to the alternatives it was picked over (the wide wordmark samples are marked
+  "unchanged").
+Tests 250/250, check clean. catalog v32 / catalog css v31 / social v53 /
+ui-2026-09-15.91.

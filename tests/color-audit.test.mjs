@@ -91,9 +91,10 @@ test('stylesheet duplication is BANNED (stale second copy once overrode every th
   assert.equal(count(catalog, 'rgba(15, 15, 15, 0.92)'), 1, 'topnav dark bg only as the var fallback');
   // Coarse backstop for the "whole sheet pasted twice" bug (that copy was
   // ~2250 lines), NOT a style budget — raised 1400 -> 1500 for the trailer
-  // audio toggle, 1500 -> 1900 for the responsive TV tiers + title-logo rules.
-  // The top-level marker counts above are the real duplication detector.
-  assert.ok(catalog.split('\n').length < 1900, 'catalog.css stays deduplicated');
+  // audio toggle, 1500 -> 1900 for the responsive TV tiers + title-logo rules,
+  // 1900 -> 1960 for the small-art big box (.is-logo-big). The top-level marker
+  // counts above are the real duplication detector.
+  assert.ok(catalog.split('\n').length < 1960, 'catalog.css stays deduplicated');
   assert.equal(count(style, '.btn--primary {'), 1, 'style.css: no duplicate .btn--primary');
   assert.equal(count(social, '.presence--idle {'), 1, 'social.css: no duplicate .presence--idle');
 });

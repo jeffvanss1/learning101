@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty — title-logo size &amp; placement options</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <link rel="stylesheet" href="../dist/css/catalog.css" />
+    <link rel="stylesheet" href="../dist/css/social.css" />
+    <style>
+      /* Review-page chrome. The tooltips below are the SHIPPED component
+         (.card-preview + friends); only the `.opt-*` classes add the proposed
+         treatment, and the media/logo art is a stand-in for TMDB artwork. */
+      body { padding: 26px var(--page-pad) 80px; }
+      .lo { max-width: 1520px; margin: 0 auto; display: grid; gap: 30px; }
+      .lo__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+      .lo__title { margin: 0; font-size: 22px; }
+      .lo__hint { color: var(--text-muted); font-size: 13px; line-height: 1.6; margin: 8px 0 0; max-width: 96ch; }
+      .lo__seg { display: flex; gap: 8px; }
+
+      .opt { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-soft); padding: 18px; }
+      .opt--pick { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.16); }
+      .opt__head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+      .opt__tag { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--bg); background: var(--text); border-radius: 6px; padding: 3px 8px; }
+      .opt__tag--pick { background: var(--blue); color: var(--bg); }
+      .opt__name { font-size: 15.5px; font-weight: 650; }
+      .opt__note { color: var(--text-muted); font-size: 13px; line-height: 1.6; margin: 6px 0 16px; max-width: 110ch; }
+      .opt__row { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+      .opt__cell { display: grid; gap: 8px; justify-items: center; }
+      .opt__cap { font-size: 11.5px; color: var(--text-muted); }
+
+      /* Tooltips are position:fixed in the app (JS places them); inline here. */
+      .lo .card-preview { position: relative; }
+      .lo .card-preview__sound { pointer-events: none; }
+      .lo__hero { position: relative; width: 100%; }
+
+      /* ---- Variant A: bigger, still in the text column ------------------- */
+      .opt-a .card-preview__logo { max-width: 100%; max-height: 76px; }
+
+      /* ---- Variant B: straddles the media/text fold, centred ------------ */
+      .opt-b .card-preview__logo {
+        position: absolute;
+        left: 50%;
+        top: 56.25%;                 /* the media box is 16:9 → the fold */
+        transform: translate(-50%, -50%);
+        max-width: 88%;              /* was 74% */
+        max-height: 104px;           /* was 44px */
+        z-index: 3;
+        filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.7));
+      }
+      .opt-b .card-preview__body { padding-top: 46px; }
+
+      /* ---- CHOSEN (C): small/square art straddles the fold, LEFT-aligned -
+         This is now the SHIPPED rule: .card-preview__logo.is-logo-big (the
+         page mirrors it so the demo runs even before the pin lands). */
+      .opt-c .card-preview__logo {
+        max-width: 88%;
+        max-height: 104px;
+        margin-top: -52px;           /* the shipped fallback; JS measures it */
+        position: relative;
+        z-index: 2;
+        filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.62));
+      }
+
+      /* ---- Optional: the text title back as a small caption -------------- */
+      .opt-title .card-preview__title { display: block; }
+      .opt-title .card-preview__title.is-title-hidden {
+        position: static;
+        width: auto;
+        height: auto;
+        margin: 0;
+        clip-path: none;
+        overflow: visible;
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--text-muted);
+      }
+
+      /* ---- Hero samples -------------------------------------------------- */
+      .lo__hero .hero { height: clamp(260px, 30vw, 420px); }
+      .lo__hero-grid { display: grid; gap: 22px; }
+    </style>
+  </head>
+  <body>
+    <div class="lo">
+      <div class="lo__head">
+        <div>
+          <h1 class="lo__title">Title logo: size &amp; placement options</h1>
+          <p class="lo__hint">
+            Every tooltip below is the shipped <code>.card-preview</code> component; the badge on the
+            left names the treatment. Each variant is shown with a <strong>wide wordmark</strong>, a
+            <strong>medium wordmark (3:1)</strong> and a <strong>square mark</strong> — the square one is
+            what currently renders tiny (the shipped cap is <code>max-height: 44px</code>).
+          </p>
+        </div>
+        <div class="lo__seg">
+          <button class="btn btn--sm" data-theme-set="dark" type="button">Dark</button>
+          <button class="btn btn--sm" data-theme-set="light" type="button">Light</button>
+        </div>
+      </div>
+
+      <div id="variants"></div>
+
+      <div class="opt lo__hero">
+        <div class="opt__head">
+          <span class="opt__tag">Hero</span>
+          <span class="opt__name">The same problem in the banner (square mark)</span>
+        </div>
+        <p class="opt__note">
+          The hero caps a logo at <code>clamp(58px, 7vw, 116px)</code> tall — fine for a wide
+          wordmark, small for a square mark in a 560px banner. Left: now. Right: the cap raised (a
+          taller box, art scaled up), which is what “let it be bigger” would mean here.
+        </p>
+        <div class="lo__hero-grid" id="heroes"></div>
+      </div>
+    </div>
+
+    <script>
+      // ---- stand-in artwork (TMDB ships transparent PNG wordmarks) --------
+      const LOGOS = {
+        wide: { label: 'wordmark 6:1', w: 1140, h: 190, text: 'INTERSTELLAR' },
+        mid: { label: 'wordmark 3:1', w: 900, h: 300, text: 'DUNE' },
+        square: { label: 'square mark 1:1', w: 460, h: 460, text: 'MI' },
+      };
+
+      function logoUri(spec, color) {
+        const size = Math.round(spec.h * 0.62);
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' + spec.w + '" height="' + spec.h + '">' +
+          (spec.w === spec.h
+            ? '<rect x="6" y="6" width="' + (spec.w - 12) + '" height="' + (spec.h - 12) +
+              '" rx="26" fill="none" stroke="' + color + '" stroke-width="14"/>'
+            : '') +
+          '<text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" ' +
+          'font-family="Helvetica,Arial" font-weight="700" letter-spacing="' +
+          (spec.w === spec.h ? 4 : 12) + '" font-size="' + size + '" fill="' + color + '">' +
+          spec.text + '</text></svg>';
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+      }
+
+      function artUri(w, h) {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+          '<defs><linearGradient id="a" x1="0" y1="0" x2="1" y2="1">' +
+          '<stop offset="0" stop-color="#2b3a52"/><stop offset=".6" stop-color="#151d2a"/>' +
+          '<stop offset="1" stop-color="#070a10"/></linearGradient></defs>' +
+          '<rect width="' + w + '" height="' + h + '" fill="url(#a)"/>' +
+          '<circle cx="' + Math.round(w * 0.72) + '" cy="' + Math.round(h * 0.3) +
+          '" r="' + Math.round(h * 0.22) + '" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="8"/></svg>';
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+      }
+
+      const el = (tag, cls, text) => {
+        const n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+      };
+
+      /** The shipped tooltip markup, plus an optional variant class. */
+      function tooltip(logoKey, variant, opts = {}) {
+        const spec = LOGOS[logoKey];
+        const wrap = el('div', 'card-preview' + (variant ? ' ' + variant : ''));
+        const media = el('div', 'card-preview__media');
+        const art = document.createElement('img');
+        art.src = artUri(720, 405);
+        art.alt = '';
+        media.appendChild(art);
+        wrap.appendChild(media);
+
+        const body = el('div', 'card-preview__body');
+        const text = el('div', 'card-preview__text');
+        const logo = document.createElement('img');
+        logo.className = 'card-preview__logo';
+        logo.src = logoUri(spec, '#f1f1f1');
+        logo.alt = '';
+        text.appendChild(logo);
+        const title = el('div', 'card-preview__title is-title-hidden', 'Interstellar');
+        text.appendChild(title);
+        text.appendChild(el('div', 'card-preview__meta', '\u2605 8.7 \u00b7 2014 \u00b7 169 min \u00b7 Adventure'));
+        text.appendChild(
+          el('p', 'card-preview__overview',
+            'A former NASA pilot leads a crew through a wormhole near Saturn in search of a new home for humanity.')
+        );
+        body.appendChild(text);
+        const sound = el('button', 'card-preview__sound is-on');
+        sound.type = 'button';
+        sound.setAttribute('aria-label', 'Trailer sound: on');
+        sound.innerHTML =
+          '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" ' +
+          'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>' +
+          '<path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
+        body.appendChild(sound);
+        wrap.appendChild(body);
+        return wrap;
+      }
+
+      const VARIANTS = [
+        {
+          tag: 'Now',
+          name: 'Shipped: in the text column, max-height 44px',
+          note: 'The wide wordmark is already height-capped, and a square mark renders 44x44 — this is the “sometimes the logo is too small” report.',
+        },
+        {
+          tag: 'A',
+          name: 'Bigger, still in the text column',
+          note: 'No overlap: the caps are raised (max-width 100%, max-height 76px). The layout around it does not move.',
+        },
+        {
+          tag: 'B',
+          name: 'Straddles the trailer/text fold — CENTRED',
+          note: 'Not chosen: centred on the fold instead of aligned with the text column.',
+        },
+        {
+          tag: 'C',
+          name: 'Straddles the fold — LEFT-aligned lockup',
+          note: 'SHIPPED (your pick): the art is left-aligned with the text column and its centre sits on the fold, so half of it covers the trailer’s bottom edge; the title text flows right under it. Applied to small/square art on the tooltip, the hero and the details card.',
+          pick: true,
+        },
+      ];
+
+      const host = document.getElementById('variants');
+      VARIANTS.forEach((v) => {
+        const box = el('div', 'opt' + (v.pick ? ' opt--pick' : '') + (v.class ? ' ' + v.class : ''));
+        if (v.tag === 'Now') box.classList.add('opt-now');
+        if (v.tag === 'A') box.classList.add('opt-a');
+        if (v.tag === 'B') box.classList.add('opt-b');
+        if (v.tag === 'C') box.classList.add('opt-c');
+        const head = el('div', 'opt__head');
+        head.appendChild(el('span', 'opt__tag' + (v.pick ? ' opt__tag--pick' : ''), v.tag));
+        head.appendChild(el('span', 'opt__name', v.name));
+        box.appendChild(head);
+        box.appendChild(el('p', 'opt__note', v.note));
+        const row = el('div', 'opt__row');
+        ['wide', 'mid', 'square'].forEach((k) => {
+          const cell = el('div', 'opt__cell');
+          const isBig = k === 'square';
+          const cls =
+            v.tag === 'C'
+              ? isBig
+                ? 'opt-c' // the chosen treatment: only square/short art changes
+                : ''
+              : v.tag === 'Now'
+                ? ''
+                : 'opt-' + v.tag.toLowerCase();
+          cell.appendChild(tooltip(k, cls));
+          cell.appendChild(el('div', 'opt__cap', LOGOS[k].label + (v.tag === 'C' && !isBig ? ' (unchanged)' : '')));
+          row.appendChild(cell);
+        });
+        box.appendChild(row);
+        host.appendChild(box);
+      });
+
+      // ---- hero samples: shipped cap vs a raised cap ----------------------
+      const heroes = document.getElementById('heroes');
+      [
+        { cap: 'Now — max-height: clamp(58px, 7vw, 116px)', cls: '' },
+        { cap: 'Raised cap — the box grows, the art scales up', cls: 'opt-hero-big' },
+      ].forEach((h) => {
+        const box = el('div', 'lo__hero');
+        const hero = el('div', 'hero ' + h.cls);
+        const media = el('div', 'hero__media');
+        const art = document.createElement('img');
+        art.src = artUri(1920, 860);
+        art.alt = '';
+        media.appendChild(art);
+        hero.appendChild(media);
+        const content = el('div', 'hero__content');
+        content.appendChild(el('span', 'hero__badge', 'Movie'));
+        const logo = document.createElement('img');
+        logo.className = 'hero__logo';
+        logo.src = logoUri(LOGOS.square, '#ffffff');
+        logo.alt = '';
+        content.appendChild(logo);
+        content.appendChild(el('div', 'hero__meta', '\u2605 8.7 \u00b7 2014 \u00b7 169 min \u00b7 Adventure'));
+        content.appendChild(el('p', 'hero__overview',
+          'A former NASA pilot leads a crew through a wormhole near Saturn in search of a new home for humanity.'));
+        const actions = el('div', 'hero__actions');
+        actions.appendChild(el('button', 'btn btn--primary', 'Watch together'));
+        actions.appendChild(el('button', 'btn btn--ghost', 'Details'));
+        content.appendChild(actions);
+        hero.appendChild(content);
+        box.appendChild(hero);
+        box.appendChild(el('div', 'opt__cap', h.cap));
+        heroes.appendChild(box);
+      });
+
+      // ---- theme ----------------------------------------------------------
+      function paint(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        // The stand-in logo ink follows the theme (real logos are transparent).
+        document.querySelectorAll('.card-preview__logo').forEach((im) => {
+          im.src = logoUri(LOGOS[im.dataset.k || 'wide'], theme === 'light' ? '#0f0f0f' : '#f1f1f1');
+        });
+        document.querySelectorAll('[data-theme-set]').forEach((b) =>
+          b.classList.toggle('btn--primary', b.dataset.themeSet === theme)
+        );
+      }
+      // tag each logo image with its key so the theme repaint can rebuild it
+      document.querySelectorAll('.opt__cell').forEach((cell, i) => {
+        const key = ['wide', 'mid', 'square'][i % 3];
+        const im = cell.querySelector('.card-preview__logo');
+        if (im) im.dataset.k = key;
+      });
+      document.querySelectorAll('[data-theme-set]').forEach((b) =>
+        b.addEventListener('click', () => paint(b.dataset.themeSet))
+      );
+      paint('dark');
+
+      // Raised hero cap (the proposal, applied to the right-hand sample).
+      const extra = document.createElement('style');
+      extra.textContent =
+        '.opt-hero-big .hero__logo { max-height: clamp(110px, 13vw, 200px); max-width: min(520px, 78%); }';
+      document.head.appendChild(extra);
+    </script>
+  </body>
+</html>

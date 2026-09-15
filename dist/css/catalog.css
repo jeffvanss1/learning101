@@ -1536,6 +1536,43 @@ body.room-focus.rail-peek .sidenav {
   background: var(--bg-elev);
 }
 
+/* ---- Title logos: small/square art gets a REAL box ----------------------------------------- */
+/* A wide wordmark (2:1 or wider) fits the text column as it is. SQUARE or SHORT
+   art — a monogram, an emblem — rendered as a postage stamp at the old 44px
+   cap, so it gets a bigger box. In the hover tooltip that box STRADDLES THE
+   FOLD: the art is left-aligned with the text column and its centre sits on
+   the line where the trailer ends and the title text begins, so half of it
+   covers the trailer's bottom edge (the shipped JS measures the exact margin
+   from the art's aspect ratio; `margin-top` here is the no-JS fallback).
+   The text title stays hidden either way — it keeps the accessible name. */
+.card-preview__logo.is-logo-big {
+  max-width: 88%; /* was 74% */
+  max-height: 104px; /* was 44px */
+  margin-top: -52px; /* fallback: half of the 104px box */
+  position: relative; /* paints above the trailer (it is a positioned layer) */
+  z-index: 2;
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.62));
+}
+
+/* The banner: the same art gets a real measure inside the hero. */
+.hero__logo.is-logo-big {
+  max-width: min(560px, 82%);
+  max-height: clamp(120px, 12vw, 210px);
+}
+
+/* The detail header (poster column on the left, lockup on the right). */
+.detail__logo.is-logo-big {
+  max-width: min(460px, 76%);
+  max-height: clamp(90px, 8vw, 150px);
+}
+
+/* The compact banner in the "choose a video" picker keeps its own, smaller
+   raised cap — it is a 140-220px strip, not a billboard. */
+.modal__card--wide .hero__logo.is-logo-big {
+  max-height: 92px;
+  max-width: min(320px, 58%);
+}
+
 /* ---- Responsive ---------------------------------------------------------------------------- */
 /* PHONE (<=720px): one column, the bottom bar owns the chrome, posters are
    thumb-sized. Everything here is additive to the desktop rules above. */
@@ -1554,6 +1591,16 @@ body.room-focus.rail-peek .sidenav {
   .hero__logo {
     max-width: 78%;
     max-height: 76px;
+  }
+  /* A phone banner is 240-320px tall: the big box grows, but with the phone's
+     proportions (never the desktop measure). */
+  .hero__logo.is-logo-big {
+    max-width: 66%;
+    max-height: 132px;
+  }
+  .detail__logo.is-logo-big {
+    max-width: 58%;
+    max-height: 118px;
   }
   .hero__meta {
     font-size: 13px;
@@ -1671,6 +1718,16 @@ body.room-focus.rail-peek .sidenav {
     font-size: 16px;
     -webkit-line-clamp: 3;
   }
+  .hero__logo.is-logo-big {
+    max-height: clamp(180px, 14vw, 280px);
+  }
+  .detail__logo.is-logo-big {
+    max-height: 186px;
+  }
+  .card-preview__logo.is-logo-big {
+    max-height: 116px;
+    margin-top: -58px; /* half of the 116px box */
+  }
   .detail__episodes {
     grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
   }
@@ -1698,6 +1755,13 @@ body.room-focus.rail-peek .sidenav {
   }
   .hero__logo {
     max-height: 132px;
+  }
+  .hero__logo.is-logo-big {
+    max-height: 320px;
+    max-width: min(680px, 78%);
+  }
+  .detail__logo.is-logo-big {
+    max-height: 232px;
   }
   .detail__title {
     font-size: 34px;
