@@ -26,6 +26,18 @@
         max-width: 70ch;
         line-height: 1.55;
       }
+      /* Presence toasts are fixed to the bottom of the window in the app; here
+         they are laid out inline so all three variants are visible at once.
+         The toast markup/classes are the SHIPPED ones (WP.Social.showPresenceToast). */
+      .pv-toasts {
+        position: static;
+        transform: none;
+        align-items: flex-start;
+      }
+      .pv-toasts .toast--presence {
+        max-width: 420px;
+        animation: none;
+      }
       .pv-h2 {
         font-size: 13px;
         text-transform: uppercase;
@@ -190,10 +202,20 @@
       </div>
     </div>
 
+    <h2 class="pv-h2">Presence notifications — a friend came online / started watching</h2>
+    <div id="toasts" class="toasts pv-toasts"></div>
+    <p class="pv-hint" style="margin-top: 14px">
+      Rendered by <code>WP.Social.showPresenceToast</code> — the same call the presence watcher makes,
+      with a stand-in for the long TTL so they stay on screen here. In the app they appear over
+      whatever surface you are on, dismiss themselves after 9s, and are muted by the bell in the
+      friends panel (<code>WP.icon('bell')</code> / <code>'bell-off'</code>).
+    </p>
+
     <h2 class="pv-h2">Every icon in the table</h2>
     <div class="pv-grid" id="all-icons"></div>
 
     <script src="../dist/js/utils.js"></script>
+    <script src="../dist/js/social.js"></script>
     <script>
       const icon = (name, size) => window.WP.icon(name, size);
 
@@ -261,7 +283,7 @@
       line('title-line', 'key', 18, 'Your access code');
 
       // full icon table
-      const names = ['volume-2','volume-x','star','heart','heart-fill','check','x','zap','edit','alert','key','users','user','play','pause','fast-forward','skip-forward','rotate-cw','arrow-left','chevron-left','chevron-right','copy','film'];
+      const names = ['volume-2','volume-x','star','heart','heart-fill','check','x','zap','edit','alert','key','users','user','play','pause','fast-forward','skip-forward','rotate-cw','arrow-left','chevron-left','chevron-right','bell','bell-off','copy','film'];
       const grid = document.getElementById('all-icons');
       names.forEach((n) => {
         const cell = document.createElement('div');
@@ -281,6 +303,30 @@
       document.getElementById('theme').addEventListener('click', () => {
         const html = document.documentElement;
         html.dataset.theme = html.dataset.theme === 'dark' ? 'light' : 'dark';
+      });
+      // ---- presence notifications: the SHIPPED component -------------------
+      // A stand-in for the friends payload: what /api/friends hands the watcher.
+      const WATCHING = (title, room) => ({
+        status: room ? 'WATCHING_PARTY' : 'WATCHING_SOLO',
+        room_id: room || '',
+        media_title: title,
+        media_id: '1',
+        current_timestamp: '12:34',
+        is_host: true,
+        last_updated: 0,
+      });
+      const ONLINE = {
+        status: 'IDLE', room_id: '', media_title: '', media_id: '',
+        current_timestamp: '', is_host: false, last_updated: 0,
+      };
+      const SAMPLES = [
+        { f: { username: 'alice', displayName: 'Alice', avatarUrl: '', avatarFrameId: 'gold' }, kind: 'online', p: ONLINE },
+        { f: { username: 'bob', displayName: 'Bob', avatarUrl: '', avatarFrameId: 'neon' }, kind: 'watching', p: WATCHING('Inception') },
+        { f: { username: 'carol', displayName: 'Carol', avatarUrl: '', avatarFrameId: 'rainbow' }, kind: 'party', p: WATCHING('Dune: Part Two', 'room-42') },
+      ];
+      SAMPLES.forEach((s) => {
+        // 1e9ms: a review page must not dismiss itself while you are looking at it.
+        window.WP.Social.showPresenceToast(s.f, s.kind, s.p, 1e9);
       });
     </script>
   </body>

@@ -1950,6 +1950,32 @@
     titleWrap.appendChild(count);
     head.appendChild(titleWrap);
 
+    // The presence bell: mute/unmute "a friend came online / started watching".
+    // Device pref (like the trailer sound toggle), so it is the same choice on
+    // every later visit — and the icon says which state it is in.
+    const bellBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn'));
+    bellBtn.type = 'button';
+    const paintBell = () => {
+      const on = notifyPrefOn();
+      bellBtn.classList.toggle('is-on', on);
+      bellBtn.title = on ? 'Presence notifications: on' : 'Presence notifications: muted';
+      bellBtn.setAttribute('aria-label', bellBtn.title);
+      bellBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (global.WP && global.WP.setIcon) global.WP.setIcon(bellBtn, on ? 'bell' : 'bell-off', 16);
+    };
+    bellBtn.addEventListener('click', () => {
+      const on = toggleNotifyPref();
+      paintBell();
+      toast(
+        on
+          ? 'Notifications on \u2014 you will hear about friends coming online'
+          : 'Notifications muted'
+      );
+    });
+    global.addEventListener('wp:notify-pref', paintBell);
+    paintBell();
+    head.appendChild(bellBtn);
+
     const refreshBtn = /** @type {HTMLButtonElement} */ (h('button', 'friends-rail__icon-btn', '⟳'));
     refreshBtn.type = 'button';
     refreshBtn.title = 'Refresh';
@@ -2308,6 +2334,7 @@
         if (changeDebounce) clearTimeout(changeDebounce);
         if (resizeTimer) clearTimeout(resizeTimer);
         global.removeEventListener('wp:friends-changed', onFriendsChanged);
+        global.removeEventListener('wp:notify-pref', paintBell);
         global.removeEventListener('resize', onResize);
         global.removeEventListener('wp:view-changed', onViewChanged);
         const homeEl = $('home');
@@ -2325,7 +2352,7 @@
   // Build marker: makes "which build am I running?" answerable at a glance
   // (DevTools console / WP.build / WP.apiBuild) instead of guesswork. If the
   // UI stamp and API stamp disagree, the deployment is split — redeploy.
-  global.WP.build = 'ui-2026-09-15.96';
+  global.WP.build = 'ui-2026-09-15.97';
   global.WP.apiBuild = null;
   try {
     console.info('[WatchParty] UI build:', global.WP.build);
@@ -2343,6 +2370,346 @@
   } catch (_) {}
 
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // 9. Presence notifications — "a friend just came online" / "started watching"
+  //
+  // Presence is the only signal this app gets about other people without a
+  // server push, and the friends panel already polls it every 30s. This
+  // section watches that SAME beat and raises an IN-APP notification when a
+  // friend actually CHANGES state:
+  //
+  //   OFFLINE   -> IDLE .......... "Alice is online"
+  //   OFFLINE   -> WATCHING_* .... "Alice is now watching Inception"
+  //   watching A -> watching B ... "Alice switched to Dune"
+  //   solo -> party .............. "Alice started a watch party · Inception"
+  //
+  // The rules that keep it from becoming noise (each one pinned by a test):
+  //   • the FIRST sweep after load (or after coming back to the tab) is a
+  //     BASELINE — walking into a room full of friends must not fire one
+  //     notification per head;
+  //   • one notification per friend per 10 minutes;
+  //   • at most 2 named notifications per sweep, the rest collapse into one
+  //     summary line;
+  //   • never for the room you are IN — those people are already on screen;
+  //   • nothing while the tab is hidden: a toast is READ, not queued, so the
+  //     next visible sweep re-baselines instead of replaying the backlog;
+  //   • a mute that sticks (device pref, like the trailer sound toggle), with
+  //     the bell in the friends panel.
+  // The sentences are English, like the rest of the friends panel.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A friend row exactly as `GET /api/friends` returns it: the public user
+   * fields FLAT (not nested under `user`, unlike FriendEntry) plus presence.
+   * @typedef {Object} PresenceFriend
+   * @property {string} username
+   * @property {string} displayName
+   * @property {string} avatarUrl
+   * @property {string} avatarFrameId
+   * @property {PresencePayload | null} presence
+   */
+
+  const NOTIFY_PREF_KEY = 'wp:notify-presence';
+  const NOTIFY_POLL_MS = 30_000; // the friends panel's own beat — one poll, two uses
+  const NOTIFY_COOLDOWN_MS = 10 * 60 * 1000; // per friend
+  const NOTIFY_MAX_NAMED = 2; // then one summary line for the rest
+  const NOTIFY_TTL_MS = 9000; // longer than a status toast: it has a Join in it
+  const NOTIFY_MAX_ON_SCREEN = 3; // a fourth would stack under the mobile bar
+
+  /** @returns {boolean} true unless the user muted presence notifications */
+  function notifyPrefOn() {
+    try {
+      return localStorage.getItem(NOTIFY_PREF_KEY) !== '0';
+    } catch (_) {
+      return true; // default: on
+    }
+  }
+
+  /** @param {boolean} on */
+  function setNotifyPref(on) {
+    try {
+      localStorage.setItem(NOTIFY_PREF_KEY, on ? '1' : '0');
+    } catch (_) {}
+    global.dispatchEvent(new CustomEvent('wp:notify-pref'));
+  }
+
+  /** @returns {boolean} the NEW state */
+  function toggleNotifyPref() {
+    const on = !notifyPrefOn();
+    setNotifyPref(on);
+    return on;
+  }
+
+  /**
+   * Presence folded down to the four things a notification cares about.
+   * @param {PresencePayload | null | undefined} p
+   * @returns {'offline' | 'idle' | 'solo' | 'party'}
+   */
+  function presenceKind(p) {
+    const s = p && p.status;
+    if (s === 'WATCHING_PARTY') return 'party';
+    if (s === 'WATCHING_SOLO') return 'solo';
+    if (s === 'IDLE') return 'idle';
+    return 'offline';
+  }
+
+  /**
+   * Same title? Prefer the id (titles repeat across remakes), fall back to text.
+   * @param {PresencePayload | null | undefined} a
+   * @param {PresencePayload | null | undefined} b
+   */
+  function sameTitle(a, b) {
+    if (!a || !b) return false;
+    const ida = a.media_id ? String(a.media_id) : '';
+    const idb = b.media_id ? String(b.media_id) : '';
+    if (ida && idb) return ida === idb;
+    return String(a.media_title || '') === String(b.media_title || '');
+  }
+
+  /**
+   * ONE presence change -> the notification it deserves, or null when there is
+   * nothing worth interrupting someone for (a goodbye, "stopped watching", a
+   * playback clock tick...).
+   * @param {PresencePayload | null | undefined} prev
+   * @param {PresencePayload | null | undefined} next
+   * @returns {{ kind: 'online' | 'watching' | 'switched' | 'party' } | null}
+   */
+  function presenceTransition(prev, next) {
+    const from = presenceKind(prev);
+    const to = presenceKind(next);
+    if (to === 'offline') return null; // never announce a goodbye
+    if (from === 'offline') return { kind: to === 'idle' ? 'online' : 'watching' };
+    if (to === 'idle') return null; // stopped watching: not an event
+    // Someone who was NOT watching (offline/idle) and now is has STARTED a
+    // title; "switched" only describes moving from one title to another.
+    if (from === 'idle') return { kind: 'watching' };
+    if (!sameTitle(prev, next)) return { kind: 'switched' };
+    if (to === 'party' && from !== 'party') return { kind: 'party' };
+    return null; // same title, same shape: just the clock moving
+  }
+
+  /**
+   * One sweep: diff the friends list against what we last saw, apply the
+   * cooldown, and update the snapshot. Mutates `seen` and `lastAt` (the two
+   * maps ARE the state) and returns the events to announce.
+   * @param {Map<string, PresencePayload | null>} seen username -> last payload
+   * @param {Array<PresenceFriend>} friends
+   * @param {Map<string, number>} lastAt username -> last announced at (ms)
+   * @param {number} now
+   * @param {{ announce?: boolean, currentRoomId?: string }} [opts]
+   * @returns {Array<{ friend: PresenceFriend, kind: 'online' | 'watching' | 'switched' | 'party', presence: PresencePayload | null }>}
+   */
+  function presenceSweep(seen, friends, lastAt, now, opts) {
+    const o = opts || {};
+    const announce = o.announce !== false;
+    const here = String(o.currentRoomId || '');
+    /** @type {Array<{ friend: PresenceFriend, kind: 'online' | 'watching' | 'switched' | 'party', presence: PresencePayload | null }>} */
+    const events = [];
+
+    (friends || []).forEach((f) => {
+      if (!f || !f.username) return;
+      /** @type {PresencePayload | null} */
+      const presence = f.presence || null;
+      const first = !seen.has(f.username);
+      const prev = first ? null : seen.get(f.username);
+      seen.set(f.username, presence);
+
+      const change = presenceTransition(prev, presence);
+      if (!change) return;
+      const room = String((presence && presence.room_id) || '');
+      if (here && room && room === here) return; // they are on screen right now
+      if (!announce) return; // baseline sweep: learn the room, say nothing
+      // The cooldown is per friend AND only applies to a friend we have already
+      // announced once: `|| 0` would read "never announced" as "announced at the
+      // epoch" and swallow the very first notification.
+      const last = lastAt.get(f.username);
+      if (last !== undefined && now - last < NOTIFY_COOLDOWN_MS) return;
+      lastAt.set(f.username, now);
+      events.push({ friend: f, kind: change.kind, presence: presence });
+    });
+    return events;
+  }
+
+  /**
+   * The line under the friend's name.
+   * @param {'online' | 'watching' | 'switched' | 'party'} kind
+   * @param {PresencePayload | null} p
+   */
+  function presenceNotifyText(kind, p) {
+    const title = (p && p.media_title) || 'a title';
+    if (kind === 'online') return 'is online';
+    if (kind === 'party') return 'started a watch party \u00b7 ' + title;
+    if (kind === 'switched') return 'switched to ' + title;
+    return presenceKind(p) === 'party'
+      ? 'is watching ' + title + ' in a party'
+      : 'is now watching ' + title;
+  }
+
+  /**
+   * The notification itself: framed avatar, name, what they are doing, and a
+   * Join button when there is a room to join. Clicking the card (anything but
+   * Join) opens their profile. It dismisses itself, but a pointer resting on it
+   * means someone is reading it, so the timer waits.
+   * @param {PresenceFriend} f
+   * @param {'online' | 'watching' | 'switched' | 'party'} kind
+   * @param {PresencePayload | null} p
+   * @param {number} [ttlOverride] tests only
+   * @returns {HTMLElement | null}
+   */
+  function showPresenceToast(f, kind, p, ttlOverride) {
+    const wrap = $('toasts');
+    if (!wrap) return null;
+    // Cap the stack: the oldest presence toast leaves first.
+    const live = wrap.querySelectorAll('.toast--presence');
+    const oldest = live[0];
+    if (live.length >= NOTIFY_MAX_ON_SCREEN && oldest) oldest.remove();
+
+    const node = h('div', 'toast toast--presence');
+    node.appendChild(avatarWithFrame(f.displayName, f.avatarUrl, f.avatarFrameId, 'avatar--sm'));
+
+    const body = h('div', 'toast__body');
+    body.appendChild(h('span', 'toast__name', f.displayName || f.username));
+    body.appendChild(h('span', 'toast__text', presenceNotifyText(kind, p)));
+    node.appendChild(body);
+
+    const room = String((p && p.room_id) || '');
+    if (room) {
+      const join = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--primary btn--sm toast__join', 'Join'));
+      join.type = 'button';
+      const what = (p && p.media_title) ? ' watching ' + p.media_title : '';
+      join.setAttribute('aria-label', 'Join ' + (f.displayName || f.username) + what);
+      join.addEventListener('click', (e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        global.location.assign('/room/' + encodeURIComponent(room));
+      });
+      node.appendChild(join);
+    }
+
+    node.addEventListener('click', () => {
+      global.location.assign('/user/' + encodeURIComponent(f.username));
+    });
+
+    wrap.appendChild(node);
+
+    let timer = /** @type {any} */ (null);
+    const ttl = Number(ttlOverride) > 0 ? Number(ttlOverride) : NOTIFY_TTL_MS;
+    const dismiss = () => {
+      node.classList.add('is-leaving');
+      setTimeout(() => node.remove(), 300);
+    };
+    const arm = () => {
+      timer = setTimeout(dismiss, ttl);
+    };
+    node.addEventListener('mouseenter', () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    });
+    node.addEventListener('mouseleave', arm);
+    arm();
+    return node;
+  }
+
+  /**
+   * Announce at most NOTIFY_MAX_NAMED friends by name; a sweep that turns up
+   * more than that gets ONE summary line instead of a wall of toasts.
+   * @param {Array<{ friend: PresenceFriend, kind: 'online' | 'watching' | 'switched' | 'party', presence: PresencePayload | null }>} events
+   */
+  function renderPresenceEvents(events) {
+    if (!events || !events.length) return;
+    const named = events.slice(0, NOTIFY_MAX_NAMED);
+    named.forEach((ev) => showPresenceToast(ev.friend, ev.kind, ev.presence));
+    const extra = events.length - named.length;
+    if (extra > 0) toast('+' + extra + ' more friends are active');
+  }
+
+  /** The room in the address bar, or '' — used to stay quiet about it. */
+  function roomInUrl() {
+    try {
+      const m = /^\/room\/([^/?#]+)/.exec(global.location.pathname || '');
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /** @type {{ poll: () => Promise<void>, stop: () => void } | null} */
+  let notifyWatch = null;
+
+  /**
+   * Start watching presence for the rest of the session (idempotent). Safe for
+   * an anonymous visitor: with no session there is nothing to watch, and the
+   * watched state is dropped so signing in starts from a clean baseline.
+   */
+  function startPresenceWatch() {
+    if (notifyWatch) return notifyWatch;
+    /** @type {Map<string, PresencePayload | null>} */ const seen = new Map();
+    /** @type {Map<string, number>} */ const lastAt = new Map();
+    let baselined = false;
+    let inflight = false;
+
+    async function poll() {
+      if (inflight) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (!getSession()) {
+        seen.clear();
+        lastAt.clear();
+        baselined = false;
+        return;
+      }
+      inflight = true;
+      try {
+        const data = await api('/api/friends');
+        const list = (data && data.friends) || [];
+        const first = !baselined;
+        baselined = true;
+        const events = presenceSweep(seen, list, lastAt, Date.now(), {
+          announce: !first && notifyPrefOn(),
+          currentRoomId: roomInUrl(),
+        });
+        renderPresenceEvents(events);
+      } catch (_) {
+        // Offline / session expired: keep the snapshot and try again next beat.
+      } finally {
+        inflight = false;
+      }
+    }
+
+    // Coming BACK to the tab re-baselines: whatever happened while it was in
+    // the background is news the user was not there for.
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        baselined = false;
+        return;
+      }
+      poll();
+    };
+    const onChange = () => {
+      void poll();
+    };
+
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    global.addEventListener('wp:friends-changed', onChange);
+
+    const beat = setInterval(() => {
+      void poll();
+    }, NOTIFY_POLL_MS);
+
+    notifyWatch = {
+      poll,
+      stop() {
+        clearInterval(beat);
+        if (typeof document !== 'undefined' && document.removeEventListener) {
+          document.removeEventListener('visibilitychange', onVisibility);
+        }
+        global.removeEventListener('wp:friends-changed', onChange);
+        notifyWatch = null;
+      },
+    };
+    return notifyWatch;
+  }
+
   // 11b. LIKES: uncapped taste signal -> profile "Liked" + For You row
   // ---------------------------------------------------------------------------
   /** @type {Set<string> | null} own liked mediaIds (drives card hearts) */
@@ -2597,6 +2964,11 @@
     mountFriendsRail,
     toggleFriendsRail,
     refreshFriendsRail,
+    startPresenceWatch,
+    showPresenceToast,
+    notifyPrefOn,
+    setNotifyPref,
+    toggleNotifyPref,
     toggleAdminPanel,
     getLikeIds,
     toggleLike,

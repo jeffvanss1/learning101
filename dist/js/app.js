@@ -280,6 +280,10 @@
     // Global friends drawer — mounted ONCE at boot (body-level markup); the
     // side-nav "Friends" item only toggles it. Polling starts when opened.
     if (WP.Social) WP.Social.mountFriendsRail($('friends-rail'));
+    // Presence notifications ride their own beat: they must fire whether or not
+    // the friends panel is on screen ("a friend came online / started
+    // watching"). No session, no polling — and the panel's bell mutes them.
+    if (WP.Social && WP.Social.startPresenceWatch) WP.Social.startPresenceWatch();
 
     document.querySelectorAll('.modal__close').forEach((btn) => {
       btn.addEventListener('click', () => closeModal(btn.dataset.close));

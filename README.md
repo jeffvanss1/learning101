@@ -1897,3 +1897,54 @@ social v57 / ui-2026-09-15.95.
   vs NOW (what ships). The review page never loads a real YT player.
 Tests 269/269, check clean. catalog js v35 / catalog css v36 / social v58 /
 ui-2026-09-15.96.
+
+## Presence notifications: a friend came online, or started watching (ui-2026-09-15.97)
+- USER: "make a notification on the website when someone goes online or watching".
+- WHAT: presence is the only signal this app gets about other people without a
+  server push (the friends panel already polls `/api/friends`, which carries
+  every friend's presence payload). A new watcher (social.js section 9) rides
+  that SAME 30s beat and raises an IN-APP notification when a friend actually
+  CHANGES state:
+  - `OFFLINE -> IDLE` ........... "Alice is online"
+  - `OFFLINE/IDLE -> WATCHING_*`  "Alice is now watching Inception"
+  - watching A -> watching B .... "Alice switched to Dune" (told apart by
+    media_id first, title text second)
+  - `WATCHING_SOLO -> WATCHING_PARTY` for the same title: "Alice started a
+    watch party · Inception".
+  A goodbye, a stop ("stopped watching") and the playback clock ticking are
+  deliberately NOT events.
+- THE TOAST: framed avatar + name + the line, plus a **Join** button whenever
+  the friend has a room (aria-labelled "Join Alice watching Inception"); the
+  card itself opens their profile. It dismisses itself after 9s, but a pointer
+  resting on it pauses the timer (a notification is read, not raced), and the
+  stack is capped at 3 (a fourth would hide under the mobile bar).
+- THE RULES THAT KEEP IT QUIET (each one pinned by a test): the first sweep
+  after load — or after coming back to the tab — is a BASELINE, so walking into
+  a room full of friends never fires a toast per head; one notification per
+  friend per 10 minutes; at most 2 named notifications per sweep, the rest
+  collapse into one "+N more friends are active"; never for the room you are IN
+  (those people are already on screen); nothing while the tab is hidden (the
+  next visible sweep re-baselines instead of replaying the backlog); and an
+  anonymous visitor never polls at all.
+- MUTE: a bell in the friends panel header (`WP.icon('bell')` / `'bell-off'`,
+  `aria-pressed`) toggles the device pref `wp:notify-presence` — default ON,
+  persisted like the trailer-sound toggle, and announced with a toast.
+- SERVER: no changes. `/api/friends` already returns the presence payload per
+  friend (status, room_id, media_title, media_id, current_timestamp, is_host).
+  Presence TTLs and the WATCHING-vs-IDLE downgrade guard live in src/presence.ts.
+- TESTS: tests/presence-notify.test.mjs (20 cases) EXECUTES the shipped
+  section: the four-state fold, the transition table (events vs non-events),
+  the baseline sweep, the per-friend cooldown, the current-room suppression,
+  the watcher (first sweep silence, no-session no-poll, hidden-tab silence,
+  singleton handle + stop()), the toast DOM (avatar/name/line, Join -> room,
+  card -> profile, hover pause, stack cap), the batch ceiling + summary, the
+  mute pref, the bell wiring, and the CSS contract (flex, wrap, pointer-events,
+  themed ink, no colour literals). Two REAL bugs were found by these tests
+  before shipping: the watcher computed the events and never rendered them, and
+  the cooldown treated "never announced" as "announced at the epoch" (which
+  would have swallowed the first notification of a session).
+- PREVIEW: scripts/icon-preview.html gained a presence-notification section —
+  the three variants, rendered by the shipped `WP.Social.showPresenceToast`.
+Tests 289/289, check clean. utils v10 / app v58 / social v59 / social css v20 /
+ui-2026-09-15.97. (tsc/checkJs also passes: the section carries a PresenceFriend
+typedef for the FLAT friend rows /api/friends returns.)
