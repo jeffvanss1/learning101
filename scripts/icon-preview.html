@@ -64,6 +64,10 @@
       }
       .pv-tooltip-wrap .card-preview {
         width: 360px;
+        /* the app positions this with JS; in the gallery it just sits inline */
+        position: static;
+        z-index: auto;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
       }
       .pv-stage {
         border-radius: 14px;
