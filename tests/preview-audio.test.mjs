@@ -336,7 +336,7 @@ test('trailer audio: CSS ships the bigger tooltip + the ghost icon toggle (theme
   assert.match(css, /\.card-preview__sound\.is-on \{[^}]*color: var\(--text\);/, 'ON state brightens the icon (themed ink)');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/catalog\.js\?v=33/, 'catalog js cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=32/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=33/, 'catalog css cache-bumped');
 });
 
 test('icons: the shipped UI carries NO emoji glyphs (inline SVG only)', () => {

@@ -1713,7 +1713,12 @@ netflix" → and then: "make it responsive from mobile to TV full hd and 4k".
 Tests 247/247, check clean. player v16 / catalog v31 / catalog css v30 / style v27 /
 social v52 / ui-2026-09-15.90.
 
-## Title logos: ONE rule for every shape (ui-2026-09-15.92)
+## Title logos: ONE rule for every shape + real breathing room (ui-2026-09-15.93)
+
+USER: "its a bit inconsistance, can you make it consistance", then "make a gap
+between title logo and rating, or you know better than me to make it less
+crowded".
+
 
 USER: "sometimes when the logo too small ... make it outside the border and in the
 middle of between trailer overlay and the title text", then "its a bit
@@ -1753,5 +1758,15 @@ inconsistance, can you make it consistance" -> chosen: one rule, every logo.
   exactly one phone hero-logo rule (the duplicate-cascade guard).
 - PREVIEW: scripts/logo-options.html shows Before vs Now with the same three art
   shapes in each row.
-Tests 250/250, check clean. catalog v33 / catalog css v32 / social v54 /
-ui-2026-09-15.92.
+- LESS CROWDED (the second report): the gap under the art was **4px** — the
+  logo had `margin-bottom: 2px` and the meta row `margin-top: 4px`, and adjacent
+  sibling margins COLLAPSE, so the rating hugged a 104px lockup. The rhythm is
+  now one token, `--logo-gap`, consumed by all three surfaces (tooltip art
+  margin-bottom, detail header margin-bottom, hero content gap) and scaled like
+  everything else: 12px desktop / 10px phone / 14px >=1600px / 16px >=2400px.
+  The meta row keeps its 4px top margin on purpose — that is the no-art gap, and
+  collapsing means the larger value (the token) always wins, so a card with a
+  text title and a card with a logo both breathe. Locked by a test that pins the
+  token, its three consumers and the collapse arithmetic.
+Tests 251/251, check clean. catalog v33 / catalog css v33 / social v55 /
+ui-2026-09-15.93.

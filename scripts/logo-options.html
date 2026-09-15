@@ -45,9 +45,12 @@
         max-width: 74%;
         max-height: 44px;
         margin-top: 0;
-        margin-bottom: 2px;
+        margin-bottom: 2px; /* + the meta's 4px: collapsed to just 4px */
         position: static;
         filter: none;
+      }
+      .opt-before .card-preview__meta {
+        margin-top: 4px; /* the old crowding: max(2, 4) = 4px under the art */
       }
       .opt-before .card-preview__logo.is-was-big {
         max-width: 88%;
@@ -196,14 +199,14 @@
       const VARIANTS = [
         {
           tag: 'Before',
-          name: 'Two tiers: wide art in the text column, small art over the trailer',
-          note: 'What read as inconsistent: hovering a wide wordmark and a square mark gave two structurally different tooltips — different size, different position, and only one of them had a shadow (and overlapped the trailer).',
+          name: 'Tight lockup: 4px under the art, two different treatments',
+          note: 'Two problems at once: adjacent margins collapsed to a 4px gap between the art and the rating row (crowded exactly where a 104px lockup lands), and a wide wordmark vs a square mark gave two structurally different tooltips — different size, position and shadow.',
           cls: 'opt-before',
         },
         {
           tag: 'Now',
-          name: 'ONE rule for every logo — same box, same fold, same shadow',
-          note: 'Every logo is left-aligned with the text column and its CENTRE sits on the fold between the trailer and the title text, so half of it covers the trailer’s bottom edge. Only the art’s own height differs (a 6:1 wordmark is naturally shorter than a square mark) — never the treatment. The hero and the details header carry one cap for every shape too, and the compact “choose a video” banner keeps a single smaller measure.',
+          name: 'ONE rule for every logo — same box, same fold, real breathing room',
+          note: 'Every logo is left-aligned with the text column and its CENTRE sits on the fold between the trailer and the title text, so half of it covers the trailer’s bottom edge. The gap under the art is now one shared token (<code>--logo-gap</code>: 12px desktop, 10px phone, 14/16px on big screens) used by the tooltip, the hero and the details header, so the rating row can never crowd the lockup or drift between surfaces. Only the art’s own height differs — never the treatment.',
           pick: true,
         },
       ];

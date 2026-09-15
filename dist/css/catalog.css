@@ -795,7 +795,7 @@ body.room-focus.rail-peek .sidenav {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--logo-gap, 12px); /* badge / logo / rating / plot share one rhythm */
   color: #fff; /* the banner owns its ink: always on-art */
 }
 
@@ -951,6 +951,11 @@ body.room-focus.rail-peek .sidenav {
 :root {
   --card-w: 158px;
   --card-h: 237px; /* fixed 2:3 poster height */
+  /* THE LOCKUP RHYTHM: the space between a title logo and the line under it
+     (the rating/meta row). One token for the tooltip, the hero and the details
+     header so the three surfaces can never drift apart again — and it scales
+     with the screen like the caps and posters do (10 / 12 / 14 / 16px). */
+  --logo-gap: 12px;
 }
 
 .card-item {
@@ -1161,7 +1166,7 @@ body.room-focus.rail-peek .sidenav {
   width: auto;
   height: auto;
   margin-top: -52px; /* fallback: half of the 104px box */
-  margin-bottom: 2px;
+  margin-bottom: var(--logo-gap, 12px); /* breathing room before the rating row */
   position: relative; /* paints above the trailer (it is a positioned layer) */
   z-index: 2;
   object-fit: contain;
@@ -1172,7 +1177,11 @@ body.room-focus.rail-peek .sidenav {
 .card-preview__meta {
   font-size: 12.5px;
   color: var(--text-muted);
-  margin: 4px 0 8px;
+  /* The 4px is the gap for a card WITHOUT art (text title -> rating). With a
+     logo, adjacent sibling margins collapse to the larger of the two, so the
+     lockup's --logo-gap (12px) wins and the rating never sits tighter than
+     that — measured, not guessed, because collapsing is easy to forget. */
+  margin: 4px 0 10px;
 }
 
 .card-preview__overview {
@@ -1412,7 +1421,7 @@ body.room-focus.rail-peek .sidenav {
   max-height: clamp(84px, 7vw, 132px);
   width: auto;
   height: auto;
-  margin-bottom: 8px;
+  margin-bottom: var(--logo-gap, 12px); /* same gap before the rating row */
   object-fit: contain;
   object-position: left center;
 }
@@ -1566,7 +1575,8 @@ body.room-focus.rail-peek .sidenav {
   .hero__content {
     max-width: 100%;
     padding: 18px 16px;
-    gap: 10px;
+    /* gap intentionally unset: the phone tier's --logo-gap (10px) governs, so
+       the tooltip, the hero and the details stay on the same rhythm. */
   }
   /* A phone banner is 240-320px tall: the same single measure, scaled down. */
   .hero__logo {
@@ -1592,6 +1602,7 @@ body.room-focus.rail-peek .sidenav {
   :root {
     --card-w: 132px;
     --card-h: 198px;
+    --logo-gap: 10px; /* a phone is tighter everywhere; the ratio holds */
   }
   .card-item {
     flex-basis: var(--card-w);
@@ -1666,6 +1677,7 @@ body.room-focus.rail-peek .sidenav {
   :root {
     --card-w: 182px;
     --card-h: 273px;
+    --logo-gap: 14px;
   }
   .row__title {
     margin-bottom: 14px;
@@ -1712,6 +1724,7 @@ body.room-focus.rail-peek .sidenav {
   :root {
     --card-w: 214px;
     --card-h: 321px;
+    --logo-gap: 16px; /* 4K: the lockup breathes as the type grows */
   }
   .card-item__title {
     font-size: 17px;

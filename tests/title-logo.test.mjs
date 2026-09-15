@@ -368,6 +368,50 @@ test('CSS: the banner is bigger, the logo is bounded, the text clip is accessibl
   assert.doesNotMatch(util, /display:\s*none/, 'the accessible name must survive');
 });
 
+test('CSS: ONE lockup rhythm — the gap under the logo is a shared token', () => {
+  const css = read('dist/css/catalog.css');
+
+  // The token (and its size scale) lives with the other catalog tokens.
+  assert.match(css, /--logo-gap: 12px;/, 'the base rhythm');
+  const cols = read('dist/css/catalog.css').split('\n');
+  const tierFor = (media, value) => {
+    const i = cols.findIndex((l) => l.includes('@media (min-width: ' + media + 'px)'));
+    assert.ok(i >= 0, media + ' tier exists');
+    // The token sits in that tier's :root block (tokens first, then the rules).
+    const body = cols.slice(i, i + 12).join('\n');
+    assert.ok(body.includes('--logo-gap: ' + value + ';'), media + ' tier rhythm (' + value + ')');
+  };
+  tierFor(1600, '14px');
+  tierFor(2400, '16px');
+  // NB: catalog.css has two max-width:720px blocks (the mobile nav one comes
+  // first), so anchor on the tier's own token block instead of the media line.
+  const phoneTok = cols.findIndex((l) => l.includes('--card-w: 132px;'));
+  assert.ok(phoneTok >= 0, 'the phone tier token block exists');
+  assert.ok(
+    cols.slice(phoneTok, phoneTok + 4).join('\n').includes('--logo-gap: 10px;'),
+    'the phone tier tightens it like everything else'
+  );
+
+  // All three surfaces consume it — that is the consistency contract.
+  const uses = css.match(/var\(--logo-gap/g) || [];
+  assert.equal(uses.length, 3, 'tooltip + hero + details: exactly three consumers');
+  const logo = css.slice(css.indexOf('.card-preview__logo {'), css.indexOf('.card-preview__meta {'));
+  assert.match(logo, /margin-bottom: var\(--logo-gap, 12px\);/, 'the tooltip art owns the gap');
+  const detail = css.slice(css.indexOf('.detail__logo {'), css.indexOf('.detail__meta {'));
+  assert.match(detail, /margin-bottom: var\(--logo-gap, 12px\);/, 'and the detail header');
+  const hero = css.slice(css.indexOf('.hero__content {'), css.indexOf('.hero__badge {'));
+  assert.match(hero, /gap: var\(--logo-gap, 12px\);/, 'the banner shares the same rhythm');
+
+  // The rating row must never sit tighter than the token: its own top margin is
+  // the no-art gap, and adjacent sibling margins collapse to the larger value —
+  // so a 4px there can not shave the 12px lockup gap (that was the crowding:
+  // 2px + 4px collapsing to 4px).
+  const meta = css.slice(css.indexOf('.card-preview__meta {'), css.indexOf('.card-preview__overview {'));
+  const top = Number((meta.match(/margin:\s*(\d+)px 0/) || [])[1]);
+  assert.equal(top, 4, 'the no-art gap stays 4px (larger sibling margin wins)');
+  assert.ok(top < 12, 'and it is smaller than the lockup gap, so it can never shave it');
+});
+
 test('CSS: the whole sheet scales from a phone to a 4K TV', () => {
   const css = read('dist/css/catalog.css');
   const phone = css.slice(css.indexOf('@media (max-width: 720px) {'), css.indexOf('@media (max-width: 520px) {'));
