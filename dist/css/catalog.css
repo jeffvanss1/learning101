@@ -362,11 +362,15 @@ body.room-focus.rail-peek .sidenav {
     box-shadow: 18px 0 42px rgba(0, 0, 0, 0.45);
     z-index: 60;
     transform: translateX(-102%);
-    transition: transform 0.24s ease;
+    /* Off-canvas is not enough: the closed sheet must also be unreachable by
+       keyboard and screen readers. visibility flips at the ends of the slide. */
+    visibility: hidden;
+    transition: transform 0.24s ease, visibility 0.24s ease;
   }
 
   body.menu-open .sidenav {
     transform: none;
+    visibility: visible;
   }
 
   .sidenav__sheet-head {
@@ -433,6 +437,21 @@ body.room-focus.rail-peek .sidenav {
 
   .sidenav-backdrop[hidden] {
     display: none;
+  }
+
+  /* Arabic (i18n sets dir=rtl): a left-anchored sheet would read backwards, so
+     the mirror is the right edge — same slide, opposite side. */
+  [dir='rtl'] .sidenav {
+    left: auto;
+    right: 0;
+    border-right: none;
+    border-left: 1px solid var(--border);
+    box-shadow: -18px 0 42px rgba(0, 0, 0, 0.45);
+    transform: translateX(102%);
+  }
+
+  [dir='rtl'] body.menu-open .sidenav {
+    transform: none;
   }
 }
 

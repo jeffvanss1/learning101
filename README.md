@@ -1588,9 +1588,13 @@ a "More" sheet; the bar hides inside a room (the in-room peek brings it back).
   room, sheet open/close via More/X/backdrop/Escape, navigation closes the sheet,
   and the CSS layout contract (5-slot grid, off-canvas sheet, room hiding +
   peek, safe area, desktop-gated collapse). 15 cases.
+- A11Y / RTL: the closed sheet is `visibility: hidden` as well as off-canvas
+  (keyboard + screen readers cannot reach a closed menu; visibility flips at the
+  ends of the slide), and Arabic mirrors the sheet to the RIGHT edge with the
+  shadow/border flipped — a left-anchored drawer would read backwards.
 - PREVIEW: scripts/mobile-preview.html renders a 390x780 phone frame
   (scripts/mobile-frame.html = the shipped app shell in an iframe, because the
   mobile rules are media queries) with buttons for the sheet, a room, the peek
   and the theme — design review without a device.
-Tests 225/225, check clean. catalog css v28 / style css v26 / app v57 /
+Tests 225/225, check clean. catalog css v29 / style css v26 / app v57 /
 social v50 / i18n v4 / ui-2026-09-15.88.

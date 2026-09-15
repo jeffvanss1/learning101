@@ -328,7 +328,9 @@ test('CSS: bar is display:none on desktop and a 5-slot grid on phones', () => {
 test('CSS: the rail becomes an off-canvas sheet (backdrop behind it, labels kept)', () => {
   const mobile = CSS.slice(CSS.indexOf('@media (max-width: 720px) {'), CSS.indexOf('@media (max-width: 520px)'));
   assert.match(mobile, /\.sidenav \{[\s\S]*?position: fixed;[\s\S]*?transform: translateX\(-102%\);/, 'rail slides in from the left');
-  assert.match(mobile, /body\.menu-open \.sidenav \{\n    transform: none;\n  \}/, 'menu-open reveals it');
+  assert.match(mobile, /body\.menu-open \.sidenav \{[^}]*transform: none;[^}]*visibility: visible;/, 'menu-open reveals it');
+  assert.match(mobile, /\.sidenav \{[\s\S]*?visibility: hidden;/, 'the closed sheet is unreachable (keyboard/AT)');
+  assert.match(mobile, /\[dir='rtl'\] \.sidenav \{[\s\S]*?right: 0;[\s\S]*?transform: translateX\(102%\);/, 'Arabic mirrors the sheet to the right');
   assert.match(mobile, /\.sidenav-backdrop \{[\s\S]*?z-index: 55;/, 'backdrop above content');
   assert.match(mobile, /\.sidenav \{[\s\S]*?z-index: 60;/, 'sheet above the backdrop');
   assert.match(mobile, /\[data-nav='home'\][\s\S]*?\[data-nav='friends'\] \{\n    display: none;\n  \}/, 'sheet hides what the bar already carries');
