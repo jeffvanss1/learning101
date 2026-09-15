@@ -34,9 +34,10 @@ test('colors: hardcoded literal allowlist is EXACT (any new literal must be revi
     // catalog.css #fff: on-media inks + the mobile centre-slot disc (white ink
     // on the red friends disc, same treatment as .btn--primary).
     // catalog.css #fff: on-media inks (hero badge, hero title, card badge,
-    // like heart, mobile centre-slot disc, history card) - the banner owns its
-    // ink because it sits on artwork in BOTH themes.
-    'dist/css/catalog.css': { '#fff': 8, '#d4d4d4': 1 },
+    // like heart, mobile centre-slot disc, history card, and the queue label on
+    // a resume card) - the banner owns its ink because it sits on artwork in
+    // BOTH themes.
+    'dist/css/catalog.css': { '#fff': 9, '#d4d4d4': 1 },
     'dist/css/social.css': { '#fff': 4, '#0b0b0b': 1, '#7ee08a': 1, '#444': 1 },
   };
   const style = readFileSync(join(ROOT, 'dist/css/style.css'), 'utf8');
@@ -93,9 +94,10 @@ test('stylesheet duplication is BANNED (stale second copy once overrode every th
   // ~2250 lines), NOT a style budget — raised 1400 -> 1500 for the trailer
   // audio toggle, 1500 -> 1900 for the responsive TV tiers + title-logo rules,
   // 1900 -> 1960 for the small-art big box (.is-logo-big) -> 2120 for the row
-  // rail (chevron buttons + the edge fades). The top-level marker counts above
-  // are the real duplication detector.
-  assert.ok(catalog.split('\n').length < 2120, 'catalog.css stays deduplicated');
+  // rail (chevron buttons + the edge fades) -> 2200 for the tailored home
+  // (category pills + the continue-watching art). The top-level marker counts
+  // above are the real duplication detector.
+  assert.ok(catalog.split('\n').length < 2200, 'catalog.css stays deduplicated');
   assert.equal(count(style, '.btn--primary {'), 1, 'style.css: no duplicate .btn--primary');
   assert.equal(count(social, '.presence--idle {'), 1, 'social.css: no duplicate .presence--idle');
 });

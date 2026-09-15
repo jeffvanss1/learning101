@@ -2011,5 +2011,44 @@ typedef for the FLAT friend rows /api/friends returns.)
   adjustable; the page's own replay engine reproduces the numbers below). On a
   6s refill with 1.2s of lag: 11 corrections and 100% spinner before, 3
   corrections and 65% playback after.
-Tests 302/302, check clean. player v18 / utils v10 / app v58 / social v60 /
-social css v20 / ui-2026-09-15.99.
+## A home that answers to what you watch: category pills + the watched-the-most feed (ui-2026-09-16.100)
+
+**USER:** *"how about we tailor the home page base what user watched the most? and
+make catagory pills above it like youtube"*
+
+- **CATEGORY PILLS above the feed** (the home page only — the room's video picker
+  mounts the same feed untailored). All / Movies / Series / Anime / Trending Now in
+  one non-wrapping row that scrolls sideways on a phone and rides under the top nav
+  while you scroll. A pill changes which ROWS the feed shows, in place, and the feed
+  only ever fetches what the active pill shows (switching back to All picks the rest
+  up). The same chip row is still the type filter while search results are up: it
+  swaps its labels with the context, one component, two jobs.
+- **TAILORED ORDER** from data the app already has — local `wp:history` plus the
+  server copy for signed-in viewers, no extra catalogue calls. A series watched ten
+  times leaves ten history rows, so the row COUNT per title is the "watched the
+  most" signal: the feed leads with the rows of the dominant type (trending rides
+  beside them) and the billboard picks from the trending pool by that same type.
+  Fewer than 3 watched rows = no taste to read yet, and the home is exactly what it
+  was before.
+- **CONTINUE WATCHING:** the unfinished titles, most recent first, each card carrying
+  its progress bar and the queued episode ("S1 E5"); a click resumes THAT episode
+  (the stored bingr URL wins over anything rebuilt from the ids). Anything with
+  under 45s left is finished, not resumable.
+- **BECAUSE YOU WATCHED X:** TMDB's own recommendations for the title watched the
+  most, minus everything already in the history (recommending what you are already
+  watching is not a recommendation). An anime seed uses the TMDB tv endpoint and the
+  results come back tagged anime.
+- **I18N:** the pill labels reuse `nav.*`; the new strings (`feed.continue`,
+  `feed.because`, `feed.catAll`, `feed.catEmpty`) landed in all six dictionaries.
+- **TESTS:** tests/home-personal.test.mjs EXECUTES the shipped catalog.js against a
+  stub DOM — the tailored order + hero bias, the pills filtering in place and
+  pulling the rows they uncover, the chip row swapping back to the type filters in
+  search, the untouched untailored mount, and the no-history viewer still getting
+  the plain feed. The color audit re-reviewed one new `#fff` (the queue label sits
+  on artwork) and the shape rule kept the pills flat 8px rather than ovals.
+- **PREVIEW:** scripts/home-lab.html renders the real feed against a fake catalogue
+  with three viewers (binges series / binges anime / no history) — click the pills
+  and switch viewers to watch the page re-tailor itself.
+
+Tests 307/307, check clean. player v18 / utils v10 / app v59 / catalog v36 /
+catalog css v37 / i18n v6 / social v60 / social css v20 / ui-2026-09-16.100.

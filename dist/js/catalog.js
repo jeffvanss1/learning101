@@ -974,6 +974,18 @@
     }
     poster.appendChild(h('span', 'card-item__badge', typeLabel(item)));
 
+    // Continue watching: how far into the episode the viewer already is, and
+    // which episode the card would resume (the row is built from history).
+    if (Number(item.progress) > 0) {
+      const track = h('span', 'card-item__progress');
+      track.setAttribute('aria-hidden', 'true');
+      const fill = h('span', 'card-item__progress-fill');
+      fill.style.width = Math.max(2, Math.round(Number(item.progress) * 100)) + '%';
+      track.appendChild(fill);
+      poster.appendChild(track);
+    }
+    if (item.resumeLabel) poster.appendChild(h('span', 'card-item__resume', item.resumeLabel));
+
     // LIKE HEART: top-right of the poster; state from the WP.Social cache.
     const likeBtn = document.createElement('button');
     likeBtn.type = 'button';
@@ -1453,6 +1465,218 @@
   }
 
 
+  // ---- what you watched the most (home tailoring) --------------------------------
+  // The tailored home reads data the app ALREADY has, so it costs no extra
+  // catalogue calls: the local watch history (wp:history — one row per episode,
+  // most recent first) merged with the server copy for signed-in viewers. A
+  // series watched ten times leaves ten rows, so the ROW COUNT per title is the
+  // "watched the most" signal, and the type with the most rows is the taste the
+  // feed leads with. A viewer with no history is served the plain feed.
+  const TASTE_MIN_ROWS = 3; // fewer watched rows than this = no taste to read yet
+  const RESUME_MIN_LEFT = 45; // seconds left — nearly finished is not "continue"
+  const RESUME_MAX_ITEMS = 20;
+  const RECS_PER_SEED = 18;
+
+  /** @param {any} t @returns {string|null} the types the tailoring knows */
+  function tasteType(t) {
+    return t === 'anime' ? 'anime' : t === 'tv' ? 'tv' : t === 'movie' ? 'movie' : null;
+  }
+
+  /**
+   * Accumulates watch rows (local and/or server) into one taste profile.
+   * Local rows win for resume data (they carry the position the viewer left
+   * at); server rows add the cross-device ones.
+   * @returns {{ merge: (raw: any, isServer: boolean) => void, finish: () => any }}
+   */
+  function tasteBuilder() {
+    const titles = new Map(); // "type:id" -> entry
+    const seenLocal = new Map(); // "type:id" -> Set(rowKey), local history rows
+    const seenServer = new Map(); // "type:id" -> Set(rowKey), server rows
+
+    function merge(raw, isServer) {
+      if (!raw) return;
+      const type = tasteType(isServer ? raw.mediaType : raw.type);
+      const id = isServer ? raw.mediaId : raw.id;
+      if (!type || id == null || id === '') return;
+      const key = type + ':' + String(id);
+      let e = titles.get(key);
+      if (!e) {
+        e = {
+          key: key,
+          type: type,
+          id: String(id),
+          title: '',
+          poster: '',
+          backdrop: '',
+          year: '',
+          rating: null,
+          malId: null,
+          anilistId: null,
+          src: '',
+          season: null,
+          episode: null,
+          position: 0,
+          duration: 0,
+          last: 0,
+          plays: 0,
+        };
+        titles.set(key, e);
+      }
+      const title = String((isServer ? raw.mediaTitle : raw.title) || '').trim();
+      if (title && !e.title) e.title = title;
+      const poster = (isServer ? raw.posterUrl : raw.poster) || '';
+      if (poster && !e.poster) e.poster = String(poster);
+      const backdrop = (isServer ? raw.backdropUrl : raw.backdrop) || '';
+      if (backdrop && !e.backdrop) e.backdrop = String(backdrop);
+      if (e.malId == null && raw.malId != null) e.malId = String(raw.malId);
+      if (e.anilistId == null && raw.anilistId != null) e.anilistId = String(raw.anilistId);
+      if (!e.src && !isServer && raw.src) e.src = String(raw.src);
+      const season = raw.season != null ? Number(raw.season) : null;
+      const episode = raw.episode != null ? Number(raw.episode) : null;
+      const last = Number(raw.watchedAt) || 0;
+      // The same episode sits in the local list AND (when signed in) on the
+      // server: count each source on its own keys and keep the larger count,
+      // so one watch can never count twice.
+      const bucket = isServer ? seenServer : seenLocal;
+      let rows = bucket.get(key);
+      if (!rows) {
+        rows = new Set();
+        bucket.set(key, rows);
+      }
+      rows.add(season + '|' + episode + '|' + (type === 'movie' ? last : ''));
+      if (last >= e.last) {
+        e.last = last;
+        if (season != null) e.season = season;
+        if (episode != null) e.episode = episode;
+        const pos = Number(isServer ? raw.positionSeconds : raw.position) || 0;
+        const dur = Number(isServer ? raw.durationSeconds : raw.duration) || 0;
+        if (pos) e.position = pos;
+        if (dur) e.duration = dur;
+        if (isServer && raw.completed) e.position = 0; // finished: nothing to resume
+        if (!e.year && !isServer && raw.year) e.year = String(raw.year);
+        if (e.rating == null && !isServer && raw.rating != null) e.rating = Number(raw.rating);
+      }
+    }
+
+    function finish() {
+      const list = [];
+      const byType = { movie: 0, tv: 0, anime: 0 };
+      titles.forEach((e) => {
+        const l = seenLocal.get(e.key);
+        const s = seenServer.get(e.key);
+        e.plays = Math.max(l ? l.size : 0, s ? s.size : 0);
+        if (!e.title) return; // a row with no title cannot be rendered as a card
+        byType[e.type] += e.plays;
+        list.push(e);
+      });
+      // Watched the most first; ties go to the most recent.
+      list.sort((a, b) => b.plays - a.plays || b.last - a.last);
+      let dominant = null;
+      ['movie', 'tv', 'anime'].forEach((t) => {
+        if (byType[t] && (!dominant || byType[t] > byType[dominant])) dominant = t;
+      });
+      return {
+        titles: list,
+        byType: byType,
+        dominant: dominant,
+        rows: list.reduce((n, e) => n + e.plays, 0),
+      };
+    }
+
+    return { merge: merge, finish: finish };
+  }
+
+  /**
+   * Taste from the LOCAL history alone — synchronous, so the billboard can be
+   * picked without waiting on any request.
+   * @returns {any}
+   */
+  function localTaste() {
+    const b = tasteBuilder();
+    const local = global.WP && global.WP.historyGet ? global.WP.historyGet() || [] : [];
+    local.forEach((e) => b.merge(e, false));
+    return b.finish();
+  }
+
+  /**
+   * The full profile: local history + the server copy (signed-in viewers).
+   * @returns {Promise<any>}
+   */
+  async function watchProfile() {
+    const b = tasteBuilder();
+    const local = global.WP && global.WP.historyGet ? global.WP.historyGet() || [] : [];
+    local.forEach((e) => b.merge(e, false));
+    try {
+      const Social = global.WP && global.WP.Social;
+      if (Social && Social.getServerHistory) {
+        const server = await Social.getServerHistory();
+        if (Array.isArray(server)) server.forEach((e) => b.merge(e, true));
+      }
+    } catch (_) {
+      // Signed out / offline: the local list is the whole profile.
+    }
+    return b.finish();
+  }
+
+  /**
+   * Cards for "Continue watching": unfinished titles, most recent first
+   * (recency — not the play count — is what a resume row is about).
+   * @param {any} profile @returns {any[]}
+   */
+  function resumeItems(profile) {
+    return ((profile && profile.titles) || [])
+      .filter((t) => t.position > 0 && (!t.duration || t.position < t.duration - RESUME_MIN_LEFT))
+      .sort((a, b) => b.last - a.last)
+      .slice(0, RESUME_MAX_ITEMS)
+      .map((t) => ({
+        key: t.key,
+        type: t.type,
+        id: t.id,
+        isAnime: t.type === 'anime',
+        title: t.title,
+        poster: t.poster,
+        backdrop: t.backdrop,
+        year: t.year,
+        rating: t.rating,
+        malId: t.malId,
+        anilistId: t.anilistId,
+        src: t.src,
+        season: t.season,
+        episode: t.episode,
+        progress: t.duration ? Math.min(1, t.position / t.duration) : 0,
+        resumeAt: t.position,
+        resumeLabel: t.type === 'movie' ? '' : 'S' + (t.season || 1) + ' E' + (t.episode || 1),
+      }));
+  }
+
+  /**
+   * The video a resume card plays. The STORED src IS the episode that was
+   * watched, so it wins over anything rebuilt from the ids.
+   * @param {any} item @returns {any}
+   */
+  function resumeVideo(item) {
+    const v = buildVideo(item, { season: item.season || undefined, episode: item.episode || undefined });
+    if (item.src) v.src = item.src;
+    return v;
+  }
+
+  /**
+   * TMDB's own recommendations for the title the viewer watched the most, minus
+   * everything already in their history (recommending what you are already
+   * watching is not a recommendation).
+   * @param {any} seed @param {any} profile @returns {Promise<any[]>}
+   */
+  async function watchedMostRecommendations(seed, profile) {
+    if (!seed || seed.id == null) return [];
+    const isAnime = seed.type === 'anime';
+    const items = await fetchRecommendations({ id: seed.id, type: isAnime ? 'tv' : seed.type });
+    const seenKeys = new Set(((profile && profile.titles) || []).map((t) => t.key));
+    return items
+      .filter((it) => !seenKeys.has((isAnime ? 'anime' : it.type) + ':' + String(it.id)))
+      .map((it) => (isAnime ? Object.assign({}, it, { type: 'anime', isAnime: true }) : it))
+      .slice(0, RECS_PER_SEED);
+  }
+
   // ---- feed definitions (shared by the home browse feed and /discovery pages) --------
   // Pure data: instances must copy these, never mutate them (two mounts can
   // coexist — home browse + room sidebar browse).
@@ -1497,33 +1721,107 @@
     container.classList.add('browse');
     container.innerHTML = '';
 
-    // Filter chips (only shown while search results are active).
-    const filters = h('div', 'browse__filters');
+    // ---- category pills ------------------------------------------------------
+    // ONE chip row, two contexts. On the tailored home the pills are
+    // CATEGORIES (YouTube-style): they change which rows the feed shows, in
+    // place — no navigation. While search results are up the same row narrows
+    // the grid by type, exactly as it did before.
+    const tailored = !!opts.tailored;
+    const filters = h('div', 'browse__filters' + (tailored ? ' browse__pills' : ''));
     filters.hidden = true;
-    const FILTERS = [
-      ['all', 'All'],
-      ['movie', 'Movies'],
-      ['tv', 'Series'],
-      ['anime', 'Anime'],
+    if (tailored) container.classList.add('browse--pills');
+    const SEARCH_PILLS = [
+      ['all', tr('feed.catAll', 'All')],
+      ['movie', tr('nav.movies', 'Movies')],
+      ['tv', tr('nav.series', 'Series')],
+      ['anime', tr('nav.anime', 'Anime')],
     ];
-    let activeFilter = 'all';
-    const chipEls = {};
-    FILTERS.forEach(([key, label]) => {
-      const c = h('button', 'chip' + (key === 'all' ? ' chip--active' : ''), label);
-      c.type = 'button';
-      c.addEventListener('click', async () => {
-        activeFilter = key;
-        Object.keys(chipEls).forEach((k) => chipEls[k].classList.toggle('chip--active', k === key));
-        // The "Anime" filter needs each result classified (TMDB → AniList).
-        if (key === 'anime' && results.length) {
-          await classifyAnime(results);
-          if (destroyed) return;
-        }
-        renderResults();
+    const CATEGORY_PILLS = [
+      ['all', tr('feed.catAll', 'All')],
+      ['movies', tr('nav.movies', 'Movies')],
+      ['series', tr('nav.series', 'Series')],
+      ['anime', tr('nav.anime', 'Anime')],
+      ['trending', tr('nav.trending', 'Trending Now')],
+    ];
+    // Which category a FEED_DEFS row belongs to (see CATEGORY_PILLS).
+    const ROW_PILL = {
+      movie: 'movies',
+      topMovies: 'movies',
+      nowPlaying: 'movies',
+      tv: 'series',
+      topTv: 'series',
+      airingToday: 'series',
+      anime: 'anime',
+      trending: 'trending',
+    };
+    let activeFilter = 'all'; // search context: all | movie | tv | anime
+    let activePill = 'all'; // feed context: all | movies | series | anime | trending
+    let chipEls = {};
+
+    /** (Re)build the chip row for the CURRENT mode. */
+    function paintPills() {
+      const browse = mode !== 'search';
+      // An untailored browse surface has no categories to offer, so it ships no
+      // chips at all (it only ever grows them for a search).
+      const defs = browse ? (tailored ? CATEGORY_PILLS : []) : SEARCH_PILLS;
+      const active = browse ? activePill : activeFilter;
+      filters.innerHTML = '';
+      chipEls = {};
+      defs.forEach(([key, label]) => {
+        const c = h('button', 'chip' + (key === active ? ' chip--active' : ''), label);
+        c.type = 'button';
+        c.setAttribute('aria-pressed', key === active ? 'true' : 'false');
+        c.addEventListener('click', () => (browse ? pickPill(key) : pickFilter(key)));
+        chipEls[key] = c;
+        filters.appendChild(c);
       });
-      chipEls[key] = c;
-      filters.appendChild(c);
-    });
+    }
+
+    /** Ink the active chip (repainting the buttons mid-click would drop focus). */
+    function markPills() {
+      const browse = mode !== 'search';
+      const active = browse ? activePill : activeFilter;
+      Object.keys(chipEls).forEach((k) => {
+        chipEls[k].classList.toggle('chip--active', k === active);
+        chipEls[k].setAttribute('aria-pressed', k === active ? 'true' : 'false');
+      });
+    }
+
+    /** Point the chip row at a context (and hide it where it has no job). */
+    function setPillMode(next) {
+      mode = next;
+      paintPills();
+      // The chips step aside while a search is still running; an untailored
+      // surface (the room's picker) keeps them out of browse mode entirely.
+      filters.hidden = next === 'search' ? true : !tailored;
+    }
+
+    /** Search context: narrow the results grid by type. */
+    async function pickFilter(key) {
+      activeFilter = key;
+      markPills();
+      // The "Anime" filter needs each result classified (TMDB → AniList).
+      if (key === 'anime' && results.length) {
+        await classifyAnime(results);
+        if (destroyed) return;
+      }
+      renderResults();
+    }
+
+    /** Feed context: show only the rows of one category (in place). */
+    async function pickPill(key) {
+      activePill = key;
+      markPills();
+      applyPill();
+      // A pill can uncover rows that were never fetched (they are skipped
+      // while hidden), so pull chunks until the viewer actually sees rows.
+      for (let i = 0; i < 3; i++) {
+        if (destroyed || mode !== 'browse' || visibleRows() >= 2) break;
+        await loadMore();
+      }
+      applyPill();
+    }
+
 
     // Search input(s): the home page supplies the top-nav and side-nav inputs
     // (both drive the same search, kept in sync); other surfaces (the room's
@@ -1544,8 +1842,19 @@
 
     const heroWrap = h('div', 'browse__hero');
     const rowsWrap = h('div', 'browse__rows');
-    container.appendChild(heroWrap);
-    container.appendChild(rowsWrap);
+    if (tailored) {
+      // The pill bar sits between the billboard and the feed — the categories
+      // the rows below answer to — and rides along as the viewer scrolls
+      // (sticky under the top nav, see .browse__pills-bar).
+      const pillsBar = h('div', 'browse__pills-bar');
+      pillsBar.appendChild(filters);
+      container.appendChild(heroWrap);
+      container.appendChild(pillsBar);
+      container.appendChild(rowsWrap);
+    } else {
+      container.appendChild(heroWrap);
+      container.appendChild(rowsWrap);
+    }
 
     let searchTimer = null;
     let results = [];
@@ -1561,16 +1870,19 @@
     const INITIAL_SECTIONS = 4;
 
     let sections = [];
+    let personalRows = []; // tailored rows above the feed (continue / because you watched)
+    let emptyNote = null; // "nothing in this category" note (a pill with no rows)
+    let taste = null; // the viewer's watch profile (see watchProfile)
     let paginateIdx = 0; // round-robin cursor for deepening existing sections
 
-    let mode = 'browse'; // 'browse' | 'search'
-    let searchQuery = '';
-    let gridEl = null;
-    let searchPage = 1;
-    let searchDone = false;
-    let loadingMore = false;
-    let io = null;
-    const sentinel = h('div', 'browse__sentinel');
+    /** Every row definition in DISPLAY order (tailored rows lead the feed). */
+    function allDefs() {
+      return personalRows.concat(sections);
+    }
+
+    function visibleRows() {
+      return allDefs().filter((d) => d.el && d.el.style.display !== 'none').length;
+    }
 
     function resetSections() {
       sections = FEED_DEFS.map((d) => ({
@@ -1583,32 +1895,156 @@
         el: null,
         loading: false,
       }));
+      orderSectionsByTaste();
       paginateIdx = 0;
+    }
+
+    /**
+     * Tailoring: the rows of the type the viewer watches the MOST lead the feed
+     * (trending stays beside them), then everything else in FEED_DEFS order. No
+     * reads yet — or an even split — leaves the feed exactly as it was.
+     */
+    function orderSectionsByTaste() {
+      if (!tailored || !taste || taste.rows < TASTE_MIN_ROWS || !taste.dominant) return;
+      const d = taste.dominant;
+      const lead =
+        d === 'movie'
+          ? ['movie', 'topMovies', 'nowPlaying']
+          : d === 'anime'
+            ? ['anime']
+            : ['tv', 'topTv', 'airingToday'];
+      const order = lead.concat(
+        ['trending'],
+        FEED_DEFS.map((x) => x.key).filter((k) => lead.indexOf(k) < 0 && k !== 'trending')
+      );
+      sections.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     }
 
     function resetRows() {
       rowsWrap.innerHTML = '';
       rowsWrap.appendChild(sentinel);
       gridEl = null;
+      emptyNote = null;
+      personalRows = []; // their elements died with rowsWrap
     }
 
-    function makeSectionRow(def, items) {
+    /** A tailored row above the feed. Personal rows belong to the All pill. */
+    function addPersonalRow(def, items, pick) {
+      def.pill = null;
+      personalRows.push(def);
+      makeSectionRow(def, items, pick);
+    }
+
+    function makeSectionRow(def, items, pick) {
       const sec = h('section', 'row');
       sec.dataset.row = def.key; // lets the side nav scroll to this section
       sec.appendChild(h('h2', 'row__title', def.title));
       const scroller = h('div', 'row__scroller');
-      items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
+      items.forEach((it) => scroller.appendChild(cardNode(it, pick || choose)));
       // The rail owns the buttons and the fades and wraps the scroller. It gets
       // a second measurement once the section is in the layout, so a row that
       // already fits ships with no arrows at all instead of dead ones.
       const rail = mountRail(scroller);
       sec.appendChild(rail.el);
-      rowsWrap.insertBefore(sec, sentinel);
+      insertRowInOrder(sec, def);
       def.el = sec;
       def.rail = rail;
+      paintEmpty();
       rail.sync();
       return scroller;
     }
+
+    /**
+     * Rows land in DEFINITION order even when a pill loaded them out of order
+     * (a pill skips the rows it hides): the first row of the list that is
+     * already on screen wins the insertBefore.
+     */
+    function insertRowInOrder(sec, def) {
+      const list = allDefs();
+      const at = list.indexOf(def);
+      for (let i = at + 1; at >= 0 && i < list.length; i++) {
+        if (list[i].el) {
+          rowsWrap.insertBefore(sec, list[i].el);
+          return;
+        }
+      }
+      if (emptyNote) rowsWrap.insertBefore(sec, emptyNote);
+      else rowsWrap.insertBefore(sec, sentinel);
+    }
+
+    /** Does the active category pill show this row? Personal rows live under All. */
+    function rowVisible(def) {
+      if (activePill === 'all') return true;
+      const cat = def.pill !== undefined ? def.pill : ROW_PILL[def.key];
+      return cat === activePill;
+    }
+
+    /** Paint the feed for the active pill — in place, no navigation. */
+    function applyPill() {
+      allDefs().forEach((def) => {
+        if (!def.el) return;
+        def.el.style.display = rowVisible(def) ? '' : 'none';
+      });
+      paintEmpty();
+    }
+
+    /** "Nothing in this category yet." — only when a pill filtered every row out. */
+    function paintEmpty() {
+      const show = mode !== 'search' && activePill !== 'all' && visibleRows() === 0;
+      if (!show) {
+        if (emptyNote) {
+          emptyNote.remove();
+          emptyNote = null;
+        }
+        return;
+      }
+      if (!emptyNote) {
+        emptyNote = h('div', 'browse__empty', tr('feed.catEmpty', 'Nothing in this category yet.'));
+        rowsWrap.insertBefore(emptyNote, sentinel);
+      }
+    }
+
+    /** The dominant type, but only once there is enough history to believe it. */
+    function domTaste() {
+      if (!tailored || !taste || taste.rows < TASTE_MIN_ROWS) return null;
+      return taste.dominant || null;
+    }
+
+    /**
+     * The tailored rows: "Continue watching" (from the resume positions in the
+     * history) and "Because you watched <most watched>" (TMDB recommendations,
+     * with everything already watched filtered out). Both are silent no-ops
+     * without history, so a fresh profile sees the plain feed.
+     */
+    async function loadTailoredRows() {
+      if (!taste) return;
+      const resume = resumeItems(taste);
+      if (resume.length) {
+        addPersonalRow(
+          { key: 'continue', title: tr('feed.continue', 'Continue watching') },
+          resume,
+          (it) => onSelect(resumeVideo(it))
+        );
+      }
+      if (taste.rows < TASTE_MIN_ROWS || !taste.titles.length) return;
+      const seed = taste.titles[0]; // the title they watched the most
+      const recs = await watchedMostRecommendations(seed, taste);
+      if (destroyed || !recs.length) return;
+      addPersonalRow(
+        { key: 'because', title: tr('feed.because', 'Because you watched') + ' ' + seed.title },
+        recs,
+        choose
+      );
+    }
+
+    let mode = 'browse'; // 'browse' | 'search'
+    let searchQuery = '';
+    let gridEl = null;
+    let searchPage = 1;
+    let searchDone = false;
+    let loadingMore = false;
+    let io = null;
+    const sentinel = h('div', 'browse__sentinel');
 
     function appendToSection(def, items) {
       if (!def || !def.el || !items || !items.length) return;
@@ -1660,9 +2096,11 @@
     // page. Returns false once the whole feed is exhausted.
     async function loadNextChunk() {
       if (destroyed || mode !== 'browse') return true;
+      // A hidden row is never fetched: with a category pill active the feed only
+      // loads what that pill shows (switching back to All picks the rest up).
       for (let i = 0; i < sections.length; i++) {
         const def = sections[i];
-        if (!def.done && !def.el && !def.loading) {
+        if (!def.done && !def.el && !def.loading && rowVisible(def)) {
           await createSection(i);
           return true;
         }
@@ -1670,10 +2108,10 @@
       for (let i = 0; i < sections.length; i++) {
         const idx = (paginateIdx + i) % sections.length;
         const def = sections[idx];
-        if (!def.done && def.el && !def.loading) {
+        if (!def.done && def.el && !def.loading && rowVisible(def)) {
           paginateIdx = (idx + 1) % sections.length;
           await paginateSection(idx);
-          return !sections.every((s) => s.done);
+          return sections.some((s) => !s.done && rowVisible(s));
         }
       }
       return false;
@@ -1787,11 +2225,10 @@
         seq++;
         results = [];
         setInputsValue('');
-        mode = 'browse';
+        setPillMode('browse');
         searchQuery = '';
         searchPage = 1;
         searchDone = false;
-        filters.hidden = true;
         heroWrap.style.display = '';
         loadBrowse();
         return;
@@ -1807,7 +2244,7 @@
       }
       searchTimer = setTimeout(async () => {
         const mySeq = ++seq;
-        mode = 'search';
+        setPillMode('search');
         searchQuery = q;
         searchPage = 1;
         searchDone = false;
@@ -1852,10 +2289,17 @@
 
     async function loadBrowse() {
       const mySeq = ++seq;
-      mode = 'browse';
+      setPillMode('browse');
       searchQuery = '';
       searchPage = 1;
       searchDone = false;
+      // The taste profile is read BEFORE the first row is built, because it
+      // decides the ORDER of the feed. Only the local half is needed for the
+      // billboard (synchronous, nothing to wait for); the server half joins
+      // while the trending request is already in flight.
+      const local = tailored ? localTaste() : null;
+      const profilePromise = tailored ? watchProfile() : null;
+      taste = local;
       resetSections();
       renderLoading();
       // Hero from trending page 1 (trending is also one of the feed sections).
@@ -1863,12 +2307,32 @@
         const d = await api('/trending/all/week');
         if (destroyed || mySeq !== seq) return;
         const all = (d.results || []).map(normAny).filter(Boolean);
-        renderHero(heroWrap, all.find((x) => x.backdrop) || all[0] || null, choose);
+        // The billboard leads with the dominant taste when there is one: the
+        // trending pool still supplies the art, so this costs no extra call.
+        const dom = domTaste();
+        const bias = dom ? all.find((x) => x.backdrop && x.type === (dom === 'anime' ? 'tv' : dom)) : null;
+        renderHero(heroWrap, bias || all.find((x) => x.backdrop) || all[0] || null, choose);
       } catch (_) {
         if (destroyed || mySeq !== seq) return;
       }
       if (destroyed || mySeq !== seq) return;
+      if (profilePromise) {
+        try {
+          taste = await profilePromise;
+        } catch (_) {
+          taste = local;
+        }
+        if (destroyed || mySeq !== seq) return;
+        // The rows are ordered from the FULL profile (local + server).
+        orderSectionsByTaste();
+      }
       resetRows();
+      // The tailored rows lead the feed: what this viewer is IN THE MIDDLE OF,
+      // then what their most-watched title says they will like next.
+      if (tailored) {
+        await loadTailoredRows();
+        if (destroyed || mySeq !== seq) return;
+      }
       // FOR YOU row: like-based suggestions sit above the feed (signed-in
       // users with likes only; silent skip otherwise).
       if (global.WP && global.WP.Social && global.WP.Social.getSuggestions) {
@@ -1881,12 +2345,17 @@
               title: si.mediaTitle,
               poster: si.posterUrl,
             }));
-            makeSectionRow({ key: 'foryou', title: 'For you' + (sug.seeds && sug.seeds.length ? ' \u00b7 because you liked ' + sug.seeds[0] : '') }, items);
+            addPersonalRow(
+              { key: 'foryou', title: 'For you' + (sug.seeds && sug.seeds.length ? ' \u00b7 because you liked ' + sug.seeds[0] : '') },
+              items,
+              choose
+            );
           }
         } catch (_) {}
       }
       for (let i = 0; i < INITIAL_SECTIONS; i++) await createSection(i);
       if (destroyed || mySeq !== seq) return;
+      applyPill(); // the active category still owns the feed after a reload
       if (!sections.some((s) => s.el)) {
         showError('The catalog could not be reached. Check your connection and try again.');
       }
@@ -1896,6 +2365,13 @@
     // key (used by the side rail). Creates any sections needed along the way.
     async function scrollToSection(key) {
       setInputsValue('');
+      // A category pill may be HIDING the target row: the side rail asked for
+      // it explicitly, so the feed goes back to All first.
+      if (tailored && activePill !== 'all' && mode === 'browse') {
+        activePill = 'all';
+        markPills();
+        applyPill();
+      }
       const haveSection = mode === 'browse' && sections.some((s) => s.key === key && s.el);
       if (!haveSection) await loadBrowse();
       const idx = sections.findIndex((s) => s.key === key);
@@ -1939,6 +2415,7 @@
         });
         container.innerHTML = '';
         container.classList.remove('browse');
+        container.classList.remove('browse--pills');
         if (externalInputs) externalInputs.forEach((inp) => { if (inp) inp.value = ''; });
       },
       refresh() {

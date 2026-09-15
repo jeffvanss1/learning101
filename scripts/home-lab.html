@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tailored home — lab</title>
+    <!-- The REAL stylesheets and bundles: this page only swaps the data. -->
+    <link rel="stylesheet" href="../dist/css/style.css?v=27" />
+    <link rel="stylesheet" href="../dist/css/catalog.css?v=37" />
+    <style>
+      /* The lab shelf sits under the nav and explains what to try. */
+      .lab-bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 10px var(--page-pad);
+        border-bottom: 1px solid var(--border-soft);
+        background: var(--bg-soft);
+        color: var(--text-dim);
+        font-size: 13px;
+      }
+      .lab-bar strong {
+        color: var(--text);
+      }
+      .lab-bar .chip {
+        cursor: pointer;
+      }
+      .lab-bar__hint {
+        margin-left: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="app-shell__main">
+        <nav class="topnav" id="home-nav">
+          <span class="brand"><strong>WatchParty</strong> <span class="lab-tag">lab</span></span>
+          <div class="topnav__search">
+            <input
+              id="topnav-search-input"
+              class="topnav__search-input"
+              type="text"
+              placeholder="Search movies &amp; series…"
+              autocomplete="off"
+            />
+          </div>
+        </nav>
+        <div class="lab-bar">
+          <strong>Imaginary viewer:</strong>
+          <button class="chip" type="button" data-viewer="binge">Binges series</button>
+          <button class="chip" type="button" data-viewer="anime">Binges anime</button>
+          <button class="chip" type="button" data-viewer="fresh">No history at all</button>
+          <span class="lab-bar__hint">
+            Click the pills above the feed · history is faked in localStorage (wp:history)
+          </span>
+        </div>
+        <main id="home" class="home">
+          <div id="browse" class="browse"></div>
+        </main>
+      </div>
+    </div>
+
+    <script src="../dist/js/utils.js?v=10"></script>
+    <script src="../dist/js/api.js?v=5"></script>
+    <script src="../dist/js/catalog.js?v=36"></script>
+    <script>
+      // ---- fake catalogue -----------------------------------------------------
+      // Every /api/tmdb call answers from this pool, so the page is a real render
+      // of the shipped feed with made-up data. Posters 404 (the paths are fake)
+      // and the capture-phase handler below swaps in generated art.
+      const POOL = [
+        { id: 101, kind: 'series', title: 'Neon Precinct' },
+        { id: 102, kind: 'series', title: 'Harbour Lights' },
+        { id: 103, kind: 'series', title: 'Cold Storage' },
+        { id: 104, kind: 'series', title: 'The Long Weekend' },
+        { id: 105, kind: 'series', title: 'Salt & Iron' },
+        { id: 201, kind: 'anime', title: 'Star Courier' },
+        { id: 202, kind: 'anime', title: 'Paper Lanterns' },
+        { id: 203, kind: 'anime', title: 'Thunder Kitchen' },
+        { id: 301, kind: 'movie', title: 'Midnight Runway' },
+        { id: 302, kind: 'movie', title: 'The Cartographer' },
+        { id: 303, kind: 'movie', title: 'Low Orbit' },
+        { id: 304, kind: 'movie', title: 'Sunday Rain' },
+      ];
+      const item = (t) => ({
+        id: t.id,
+        media_type: t.kind === 'movie' ? 'movie' : 'tv',
+        title: t.kind === 'movie' ? t.title : undefined,
+        name: t.kind === 'movie' ? undefined : t.title,
+        release_date: '2021-03-04',
+        first_air_date: '2020-06-11',
+        poster_path: '/lab/' + t.id + '.jpg',
+        backdrop_path: '/lab/' + t.id + '.jpg',
+        vote_average: 7 + (t.id % 20) / 10,
+        overview: 'A fixture entry for the tailored-home lab — no real title is meant.',
+      });
+      const byKind = (k) => POOL.filter((t) => t.kind === k).map(item);
+      const payload = (results) => ({ results: results, page: 1, total_pages: 1 });
+
+      window.fetch = (url) => {
+        const u = String(url);
+        let body = payload([]);
+        if (u.includes('/trending/all/week')) body = payload(byKind('series').slice(0, 2).concat(byKind('movie').slice(0, 2)));
+        else if (u.includes('/movie/popular')) body = payload(byKind('movie'));
+        else if (u.includes('/movie/top_rated')) body = payload(byKind('movie').slice().reverse());
+        else if (u.includes('/movie/now_playing')) body = payload(byKind('movie').slice(0, 2));
+        else if (u.includes('/discover/tv')) body = payload(byKind('anime'));
+        else if (u.includes('/tv/popular')) body = payload(byKind('series'));
+        else if (u.includes('/tv/top_rated')) body = payload(byKind('series').slice().reverse());
+        else if (u.includes('/tv/airing_today')) body = payload(byKind('series').slice(0, 3));
+        else if (u.includes('/recommendations')) {
+          const id = Number((u.match(/\/(\d+)\/recommendations/) || [])[1]);
+          const seed = POOL.find((t) => t.id === id);
+          body = payload(
+            POOL.filter((t) => t.id !== id && (!seed || t.kind === seed.kind))
+              .slice(0, 6)
+              .map(item)
+          );
+        } else if (u.includes('/search/multi')) {
+          const q = decodeURIComponent((u.match(/query=([^&]*)/) || [])[1] || '').toLowerCase();
+          body = payload(POOL.filter((t) => t.title.toLowerCase().includes(q)).map(item));
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+      };
+
+      // ---- fake watch history -------------------------------------------------
+      const HISTORY = {
+        // Binge-watching a series: 7 episode rows, the last one left mid-episode.
+        binge: () => {
+          const rows = [];
+          for (let e = 1; e <= 7; e++) {
+            rows.push({
+              type: 'tv',
+              id: '101',
+              src: 'https://bingr.one/watch/tv/101/1/' + e,
+              title: 'Neon Precinct',
+              year: '2020',
+              poster: '',
+              season: 1,
+              episode: e,
+              malId: null,
+              rating: 8.4,
+              watchedAt: 9000 + e,
+              position: e === 7 ? 1500 : 2600,
+              duration: 2700,
+            });
+          }
+          rows.push({
+            type: 'anime',
+            id: '201',
+            src: 'https://bingr.one/watch/anime/201/4',
+            title: 'Star Courier',
+            year: '2021',
+            poster: '',
+            season: null,
+            episode: 4,
+            malId: '5001',
+            rating: 8.9,
+            watchedAt: 8000,
+            position: 600,
+            duration: 1440,
+          });
+          rows.push({ type: 'movie', id: '301', src: 'https://bingr.one/watch/movie/301', title: 'Midnight Runway', year: '2021', poster: '', season: null, episode: null, malId: null, rating: 7.2, watchedAt: 7000 });
+          return rows;
+        },
+        // Anime first: 6 episode rows, the newest left mid-episode.
+        anime: () => {
+          const rows = [];
+          for (let e = 1; e <= 6; e++) {
+            rows.push({
+              type: 'anime',
+              id: '201',
+              src: 'https://bingr.one/watch/anime/201/' + e,
+              title: 'Star Courier',
+              year: '2021',
+              poster: '',
+              season: null,
+              episode: e,
+              malId: '5001',
+              rating: 8.9,
+              watchedAt: 9000 + e,
+              position: e === 6 ? 700 : 1400,
+              duration: 1440,
+            });
+          }
+          rows.push({ type: 'tv', id: '102', src: 'https://bingr.one/watch/tv/102/1/1', title: 'Harbour Lights', year: '2019', poster: '', season: 1, episode: 1, malId: null, rating: 7.8, watchedAt: 8000, position: 300, duration: 3000 });
+          return rows;
+        },
+        fresh: () => [],
+      };
+
+      // ---- generated art ------------------------------------------------------
+      // The fixture paths are fake, so every TMDB image 404s: draw a poster
+      // instead, seeded by the alt text, so the layout is what you are looking
+      // at. (Resource errors do not bubble — capture them at the document.)
+      const artFor = (seed, w, h) => {
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+          '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+          '<stop offset="0" stop-color="hsl(' + hash + ',32%,26%)"/>' +
+          '<stop offset="1" stop-color="hsl(' + ((hash + 60) % 360) + ',38%,12%)"/>' +
+          '</linearGradient></defs>' +
+          '<rect width="100%" height="100%" fill="url(#g)"/>' +
+          '</svg>';
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+      };
+      document.addEventListener(
+        'error',
+        (ev) => {
+          const el = ev.target;
+          if (!el || el.tagName !== 'IMG' || el.dataset.labArt) return;
+          el.dataset.labArt = '1';
+          el.src = artFor(String(el.alt || 'art'), el.width || 342, el.height || 513);
+        },
+        true
+      );
+
+      // ---- mount --------------------------------------------------------------
+      let handle = null;
+      function mount() {
+        if (handle) handle.destroy();
+        const viewer = document.body.dataset.viewer || 'binge';
+        try {
+          localStorage.setItem('wp:history', JSON.stringify(HISTORY[viewer]()));
+        } catch (_) {}
+        handle = window.WP.Catalog.mountBrowse(document.getElementById('browse'), {
+          onSelect: () => {}, // the lab does not open rooms
+          searchInputs: [document.getElementById('topnav-search-input')],
+          tailored: true,
+        });
+      }
+
+      function markViewer(viewer) {
+        document.body.dataset.viewer = viewer;
+        document.querySelectorAll('.lab-bar [data-viewer]').forEach((b) => {
+          b.classList.toggle('chip--active', b.dataset.viewer === viewer);
+        });
+      }
+
+      document.querySelectorAll('.lab-bar [data-viewer]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          markViewer(btn.dataset.viewer);
+          mount();
+        });
+      });
+
+      markViewer('binge');
+      mount();
+    </script>
+  </body>
+</html>

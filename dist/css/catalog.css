@@ -531,6 +531,89 @@ body.room-focus.rail-peek .sidenav {
   font-weight: 600;
 }
 
+/* ---- Category pills (tailored home) ----------------------------------------------
+   The chip row between the billboard and the feed. On the home page the pills are
+   CATEGORIES: clicking one changes which rows the feed shows, in place. The bar
+   rides along under the top nav while the viewer scrolls (the nav is a sibling of
+   the scrolling .home, so top:0 IS "under the nav" here). */
+.browse--pills {
+  /* The bar eats the first sliver of the scroller, so a row jumped to (the side
+     nav's scrollIntoView) has to clear it as well as the top nav. */
+  --pills-h: 54px;
+}
+
+.browse__pills-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 10px var(--page-pad) 0;
+  background: var(--bg);
+}
+
+.browse--pills .row {
+  scroll-margin-top: calc(var(--topnav-h) + var(--pills-h) + 12px);
+}
+
+.browse__pills {
+  display: flex;
+  flex-wrap: nowrap; /* one line, like YouTube's bar — never a wrapped block */
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.browse__pills::-webkit-scrollbar {
+  display: none;
+}
+
+/* The pills keep their own width (a long label can never squeeze the others)
+   and stay in the same flat 8px language as every other chip in the app. */
+.browse__pills .chip {
+  flex: 0 0 auto;
+  padding: 7px 15px;
+  white-space: nowrap;
+}
+
+/* Continue watching: the art carries the resume clue — how far in the viewer is
+   and which episode is queued. */
+.card-item__progress {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.card-item__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--red);
+}
+
+.card-item__resume {
+  position: absolute;
+  left: 8px;
+  bottom: 18px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+}
+
 /* ---- Watch history ------------------------------------------------------------- */
 .history {
   max-width: 1400px;

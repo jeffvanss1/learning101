@@ -2455,6 +2455,10 @@
       searchInputs: [$('topnav-search-input'), $('sidenav-search-input')],
       // People results (profiles + live presence) render above media results.
       peopleProvider: WP.Social ? (q) => WP.Social.renderPeople(q) : null,
+      // The HOME page is the tailored surface: category pills above the feed +
+      // rows built from what this viewer watches the most. The room's video
+      // picker mounts the same feed untailored (search-first, no pills).
+      tailored: true,
     });
     // (The friends drawer is global — mounted once at boot, overlays any view.)
   }
