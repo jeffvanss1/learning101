@@ -1715,6 +1715,7 @@ social v52 / ui-2026-09-15.90.
 
 ## Title logos: ONE rule for every shape + real breathing room (ui-2026-09-15.93)
 
+
 USER: "its a bit inconsistance, can you make it consistance", then "make a gap
 between title logo and rating, or you know better than me to make it less
 crowded".
@@ -1768,5 +1769,34 @@ inconsistance, can you make it consistance" -> chosen: one rule, every logo.
   collapsing means the larger value (the token) always wins, so a card with a
   text title and a card with a logo both breathe. Locked by a test that pins the
   token, its three consumers and the collapse arithmetic.
-Tests 251/251, check clean. catalog v33 / catalog css v33 / social v55 /
-ui-2026-09-15.93.
+
+## The cinematic scrim: the art fades into the dark behind the logo (ui-2026-09-15.94)
+
+USER: "look at netflix example they like has the gradient between the video and
+the logo, can you replicate that" (with a reference showing art + a logo sitting
+in a soft dark wash).
+
+- THE OLD SCRIM was four stops — `0.86 → 0.6@38% → 0.08@72% → 0`: solid on the
+  left, then a steep middle. That steep drop is what read as a band edge where
+  the dark panel met the picture, and the logo sat against it instead of in it.
+- NOW: ONE long, smoothly eased ramp with nine stops (`0.95@0`, `0.9@12`,
+  `0.8@26`, `0.66@40`, `0.5@52`, `0.32@64`, `0.16@74`, `0@84`, `0@100`) — the
+  artwork fades into the dark under the lockup and keeps its own light on the
+  bright side. `::after` carries a whisper of shade at the top (the sticky nav
+  always has something to sit on) plus the bottom seat (`0.88` at the bottom)
+  that tucks the banner into the page; the top shade is listed first so it
+  paints on top.
+- PHONE: the text stacks under the art, so the seat leads — a gentler left wash
+  (0.62 → 0 over 82%) keeps the overhanging lockup readable while the picture
+  still reads, and the seat is stronger (0.92) because the text needs it.
+- THEMES: the scrim stays black-on-art in every theme (never white, never
+  `var(--bg)`): the banner owns its ink and a light page background must not wash
+  the artwork out. Locked by the test.
+- TESTS: tests/title-logo.test.mjs (13 cases) pins the ramp's stop count, its
+  MONOTONIC falloff (a stop that went back up would re-introduce the seam), the
+  two `::after` layers and their paint order, the phone's wash + seat, and that
+  no scrim colour is white or a page token.
+- PREVIEW: scripts/logo-options.html's hero row now shows BEFORE (the 4-stop
+  scrim) next to NOW (the long ramp) with the same art and logo.
+Tests 252/252, check clean. catalog v33 / catalog css v34 / social v56 /
+ui-2026-09-15.94.

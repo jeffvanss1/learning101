@@ -753,9 +753,21 @@ body.room-focus.rail-peek .sidenav {
   object-position: center 28%;
 }
 
-/* Two scrims instead of one: the LEFT one buys contrast for the title block
-   over bright artwork, the BOTTOM one seats the banner in the page. Both are
-   painted on dark so the wordmark stays readable in the light theme too. */
+/* THE CINEMATIC SCRIM (Netflix-style): the artwork fades INTO the dark where
+   the lockup lives, instead of stopping against it. One long, smoothly eased
+   ramp — nine stops, because a short ramp with a steep middle reads as a band
+   edge where the dark panel meets the picture (that is what "the gradient
+   between the video and the logo" was missing).
+
+   Two layers on purpose:
+     ::before  the LEFT ramp — solid at the text edge, gone before the art's
+               bright side, so the logo sits in a soft wash and the picture
+               keeps its own light.
+     ::after   a whisper of shade at the top (the sticky nav always has
+               something to sit on) and the BOTTOM seat that tucks the banner
+               into the page.
+   Both are black-on-art in EVERY theme: the banner owns its ink, and a light
+   page background must never wash the artwork out. */
 .hero::before {
   content: '';
   position: absolute;
@@ -764,9 +776,14 @@ body.room-focus.rail-peek .sidenav {
   pointer-events: none;
   background: linear-gradient(
     90deg,
-    rgba(0, 0, 0, 0.86) 0%,
-    rgba(0, 0, 0, 0.6) 38%,
-    rgba(0, 0, 0, 0.08) 72%,
+    rgba(0, 0, 0, 0.95) 0%,
+    rgba(0, 0, 0, 0.9) 12%,
+    rgba(0, 0, 0, 0.8) 26%,
+    rgba(0, 0, 0, 0.66) 40%,
+    rgba(0, 0, 0, 0.5) 52%,
+    rgba(0, 0, 0, 0.32) 64%,
+    rgba(0, 0, 0, 0.16) 74%,
+    rgba(0, 0, 0, 0) 84%,
     rgba(0, 0, 0, 0) 100%
   );
 }
@@ -777,12 +794,16 @@ body.room-focus.rail-peek .sidenav {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0) 42%,
-    rgba(0, 0, 0, 0.45) 72%,
-    rgba(0, 0, 0, 0.88) 100%
-  );
+  /* First layer paints ON TOP: the top shade. Second: the bottom seat. */
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0) 26%),
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0) 44%,
+      rgba(0, 0, 0, 0.3) 68%,
+      rgba(0, 0, 0, 0.6) 86%,
+      rgba(0, 0, 0, 0.88) 100%
+    );
 }
 
 .hero__content {
@@ -1594,10 +1615,31 @@ body.room-focus.rail-peek .sidenav {
     -webkit-line-clamp: 2;
     font-size: 13.5px;
   }
+  /* A phone stacks the text UNDER the art: the bottom seat leads (see ::after
+     below) and this is a gentler left wash, because the lockup overhangs the
+     picture and the art must still read. Same idea as the Netflix mobile hero:
+     faded, not flattened. */
   .hero::before {
-    /* A phone stacks the text UNDER the art: a hard left scrim would eat the
-       whole image, so the bottom scrim does the work instead. */
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.86) 100%);
+    background: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.62) 0%,
+      rgba(0, 0, 0, 0.34) 30%,
+      rgba(0, 0, 0, 0.12) 58%,
+      rgba(0, 0, 0, 0) 82%
+    );
+  }
+  .hero::after {
+    /* The stacked layout needs a stronger seat under the text than a desktop
+       banner does, and only a hint of shade at the top (screen real estate). */
+    background:
+      linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0) 22%),
+      linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0) 26%,
+        rgba(0, 0, 0, 0.42) 52%,
+        rgba(0, 0, 0, 0.78) 76%,
+        rgba(0, 0, 0, 0.92) 100%
+      );
   }
   :root {
     --card-w: 132px;

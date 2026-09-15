@@ -37,6 +37,20 @@
       /* "Now" uses the SHIPPED rule: .card-preview__logo is the fold lockup
          for every logo, so nothing extra is needed here. */
 
+      /* ---- BEFORE: the old scrim (4 stops, steep middle) ----------------- */
+      .opt-hero-before .hero::before {
+        background: linear-gradient(
+          90deg,
+          rgba(0, 0, 0, 0.86) 0%,
+          rgba(0, 0, 0, 0.6) 38%,
+          rgba(0, 0, 0, 0.08) 72%,
+          rgba(0, 0, 0, 0) 100%
+        );
+      }
+      .opt-hero-before .hero::after {
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.45) 72%, rgba(0, 0, 0, 0.88) 100%);
+      }
+
       /* ---- BEFORE: the old two-tier rule, mirrored for comparison --------
          Wide wordmark: in the text column, 44px, no shadow, no overlap.
          Square/short art: 104px, pulled over the trailer, with a shadow.
@@ -104,13 +118,15 @@
       <div class="opt lo__hero">
         <div class="opt__head">
           <span class="opt__tag">Hero</span>
-          <span class="opt__name">One cap in the banner — wide wordmark and square mark</span>
+          <span class="opt__name">The scrim: art fading into the dark behind the logo</span>
         </div>
         <p class="opt__note">
-          The hero (and the detail header) now use a single measure
-          (<code>clamp(96px, 9vw, 156px)</code>, scaled per breakpoint) for every logo shape, so the
-          same title presents the same way whether you meet it in the banner, the tooltip or the
-          details card.
+          <strong>BEFORE</strong> is the old 4-stop ramp — solid on the left, then a steep drop
+          (0.6 at 38% → 0.08 at 72%) that reads as a band edge where the dark panel meets the
+          picture. <strong>NOW</strong> is one long, smoothly eased ramp with nine stops: the artwork
+          fades into the dark under the lockup and keeps its own light on the bright side, with a
+          whisper of shade at the top (for the sticky nav) and a bottom seat that tucks the banner
+          into the page. Same treatment on a phone, where the seat leads because the text stacks.
         </p>
         <div class="lo__hero-grid" id="heroes"></div>
       </div>
@@ -244,8 +260,9 @@
       // ---- hero samples: shipped cap vs a raised cap ----------------------
       const heroes = document.getElementById('heroes');
       [
-        { cap: 'Wide wordmark — one measure', cls: '', logo: 'wide' },
-        { cap: 'Square mark — the SAME measure', cls: '', logo: 'square' },
+        { cap: 'BEFORE — 4-stop scrim: the dark panel meets the picture', cls: 'opt-hero-before', logo: 'wide' },
+        { cap: 'NOW — one long ramp: the art fades into the dark behind the logo', cls: '', logo: 'wide' },
+        { cap: 'NOW — same scrim, square mark (one measure for every shape)', cls: '', logo: 'square' },
       ].forEach((h) => {
         const box = el('div', 'lo__hero');
         const hero = el('div', 'hero ' + h.cls);

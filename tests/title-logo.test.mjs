@@ -368,6 +368,54 @@ test('CSS: the banner is bigger, the logo is bounded, the text clip is accessibl
   assert.doesNotMatch(util, /display:\s*none/, 'the accessible name must survive');
 });
 
+test('CSS: the hero scrim is one smooth cinematic ramp (Netflix-style)', () => {
+  const css = read('dist/css/catalog.css');
+  const block = (sel) => css.slice(css.indexOf(sel + ' {'), css.indexOf('}', css.indexOf(sel + ' {')));
+
+  // ONE long ramp: a short ramp with a steep middle reads as a band edge where
+  // the dark panel meets the picture — that is the "gradient between the video
+  // and the logo" the user was missing.
+  const ramp = block('.hero::before');
+  const stops = (ramp.match(/rgba\(0, 0, 0, [\d.]+\) \d+%/g) || []).length;
+  assert.ok(stops >= 8, 'the left ramp eases through at least eight stops (saw ' + stops + ')');
+  assert.match(ramp, /rgba\(0, 0, 0, 0\.95\) 0%/, 'solid at the text edge');
+  assert.match(ramp, /rgba\(0, 0, 0, 0\) 84%/, 'and gone before the art brightest side');
+  assert.match(ramp, /rgba\(0, 0, 0, 0\) 100%/, 'the picture keeps its own light to the edge');
+  // Monotonic falloff: a stop that went back up would re-introduce a visible seam.
+  const alphas = (ramp.match(/rgba\(0, 0, 0, ([\d.]+)\)/g) || []).map((m) => Number(m.match(/([\d.]+)\)$/)[1]));
+  for (let i = 1; i < alphas.length; i++) {
+    assert.ok(alphas[i] <= alphas[i - 1], 'the ramp only ever gets lighter (stop ' + i + ')');
+  }
+
+  // Two layers: a whisper of shade at the top (the sticky nav sits on it) and
+  // the bottom seat that tucks the banner into the page.
+  const seat = block('.hero::after');
+  assert.equal((seat.match(/linear-gradient/g) || []).length, 2, 'top shade + bottom seat');
+  assert.match(seat, /rgba\(0, 0, 0, 0\.34\) 0%, rgba\(0, 0, 0, 0\) 26%/, 'subdued top shade');
+  assert.match(seat, /rgba\(0, 0, 0, 0\.88\) 100%/, 'a real seat at the bottom');
+  assert.ok(
+    seat.indexOf('rgba(0, 0, 0, 0.34) 0%') < seat.indexOf('rgba(0, 0, 0, 0.88) 100%'),
+    'the top shade paints ON TOP (it is listed first)'
+  );
+
+  // THEMES: the scrim is black-on-art in every theme (never white, never a
+  // page-background token), because a light page must not wash the art out.
+  const scrims = ramp + seat;
+  assert.doesNotMatch(scrims, /rgba\(255, 255, 255/, 'no white scrim');
+  assert.doesNotMatch(scrims, /var\(--bg/, 'the scrim never borrows the page background');
+
+  // The phone tier keeps a left wash (the lockup overhangs the picture) AND a
+  // stronger seat (the text stacks underneath).
+  const cols = css.split('\n');
+  const phoneAt = cols.findIndex((l) => l.includes('--card-w: 132px;'));
+  const phone = cols.slice(Math.max(0, phoneAt - 400), phoneAt + 20).join('\n');
+  const phoneBefore = phone.slice(phone.indexOf('.hero::before {'), phone.indexOf('}', phone.indexOf('.hero::before {')));
+  assert.ok((phoneBefore.match(/rgba\(0, 0, 0, [\d.]+\) \d+%/g) || []).length >= 3, 'a gentler left wash on a phone');
+  assert.match(phoneBefore, /rgba\(0, 0, 0, 0\.62\) 0%/, 'still anchored where the logo starts');
+  const phoneAfter = phone.slice(phone.indexOf('.hero::after {'), phone.indexOf('}', phone.indexOf('.hero::after {')));
+  assert.match(phoneAfter, /rgba\(0, 0, 0, 0\.92\) 100%/, 'and a stronger seat under the stacked text');
+});
+
 test('CSS: ONE lockup rhythm — the gap under the logo is a shared token', () => {
   const css = read('dist/css/catalog.css');
 
