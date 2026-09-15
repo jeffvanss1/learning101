@@ -3,81 +3,81 @@
    ========================================================================== */
 /* ---- Top nav ----------------------------------------------------------------- */
 .topnav {
-  flex: 0 0 auto;
-  z-index: 50;
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px max(20px, env(safe-area-inset-left)) 10px max(20px, env(safe-area-inset-right));
+  gap: 14px;
+  height: var(--topnav-h);
+  padding: 0 var(--page-pad);
   background: var(--topnav-bg, rgba(15, 15, 15, 0.92));
-  backdrop-filter: blur(10px);
+  /* The bar floats over the artwork: the blur is what keeps it readable
+     without a hard line across the page. */
+  backdrop-filter: saturate(150%) blur(14px);
+  -webkit-backdrop-filter: saturate(150%) blur(14px);
   border-bottom: 1px solid var(--border-soft);
 }
 
 .topnav__right {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
+  gap: 10px;
+  margin-left: auto;
 }
 
-/* The search bar lives in the same top bar as the logo, always on top. */
+.topnav__hamburger {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  cursor: pointer;
+  display: none; /* desktop shows the rail instead */
+}
+
+.topnav__hamburger:hover {
+  background: var(--bg-raised);
+}
+
 .topnav__search {
   position: relative;
-  flex: 1 1 auto;
-  max-width: 600px;
-  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex: 1 1 320px;
+  max-width: 520px;
 }
 
 .topnav__search-icon {
   position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 12px;
+  display: inline-flex;
   color: var(--text-muted);
   pointer-events: none;
 }
 
 .topnav__search-input {
   width: 100%;
-  background: var(--bg-elev);
+  background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  padding: 10px 18px 10px 42px;
-  font-size: 14.5px;
+  padding: 10px 14px 10px 38px;
+  font-size: 14px;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.topnav__search-input:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .topnav__search-input::placeholder {
   color: var(--text-muted);
 }
 
-/* Collapse toggle for the home guide rail. */
-.topnav__hamburger {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.topnav__hamburger:hover {
-  background: var(--bg-hover);
+.topnav__search-input:focus {
+  border-color: var(--blue);
+  background: var(--bg-soft);
+  box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.22);
 }
 
 /* ---- Home ---------------------------------------------------------------------- */
@@ -456,24 +456,28 @@ body.room-focus.rail-peek .sidenav {
 }
 
 /* ---- Search -------------------------------------------------------------------- */
+/* The search + filter bar lives inside the feed: same column as the rows, so
+   a search result never shifts horizontally against the poster grid. */
 .browse__search {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px 4px;
-  max-width: 1400px;
-  margin: 0 auto;
+  justify-content: center;
+  gap: 10px;
   flex-wrap: wrap;
+  padding: 18px var(--page-pad) 2px;
+  max-width: var(--page-max);
+  margin: 0 auto;
 }
 
 .browse__search-input {
-  flex: 1;
-  min-width: 220px;
+  flex: 1 1 280px;
+  max-width: 520px;
+  min-width: 200px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  padding: 11px 18px;
+  padding: 11px 16px;
   font-size: 14.5px;
   font-family: inherit;
   outline: none;
@@ -495,20 +499,29 @@ body.room-focus.rail-peek .sidenav {
   flex-wrap: wrap;
 }
 
+/* Filter pills: quiet by default, inked when active. */
 .chip {
   border: 1px solid var(--border);
   background: var(--bg-elev);
   color: var(--text-dim);
   border-radius: 8px;
-  padding: 6px 14px;
+  padding: 7px 15px;
   font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.12s ease;
 }
 
 .chip:hover {
   background: var(--bg-raised);
   color: var(--text);
+  border-color: var(--fill-strong);
+}
+
+.chip:active {
+  transform: translateY(1px);
 }
 
 .chip--active {
@@ -701,24 +714,26 @@ body.room-focus.rail-peek .sidenav {
 
 /* ---- Hero ------------------------------------------------------------------------ */
 .browse__hero {
-  max-width: 1400px;
-  margin: 6px auto 0;
-  padding: 0 16px;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: clamp(12px, 1.4vw, 22px) var(--page-pad) 0;
 }
 
+/* The billboard. A phone gets a full-width card, a desktop a real banner and
+   a TV a wall-sized one — the art is the same srcset, the browser picks. */
 .hero {
   position: relative;
   width: 100%;
   max-width: 100%;
-  /* Fixed height: the artwork can never stretch the banner. */
-  height: clamp(190px, 26vw, 360px);
+  height: clamp(300px, 33vw, 560px);
   min-height: 0;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   align-items: flex-end;
   background-color: var(--bg-elev);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-2);
+  isolation: isolate;
 }
 
 /* The banner image lives on its own clipped layer, so it can never
@@ -735,54 +750,75 @@ body.room-focus.rail-peek .sidenav {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 30%;
+  object-position: center 28%;
+}
+
+/* Two scrims instead of one: the LEFT one buys contrast for the title block
+   over bright artwork, the BOTTOM one seats the banner in the page. Both are
+   painted on dark so the wordmark stays readable in the light theme too. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.86) 0%,
+    rgba(0, 0, 0, 0.6) 38%,
+    rgba(0, 0, 0, 0.08) 72%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 .hero::after {
   content: '';
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgba(15, 15, 15, 0.15) 0%,
-    rgba(15, 15, 15, 0.35) 45%,
-    rgba(15, 15, 15, 0.96) 100%
+    rgba(0, 0, 0, 0) 42%,
+    rgba(0, 0, 0, 0.45) 72%,
+    rgba(0, 0, 0, 0.88) 100%
   );
 }
 
 .hero__content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
-  max-width: 760px;
+  max-width: min(660px, 68%);
   min-width: 0;
-  padding: clamp(20px, 3vw, 40px);
+  padding: clamp(20px, 2.6vw, 52px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
+  color: #fff; /* the banner owns its ink: always on-art */
 }
 
 .hero__badge {
   align-self: flex-start;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: #fff;
   background: var(--red);
-  border-radius: 4px;
-  padding: 3px 8px;
+  border-radius: 6px;
+  padding: 4px 9px;
   text-transform: uppercase;
+  box-shadow: var(--shadow-1);
 }
 
 .hero__title {
   margin: 0;
-  font-size: clamp(24px, 3.4vw, 44px);
-  line-height: 1.06;
-  letter-spacing: -0.5px;
+  font-size: clamp(26px, 3.6vw, 52px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
   font-weight: 700;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -790,15 +826,27 @@ body.room-focus.rail-peek .sidenav {
   overflow: hidden;
 }
 
+/* Title art (Netflix-style wordmark) replaces the text title when TMDB has
+   one: never wider than the text block, never taller than three lines. */
+.hero__logo {
+  display: block;
+  max-width: min(440px, 88%);
+  max-height: clamp(58px, 7vw, 116px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.55));
+}
+
 .hero__meta {
-  color: var(--text-dim);
+  color: rgba(255, 255, 255, 0.82);
   font-size: 14px;
+  font-weight: 500;
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-wrap: wrap;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
 
 .hero__overview {
@@ -822,84 +870,82 @@ body.room-focus.rail-peek .sidenav {
 }
 
 .hero__skeleton {
-  height: clamp(190px, 26vw, 360px);
+  height: clamp(300px, 33vw, 560px);
   min-height: 0;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
 
-@keyframes shimmer {
-  to {
-    background-position-x: -200%;
-  }
-}
-
 /* ---- Rows ----------------------------------------------------------------------- */
+/* One content column for the whole feed: hero, search, rows and the grid all
+   share it, so nothing can be 8px off. */
 .browse__rows {
-  max-width: 1400px;
+  max-width: var(--page-max);
   margin: 0 auto;
-  padding: 8px 16px 48px;
+  padding: clamp(10px, 1.6vw, 26px) var(--page-pad) clamp(30px, 4vw, 64px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-/* Invisible sentinel that infinite scroll observes to load the next pages. */
-.browse__sentinel {
-  flex: 0 0 auto;
-  width: 100%;
-  height: 1px;
+  gap: clamp(4px, 0.6vw, 10px);
 }
 
 .row {
-  margin-top: 14px;
+  margin-top: clamp(12px, 1.4vw, 26px);
   scroll-margin-top: calc(var(--topnav-h) + 12px);
+  min-width: 0;
 }
 
 .row__title {
-  margin: 0 0 10px;
-  font-size: 17px;
-  font-weight: 600;
+  margin: 0 0 12px;
+  font-size: clamp(15px, 1.15vw, 22px);
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--text);
 }
 
+/* Rows scroll horizontally on every screen: on a TV they are also fully
+   reachable with the remote (arrow keys move the focused card into view). */
 .row__scroller {
   display: flex;
-  gap: 12px;
+  gap: clamp(10px, 0.9vw, 18px);
   overflow-x: auto;
-  padding: 4px 2px 12px;
+  overflow-y: hidden;
+  padding: 4px 2px 14px;
   scroll-snap-type: x proximity;
+  scroll-padding-left: 2px;
+  scrollbar-width: thin;
   overscroll-behavior-x: contain;
 }
 
 .row__scroller::-webkit-scrollbar {
-  height: 8px;
+  height: 6px;
 }
+
 .row__scroller::-webkit-scrollbar-thumb {
-  background: var(--bg-raised);
-  border-radius: 6px;
+  background-color: var(--fill-strong);
+  border-radius: 3px;
 }
 
 .row__skeleton {
   display: flex;
-  gap: 12px;
+  gap: clamp(10px, 0.9vw, 18px);
   overflow: hidden;
 }
-.row__skeleton .skel-card {
-  flex: 0 0 158px;
-  height: 236px;
-  border-radius: 10px;
+
+.skel-card {
+  flex: 0 0 var(--card-w);
+  width: var(--card-w);
+  height: var(--card-h);
+  border-radius: 12px;
   background: linear-gradient(110deg, var(--bg-elev) 8%, var(--bg-raised) 18%, var(--bg-elev) 33%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
 
 /* ---- Cards ------------------------------------------------------------------------ */
-/* One source of truth for the poster-card size. Every card is exactly this
-   wide and its poster exactly this tall — in rows, in the search grid, and
-   in the modal. No aspect-ratio, no padding trick, nothing can stretch it. */
+/* One source of truth for the poster size (JS keeps the same ratio in the
+   modal / search grid). --card-w/--card-h scale per breakpoint below. */
 :root {
   --card-w: 158px;
   --card-h: 237px; /* fixed 2:3 poster height */
@@ -910,8 +956,8 @@ body.room-focus.rail-peek .sidenav {
   width: var(--card-w);
   cursor: pointer;
   scroll-snap-align: start;
-  border-radius: 10px;
-  transition: transform 0.18s ease;
+  border-radius: 12px;
+  transition: transform 0.2s ease;
   outline: none;
 }
 
@@ -926,17 +972,18 @@ body.room-focus.rail-peek .sidenav {
   display: block;
   width: 100%;
   height: var(--card-h);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--bg-elev);
   border: 1px solid var(--border-soft);
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card-item:hover .card-item__poster,
 .card-item:focus-visible .card-item__poster {
-  border-color: var(--bg-hover);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  border-color: var(--fill-strong);
+  box-shadow: var(--shadow-2);
 }
 
 /* The artwork is a clipped layer hard-locked to the box above. */
@@ -953,14 +1000,14 @@ body.room-focus.rail-peek .sidenav {
   object-fit: cover;
   object-position: center;
   display: block;
-  border-radius: 9px;
-  transition: transform 0.35s ease;
+  border-radius: 11px;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 /* Subtle zoom on hover — still clipped inside the fixed box. */
 .card-item:hover .card-item__poster img,
 .card-item:focus-visible .card-item__poster img {
-  transform: scale(1.05);
+  transform: scale(1.06);
 }
 
 .card-item__poster-fallback {
@@ -968,7 +1015,7 @@ body.room-focus.rail-peek .sidenav {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 34px;
+  font-size: 40px;
   font-weight: 700;
   color: var(--text-dim);
   background: linear-gradient(160deg, var(--bg-raised), var(--bg-elev));
@@ -981,22 +1028,25 @@ body.room-focus.rail-peek .sidenav {
   left: 8px;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #fff;
-  background: rgba(0, 0, 0, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 4px;
-  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  padding: 3px 7px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .card-item__body {
-  padding: 8px 2px 0;
+  padding: 9px 3px 0;
 }
 
 .card-item__title {
   font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: -0.005em;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -1006,7 +1056,7 @@ body.room-focus.rail-peek .sidenav {
 .card-item__meta {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1016,13 +1066,11 @@ body.room-focus.rail-peek .sidenav {
 .card-preview {
   position: fixed;
   z-index: 400;
-  /* "Slightly bigger": 304 -> 360px (the poster rows are 158px wide, so this
-     is still a tooltip-sized panel — just roomier to read). */
   width: 360px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
   overflow: hidden;
   pointer-events: auto;
   animation: preview-in 0.16s ease;
@@ -1055,7 +1103,7 @@ body.room-focus.rail-peek .sidenav {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 13px 12px 15px 15px;
+  padding: 14px 12px 16px 16px;
 }
 .card-preview__text {
   flex: 1 1 auto;
@@ -1087,18 +1135,32 @@ body.room-focus.rail-peek .sidenav {
 }
 
 .card-preview__title {
-  font-weight: 600;
-  font-size: 15.5px;
+  font-weight: 650;
+  font-size: 16px;
+  letter-spacing: -0.01em;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* The tooltip shows the title ART when TMDB has one (same rule as the hero:
+   the text node stays for screen readers). */
+.card-preview__logo {
+  display: block;
+  max-width: 74%;
+  max-height: 44px;
+  width: auto;
+  height: auto;
+  margin-bottom: 2px;
+  object-fit: contain;
+  object-position: left center;
+}
+
 .card-preview__meta {
   font-size: 12.5px;
   color: var(--text-muted);
-  margin: 3px 0 7px;
+  margin: 4px 0 8px;
 }
 
 .card-preview__overview {
@@ -1129,8 +1191,8 @@ body.room-focus.rail-peek .sidenav {
   /* Fixed columns so every search-result card is exactly the same size as
      the row cards — no stretching, no uneven poster heights. */
   grid-template-columns: repeat(auto-fill, var(--card-w));
-  gap: 14px;
-  margin-top: 12px;
+  gap: clamp(12px, 1vw, 20px);
+  margin-top: 14px;
   justify-content: center;
 }
 
@@ -1142,17 +1204,17 @@ body.room-focus.rail-peek .sidenav {
 .browse__empty {
   grid-column: 1 / -1;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 14.5px;
   text-align: center;
-  padding: 40px 0;
+  padding: 48px 0;
 }
 
 .browse__error {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 48px 20px;
+  gap: 12px;
+  padding: 56px 20px;
   text-align: center;
 }
 
@@ -1175,26 +1237,30 @@ body.room-focus.rail-peek .sidenav {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(4px);
+  padding: clamp(12px, 2vw, 32px);
+  background: rgba(0, 0, 0, 0.74);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   overflow-y: auto;
+  animation: fade-in 0.16s ease;
 }
 
 .modal__card {
   width: 100%;
-  max-width: 420px;
+  max-width: 440px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: 24px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-3);
   animation: modal-in 0.2s ease;
 }
 
+/* The wide card is the detail / episode picker: fixed header, scrolling body,
+   and it fills more of a TV so the episode grid is usable from the couch. */
 .modal__card--wide {
-  max-width: 1000px;
-  max-height: 90vh;
+  max-width: min(1040px, 94vw);
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -1202,7 +1268,11 @@ body.room-focus.rail-peek .sidenav {
 }
 
 .modal__card--wide .modal__head {
-  padding: 16px 20px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 20px;
+  background: var(--bg-soft);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1214,7 +1284,7 @@ body.room-focus.rail-peek .sidenav {
 /* A compact banner inside the "choose a video" picker. */
 .modal__card--wide .hero,
 .modal__card--wide .hero__skeleton {
-  height: clamp(140px, 20vh, 200px);
+  height: clamp(140px, 20vh, 220px);
   min-height: 0;
   border-radius: 12px;
 }
@@ -1227,6 +1297,10 @@ body.room-focus.rail-peek .sidenav {
   -webkit-line-clamp: 1;
 }
 
+.modal__card--wide .hero__logo {
+  max-height: 52px;
+}
+
 .modal__head {
   display: flex;
   align-items: center;
@@ -1236,13 +1310,14 @@ body.room-focus.rail-peek .sidenav {
 
 .modal__title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .modal__close {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: none;
   background: transparent;
   color: var(--text-dim);
@@ -1250,19 +1325,30 @@ body.room-focus.rail-peek .sidenav {
   cursor: pointer;
   padding: 0;
   border-radius: var(--radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .modal__close:hover {
   color: var(--text);
+  background: var(--bg-hover);
 }
 
 @keyframes modal-in {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(12px) scale(0.99);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -1270,40 +1356,56 @@ body.room-focus.rail-peek .sidenav {
 .detail {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .detail__top {
   display: flex;
-  gap: 18px;
+  gap: clamp(16px, 2vw, 30px);
   align-items: flex-start;
 }
 
 .detail__poster {
-  flex: 0 0 120px;
-  width: 120px;
+  flex: 0 0 clamp(120px, 13vw, 210px);
+  width: clamp(120px, 13vw, 210px);
   aspect-ratio: 2 / 3;
-  border-radius: 10px;
+  border-radius: 12px;
   object-fit: cover;
   background: var(--bg-elev);
   border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-2);
 }
 
 .detail__info {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .detail__title {
-  margin: 0 0 4px;
-  font-size: 20px;
+  margin: 0 0 8px;
+  font-size: clamp(20px, 1.9vw, 30px);
   font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* The detail header shows the title ART when TMDB has one. */
+.detail__logo {
+  display: block;
+  max-width: min(420px, 84%);
+  max-height: clamp(46px, 5vw, 84px);
+  width: auto;
+  height: auto;
+  margin-bottom: 8px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .detail__meta {
   color: var(--text-dim);
-  font-size: 13px;
-  margin-bottom: 8px;
+  font-size: 13.5px;
+  margin-bottom: 10px;
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -1311,8 +1413,8 @@ body.room-focus.rail-peek .sidenav {
 .detail__overview {
   margin: 0;
   color: var(--text-dim);
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
   display: -webkit-box;
   -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
@@ -1321,31 +1423,32 @@ body.room-focus.rail-peek .sidenav {
 
 .detail__section {
   border-top: 1px solid var(--border);
-  padding-top: 14px;
+  padding-top: 16px;
 }
 
 .detail__label {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
 .detail__seasons {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .detail__episodes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
-  gap: 6px;
-  max-height: 320px;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+  max-height: min(340px, 40vh);
   overflow-y: auto;
+  padding: 2px;
 }
 
 .ep-btn {
@@ -1354,11 +1457,23 @@ body.room-focus.rail-peek .sidenav {
   background: var(--bg-elev);
   color: var(--text);
   border-radius: 8px;
-  padding: 8px 0;
-  font-size: 13px;
+  padding: 10px 0;
+  font-size: 13.5px;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.ep-btn:hover {
+  background: var(--bg-raised);
+  border-color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.ep-btn--current {
+  border-color: var(--red);
+  background: var(--bg-raised);
 }
 
 /* WATCHED FADE: seen episodes dim with a check; in-progress ones keep a
@@ -1372,9 +1487,9 @@ body.room-focus.rail-peek .sidenav {
   position: absolute;
   top: -5px;
   right: -5px;
-  width: 14px;
-  height: 14px;
-  line-height: 14px;
+  width: 15px;
+  height: 15px;
+  line-height: 15px;
   font-size: 9px;
   font-weight: 700;
   text-align: center;
@@ -1387,22 +1502,18 @@ body.room-focus.rail-peek .sidenav {
   content: '';
   position: absolute;
   left: 6px;
-  bottom: 3px;
+  bottom: 4px;
   height: 3px;
   width: var(--wp, 0%);
   background: var(--red);
   border-radius: 2px;
 }
 
-.ep-btn:hover {
-  background: var(--bg-raised);
-  border-color: var(--blue);
-}
-
 .detail__actions {
   display: flex;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 16px;
+  flex-wrap: wrap;
 }
 
 /* ---- Progress / seek bar ------------------------------------------------------------------ */
@@ -1426,21 +1537,39 @@ body.room-focus.rail-peek .sidenav {
 }
 
 /* ---- Responsive ---------------------------------------------------------------------------- */
+/* PHONE (<=720px): one column, the bottom bar owns the chrome, posters are
+   thumb-sized. Everything here is additive to the desktop rules above. */
 @media (max-width: 720px) {
   .hero {
-    /* Small screens: size to content but stay bounded by clamps below. */
+    /* Full-bleed-ish card: tall enough to read as a banner, short enough to
+       leave the first row above the fold. */
     height: auto;
-    min-height: clamp(170px, 40vw, 240px);
+    min-height: clamp(240px, 62vw, 320px);
   }
   .hero__content {
-    padding: 16px;
+    max-width: 100%;
+    padding: 18px 16px;
+    gap: 10px;
+  }
+  .hero__logo {
+    max-width: 78%;
+    max-height: 76px;
+  }
+  .hero__meta {
+    font-size: 13px;
   }
   .hero__overview {
     -webkit-line-clamp: 2;
+    font-size: 13.5px;
+  }
+  .hero::before {
+    /* A phone stacks the text UNDER the art: a hard left scrim would eat the
+       whole image, so the bottom scrim does the work instead. */
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.86) 100%);
   }
   :root {
-    --card-w: 128px;
-    --card-h: 192px;
+    --card-w: 132px;
+    --card-h: 198px;
   }
   .card-item {
     flex-basis: var(--card-w);
@@ -1448,21 +1577,33 @@ body.room-focus.rail-peek .sidenav {
   .grid {
     grid-template-columns: repeat(auto-fill, var(--card-w));
   }
+  /* The bottom bar is fixed: keep the last row clear of it. */
+  .browse {
+    padding-bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));
+  }
   .detail__top {
     flex-direction: column;
     align-items: center;
     text-align: center;
   }
   .detail__poster {
-    flex-basis: 160px;
-    width: 160px;
+    flex-basis: clamp(140px, 42vw, 190px);
+    width: clamp(140px, 42vw, 190px);
+  }
+  .detail__logo {
+    margin-inline: auto;
+    object-position: center;
+  }
+  .detail__episodes {
+    grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+    max-height: 46vh;
   }
   .topnav {
     padding: 8px 12px;
     gap: 10px;
   }
   .topnav__search-input {
-    padding: 9px 14px 9px 38px;
+    padding: 9px 14px 9px 36px;
     font-size: 13.5px;
   }
 
@@ -1475,6 +1616,17 @@ body.room-focus.rail-peek .sidenav {
   }
 }
 
+/* PHONE LANDSCAPE: the banner must not eat the whole viewport height. */
+@media (max-width: 900px) and (max-height: 520px) and (orientation: landscape) {
+  .hero {
+    height: auto;
+    min-height: 200px;
+  }
+  .hero__overview {
+    display: none;
+  }
+}
+
 @media (max-width: 520px) {
   /* Leave room for the search bar: logo text and the secondary action yield. */
   .brand__name {
@@ -1482,6 +1634,77 @@ body.room-focus.rail-peek .sidenav {
   }
   #nav-new-room {
     display: none;
+  }
+}
+
+/* BIG SCREENS (TV / 4K): a 10-foot UI. Posters, type and the banner grow in
+   steps so the layout keeps its proportions instead of shrinking into the
+   corner of a 3840px panel. */
+@media (min-width: 1600px) {
+  :root {
+    --card-w: 182px;
+    --card-h: 273px;
+  }
+  .row__title {
+    margin-bottom: 14px;
+  }
+  .card-item__title {
+    font-size: 15px;
+  }
+  .card-item__meta {
+    font-size: 13px;
+  }
+  .card-preview {
+    width: 400px;
+  }
+  .card-preview__title {
+    font-size: 17px;
+  }
+  .card-preview__overview {
+    font-size: 14px;
+    -webkit-line-clamp: 4;
+  }
+  .hero {
+    height: clamp(420px, 30vw, 620px);
+  }
+  .hero__overview {
+    font-size: 16px;
+    -webkit-line-clamp: 3;
+  }
+  .detail__episodes {
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  }
+}
+
+@media (min-width: 2400px) {
+  :root {
+    --card-w: 214px;
+    --card-h: 321px;
+  }
+  .card-item__title {
+    font-size: 17px;
+  }
+  .card-item__meta {
+    font-size: 14.5px;
+  }
+  .row__title {
+    font-size: 26px;
+  }
+  .card-preview {
+    width: 440px;
+  }
+  .hero {
+    height: clamp(520px, 26vw, 720px);
+  }
+  .hero__logo {
+    max-height: 132px;
+  }
+  .detail__title {
+    font-size: 34px;
+  }
+  .ep-btn {
+    font-size: 15px;
+    padding: 12px 0;
   }
 }
 

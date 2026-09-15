@@ -223,6 +223,9 @@
       year: (m.release_date || '').slice(0, 4),
       poster: img(m.poster_path, 'w500'),
       backdrop: img(m.backdrop_path, 'w1280'),
+      // Hero art up to 4K: the banner ships a srcset so a phone keeps the
+      // 1280px file while a TV pulls the original.
+      backdropLarge: img(m.backdrop_path, 'original'),
       rating: m.vote_average != null ? m.vote_average : null,
       overview: m.overview || '',
     };
@@ -237,6 +240,7 @@
       year: (t.first_air_date || '').slice(0, 4),
       poster: img(t.poster_path, 'w500'),
       backdrop: img(t.backdrop_path, 'w1280'),
+      backdropLarge: img(t.backdrop_path, 'original'),
       rating: t.vote_average != null ? t.vote_average : null,
       overview: t.overview || '',
     };
@@ -561,6 +565,92 @@
     }
   }
 
+  // ---- title logos (Netflix-style title art) ---------------------------------
+  // TMDB ships transparent wordmarks per title. The hero banner, the hover
+  // tooltip and the details modal show the LOGO when one exists and keep the
+  // text title otherwise, so a title without art never leaves a hole. The text
+  // node is never removed: it carries the accessible name and is visually
+  // clipped once the logo is on screen.
+  const LOGO_LANGS = ['en', 'null']; // catalog content is pinned to en-US
+  const logoPaths = new Map(); // "movie:157336" -> logo path | '' (miss)
+
+  /** @param {any} item @returns {string} API path for the details payload. */
+  function detailPath(item) {
+    const id = encodeURIComponent(item.id);
+    // images = the logo set; one request serves the modal AND the banner.
+    return (item.type === 'movie' ? '/movie/' : '/tv/') + id +
+      '?append_to_response=images&include_image_language=en,null';
+  }
+
+  /**
+   * Best logo in a TMDB image set: the pinned language first, then the
+   * textless (null-language) art, then anything else — and inside a language,
+   * the community-voted winner. Wide art wins over square marks.
+   * @param {any} images @returns {string} file path ('' when there is none)
+   */
+  function pickLogoPath(images) {
+    const all = (images && images.logos) || [];
+    const rank = (l) => {
+      const i = LOGO_LANGS.indexOf(l.iso_639_1 || 'null');
+      return i === -1 ? LOGO_LANGS.length : i;
+    };
+    const wide = all.filter((l) => !l.aspect_ratio || l.aspect_ratio >= 1.2);
+    const pool = (wide.length ? wide : all).filter((l) => l && l.file_path);
+    if (!pool.length) return '';
+    const best = pool
+      .slice()
+      .sort((a, b) => rank(a) - rank(b) || (b.vote_average || 0) - (a.vote_average || 0))[0];
+    return best.file_path || '';
+  }
+
+  /** Logo path for an item (memoized; a miss is memoized too). Never throws. */
+  async function fetchLogoPath(item) {
+    if (!item || item.id == null) return '';
+    const key = (item.type === 'movie' ? 'movie' : 'tv') + ':' + item.id;
+    if (logoPaths.has(key)) return logoPaths.get(key);
+    logoPaths.set(key, ''); // in-flight guard: one request per title
+    let path = '';
+    try {
+      const data = await api(detailPath(item));
+      path = pickLogoPath(data && data.images);
+    } catch (_) {
+      path = '';
+    }
+    logoPaths.set(key, path);
+    return path;
+  }
+
+  /**
+   * Insert a title-logo image BEFORE the text title and clip the text.
+   * @param {string} path @param {HTMLElement | null} textEl @param {string} cls
+   */
+  function paintTitleLogo(path, textEl, cls) {
+    if (!path || !textEl || !textEl.parentNode) return;
+    const logo = document.createElement('img');
+    logo.className = cls;
+    logo.src = img(path, 'w500');
+    logo.alt = '';
+    logo.decoding = 'async';
+    logo.setAttribute('aria-hidden', 'true');
+    // A broken logo means the text title is the UI (never an empty banner).
+    logo.onerror = () => {
+      logo.remove();
+      textEl.classList.remove('is-title-hidden');
+    };
+    logo.onload = () => textEl.classList.add('is-title-hidden');
+    textEl.parentNode.insertBefore(logo, textEl);
+    // The text is hidden from the start too: the logo is already in the DOM,
+    // so the swap cannot flash a duplicate title while the image decodes.
+    textEl.classList.add('is-title-hidden');
+  }
+
+  /** Async path: fetch the logo for an item, then paint it. */
+  function applyTitleLogo(item, textEl, cls) {
+    fetchLogoPath(item).then((path) => {
+      if (path && textEl && textEl.parentNode) paintTitleLogo(path, textEl, cls);
+    });
+  }
+
   // ---- hover preview (autoplaying trailer + plot) -------------------------------
   const CAN_HOVER =
     typeof window.matchMedia === 'function' &&
@@ -674,7 +764,9 @@
 
     const body = h('div', 'card-preview__body');
     const text = h('div', 'card-preview__text');
-    text.appendChild(h('div', 'card-preview__title', item.title));
+    const tipTitle = h('div', 'card-preview__title', item.title);
+    text.appendChild(tipTitle);
+    applyTitleLogo(item, tipTitle, 'card-preview__logo');
     text.appendChild(metaNode(item, 'card-preview__meta'));
     if (item.overview) text.appendChild(h('p', 'card-preview__overview', item.overview));
     body.appendChild(text);
@@ -878,12 +970,24 @@
     if (artSrc) {
       const im = document.createElement('img');
       im.src = artSrc;
+      // TV / 4K: the same art at full resolution, chosen by the browser only
+      // when the viewport (and its DPR) actually needs it.
+      if (item.backdropLarge && artSrc === item.backdrop) {
+        im.srcset = item.backdrop + ' 1280w, ' + item.backdropLarge + ' 3840w';
+        im.sizes = '100vw';
+      }
       im.alt = '';
+      im.decoding = 'async';
+      im.setAttribute('fetchpriority', 'high'); // the banner is the LCP image
       im.setAttribute('aria-hidden', 'true');
       // If the backdrop fails, fall back to the poster instead.
       im.onerror = () => {
-        if (item.poster && im.src !== item.poster) im.src = item.poster;
-        else im.remove();
+        if (item.poster && im.src !== item.poster) {
+          im.removeAttribute('srcset');
+          im.src = item.poster;
+        } else {
+          im.remove();
+        }
       };
       media.appendChild(im);
     }
@@ -891,7 +995,9 @@
 
     const content = h('div', 'hero__content');
     content.appendChild(h('span', 'hero__badge', typeLabel(item)));
-    content.appendChild(h('h1', 'hero__title', item.title));
+    const heroTitle = h('h1', 'hero__title', item.title);
+    content.appendChild(heroTitle);
+    applyTitleLogo(item, heroTitle, 'hero__logo');
     content.appendChild(metaNode(item, 'hero__meta'));
     if (item.overview) content.appendChild(h('p', 'hero__overview', item.overview));
 
@@ -942,10 +1048,10 @@
     (async () => {
       try {
         if (item.type === 'movie') {
-          const extra = await api('/movie/' + encodeURIComponent(item.id));
+          const extra = await api(detailPath(item));
           renderDetailBody(body, item, extra, null, onPick, close);
         } else {
-          const extra = await api('/tv/' + encodeURIComponent(item.id));
+          const extra = await api(detailPath(item));
           // Resolve anime classification + AniList id. Try the Worker endpoint
           // first (TMDB keywords + AniList match); if that's unreachable or
           // can't find a match, fall back to a direct browser -> AniList lookup
@@ -1015,7 +1121,10 @@
     top.appendChild(poster);
 
     const info = h('div', 'detail__info');
-    info.appendChild(h('div', 'detail__title', (extra && (extra.title || extra.name)) || item.title));
+    const detailTitle = h('div', 'detail__title', (extra && (extra.title || extra.name)) || item.title);
+    info.appendChild(detailTitle);
+    // The details payload already carries the logo set — no second request.
+    paintTitleLogo(pickLogoPath(extra && extra.images), detailTitle, 'detail__logo');
     const metaParts = [];
     if ((extra && extra.vote_average) || item.rating) metaParts.push({ icon: 'star' }, Number((extra && extra.vote_average) || item.rating).toFixed(1));
     if ((extra && extra.release_date) || (extra && extra.first_air_date) || item.year) {
@@ -1965,5 +2074,8 @@
     openDetail,
     openEpisodes,
     fetchRecommendations,
+    pickLogoPath,
+    fetchLogoPath,
+    detailPath,
   };
 })(window);

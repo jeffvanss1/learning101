@@ -1659,3 +1659,56 @@ status). The client assigned `localPlaying = d.playing` unconditionally, so
   is told, and the chat banner the room would write. `python3 -m http.server`
   from the repo root, then open /scripts/false-pause-lab.html.
 Tests 239/239, check clean. player v16 / ui-2026-09-15.89.
+
+## Title logos + a bigger cinematic hero + responsive phone → 4K (ui-2026-09-15.90)
+
+USER: "we should add title logo in details or tool tips? to make it looks nice also
+the heroes banner make it bigger and replace the title with logo of their own like
+netflix" → and then: "make it responsive from mobile to TV full hd and 4k".
+
+- TITLE LOGOS: TMDB ships transparent wordmarks per title, so the hero banner, the
+  hover tooltip and the details modal now show the film's OWN logo art instead of a
+  flat text title. One request serves both: the details calls go through
+  `detailPath()` = `/movie|tv/{id}?append_to_response=images&include_image_language=en,null`
+  (cached by `api()` like every other payload), and the tooltip/hero resolve through
+  the memoized `fetchLogoPath()` — one request per title, ever.
+- PICKING THE ART (`pickLogoPath`): the pinned language first (en), then the textless
+  art, then anything else; inside a language the community-voted logo wins, and a
+  wide wordmark always beats a square mark (a square logo in a banner looks like a
+  bug). A lone square mark is still better than nothing.
+- NEVER A HOLE: a title without a logo keeps its text title, and a logo that 404s is
+  dropped on `onerror` so the text comes back. The text node is never removed either
+  way — it is clipped with `.is-title-hidden` (`clip-path: inset(50%)`), so screen
+  readers and search keep the title while the artwork is what you see. That is why
+  the accessible name survives the visual swap.
+- BIGGER BANNER: the hero went from `clamp(190px, 26vw, 360px)` to
+  `clamp(300px, 33vw, 560px)` — and up to 720px on a 4K panel — with two scrims
+  (a left one for the wordmark, a bottom one to seat the banner in the page) and
+  its own on-art ink, so the light theme stays readable. The art ships a `srcset`
+  (`w1280 1280w` + `original 3840w`, `sizes: 100vw`) so a phone never downloads the
+  4K file and a TV never shows an upscaled one; the banner image is marked
+  `fetchpriority="high"` because it is the LCP element.
+- RESPONSIVE, PHONE → 4K: one content column (`--page-max` 1560px, `--page-pad`
+  clamp) shared by hero, search, rows and the grid. Poster size is one token
+  (`--card-w/--card-h`): 132×198 on a phone, 158×237 desktop, 182×273 ≥1600px,
+  214×321 ≥2400px (4K), with the tooltip, hero, episode grid, row titles and the
+  top bar scaling in the same steps. Landscape phones collapse the banner instead
+  of eating the screen. On phones the feed now keeps its last row clear of the
+  bottom bar (`padding-bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom))`).
+- THE REST OF THE PASS: elevation ramp tokens (`--shadow-1/2/3`) instead of ad-hoc
+  shadows, `--radius-lg` panels, buttons that lift 1px on hover with a press state
+  and a keyboard focus ring, a glass top bar, a calmer card (softer radius, hover
+  zoom with a real easing curve, glass type badge), a tooltip with a real title
+  line, and a detail card with a bigger poster column and a proper sticky header.
+- TESTS: tests/title-logo.test.mjs (8 cases) EXECUTES the shipped logo helpers
+  (`pickLogoPath` ranking, `detailPath` shape, memoized `fetchLogoPath`,
+  `applyTitleLogo` painting + the broken-image fallback + the no-art case) and pins
+  the CSS contract (banner size, bounded logos, the accessible clip, every
+  breakpoint tier). preview-audio slices the logo section too, because
+  `buildPreview()` paints its title through those helpers.
+- PREVIEW: `python3 scripts/make-design-preview.py` regenerates
+  scripts/design-preview.html — two real 390×844 phone frames (feed + "More" sheet,
+  built from the SHIPPED chrome markup) next to the desktop hero, a pinned-open
+  tooltip and the detail card, in both themes.
+Tests 247/247, check clean. player v16 / catalog v31 / catalog css v30 / style v27 /
+social v52 / ui-2026-09-15.90.

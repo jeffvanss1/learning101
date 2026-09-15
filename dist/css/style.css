@@ -40,8 +40,18 @@
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
     'SF Pro Icons', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   --radius: 12px;
+  --radius-lg: 16px;
   --radius-sm: 8px;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  /* Elevation ramp: 1 = resting card, 2 = lifted/hover, 3 = overlay. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.24);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 26px 70px rgba(0, 0, 0, 0.66);
+
+  /* The content column: a phone fills the screen, a TV keeps a readable
+     column instead of stretching a 158px poster across 3800 pixels. */
+  --page-max: 1560px;
+  --page-pad: clamp(14px, 2.1vw, 40px);
 
   color-scheme: dark;
 
@@ -85,11 +95,63 @@
   justify-content: center;
 }
 
+/* ---- Big screens (TV / 4K): 10-foot UI ------------------------------- */
+/* Sizes stay in px everywhere, so the shell scales with explicit steps
+   instead of a root font-size trick (which would not touch existing px). */
+@media (min-width: 1600px) {
+  :root {
+    --topnav-h: 68px;
+    --header-h: 68px;
+    --page-pad: clamp(28px, 2.6vw, 64px);
+  }
+  .btn {
+    padding: 11px 24px;
+    font-size: 15px;
+  }
+  .btn--sm {
+    padding: 9px 18px;
+    font-size: 14px;
+  }
+  .toast {
+    font-size: 14.5px;
+  }
+}
+
+@media (min-width: 2400px) {
+  :root {
+    --topnav-h: 78px;
+    --header-h: 78px;
+    --page-max: 1900px;
+  }
+  .btn {
+    padding: 13px 30px;
+    font-size: 16.5px;
+  }
+  .btn--sm {
+    padding: 11px 22px;
+    font-size: 15px;
+  }
+}
+
 /* Titles that pair an icon with words. */
 .modal__title {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* A title that handed its visual job to its LOGO art: the text node stays in
+   the DOM (accessible name, no-logo fallback) but stops painting. */
+.is-title-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Icon + label inside a button (the .btn row already has its own gap). */
@@ -133,6 +195,9 @@ html[data-theme='light'] {
   --amber: #8f6c00;
 
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.18);
+  --shadow-3: 0 26px 70px rgba(0, 0, 0, 0.24);
 
   color-scheme: light;
 }
@@ -165,6 +230,9 @@ html[data-theme='light'] {
     --amber: #8f6c00;
 
     --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.06);
+    --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.18);
+    --shadow-3: 0 26px 70px rgba(0, 0, 0, 0.24);
 
     color-scheme: light;
   }
@@ -301,16 +369,25 @@ button {
   border-radius: 8px;
   padding: 9px 18px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   color: var(--text);
   background: var(--bg-elev);
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+  box-shadow: var(--shadow-1);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease,
+    transform 0.12s ease;
   white-space: nowrap;
 }
 
-.btn:active {
-  transform: translateY(1px);
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-1);
 }
 
 .btn:disabled {
@@ -319,7 +396,9 @@ button {
 }
 
 .btn--primary {
-  background: var(--red);
+  /* A whisper of a gradient keeps the accent from looking like flat paint. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 60%),
+    var(--red);
   color: #fff;
   border-color: transparent; /* solid accent: no ring */
 }

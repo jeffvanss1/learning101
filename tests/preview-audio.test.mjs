@@ -22,11 +22,13 @@ import { ROOT } from './dompath.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** catalog.js section: hover preview (state + trailer embed + preview card). */
+/** catalog.js sections: title-logo helpers + hover preview (state + trailer
+ *  embed + preview card). The logo helpers travel with the tooltip because
+ *  buildPreview() paints the title art through them. */
 function sliceHoverPreview() {
   const src = readFileSync(join(ROOT, 'dist/js/catalog.js'), 'utf8');
-  const start = src.indexOf('  // ---- hover preview (autoplaying trailer + plot)');
-  assert.ok(start > 0, 'hover preview section present in catalog.js');
+  const start = src.indexOf('  // ---- title logos (Netflix-style title art)');
+  assert.ok(start > 0, 'title-logo helpers present in catalog.js');
   const end = src.indexOf('  // ---- cards ----', start);
   assert.ok(end > start, 'hover preview section ends at the cards section');
   return (
@@ -145,10 +147,12 @@ function harness(o = {}) {
     },
   };
   const window = { innerWidth: 1400, innerHeight: 900, matchMedia: () => ({ matches: true }) };
-  const api = () =>
-    Promise.resolve({
-      results: [{ site: 'YouTube', type: 'Trailer', official: true, key: o.trailerKey || 'KEY123' }],
-    });
+  const api =
+    o.api ||
+    (() =>
+      Promise.resolve({
+        results: [{ site: 'YouTube', type: 'Trailer', official: true, key: o.trailerKey || 'KEY123' }],
+      }));
   const h = (tag, cls, text) => {
     const el = new FakeEl(tag);
     if (cls) el.className = cls;
@@ -158,6 +162,8 @@ function harness(o = {}) {
   // buildPreview builds its meta line through metaNode() (the bundle's shared
   // meta helper) — it must be bound or the whole preview throws.
   const metaNode = (_item, cls) => h('div', cls || '', '2026 \u00b7 Movie');
+  // The logo helpers build image URLs through the bundle's img() helper.
+  const img = (path, size) => 'https://image.tmdb.org/t/p/' + size + path;
   // Icon spy: the bundle paints icons with WP.icon / WP.setIcon (utils.js), so
   // recording the calls is how these tests prove "inline SVG, never emoji".
   const icons = [];
@@ -182,9 +188,10 @@ function harness(o = {}) {
     'api',
     'h',
     'metaNode',
+    'img',
     'global',
     sliceHoverPreview()
-  )(window, doc, localStorage, api, h, metaNode, globalObj);
+  )(window, doc, localStorage, api, h, metaNode, img, globalObj);
   return { attachHoverPreview: fn.attachHoverPreview, closePreview: fn.closePreview, body, store, icons };
 }
 
@@ -328,8 +335,8 @@ test('trailer audio: CSS ships the bigger tooltip + the ghost icon toggle (theme
   assert.match(sound, /\.card-preview__sound:hover \{[^}]*background: var\(--bg-hover\);/, 'hover wash like the sidenav icons');
   assert.match(css, /\.card-preview__sound\.is-on \{[^}]*color: var\(--text\);/, 'ON state brightens the icon (themed ink)');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/catalog\.js\?v=30/, 'catalog js cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=29/, 'catalog css cache-bumped');
+  assert.match(html, /js\/catalog\.js\?v=31/, 'catalog js cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=30/, 'catalog css cache-bumped');
 });
 
 test('icons: the shipped UI carries NO emoji glyphs (inline SVG only)', () => {

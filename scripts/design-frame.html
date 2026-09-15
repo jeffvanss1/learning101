@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty — phone frame (dark)</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <link rel="stylesheet" href="../dist/css/catalog.css" />
+    <link rel="stylesheet" href="../dist/css/social.css" />
+  </head>
+  <body>
+  <div class="app-shell">
+<aside class="sidenav" id="sidenav" aria-label="Explore">
+      <!-- Mobile sheet header (hidden on desktop, where the rail is a column). -->
+      <div class="sidenav__sheet-head">
+        <span class="sidenav__sheet-title" data-i18n="nav.more">More</span>
+        <button id="sidenav-close" class="sidenav__close" type="button" aria-label="Close menu">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="sidenav__search">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input id="sidenav-search-input" class="sidenav__search-input" type="text" data-i18n-placeholder="search.placeholderSide" placeholder="Search" autocomplete="off" aria-label="Search the library" />
+      </div>
+
+      <nav class="sidenav__group" aria-label="Menu">
+        <span class="sidenav__heading" data-i18n="heading.menu">Menu</span>
+        <button class="sidenav__item is-active" data-nav="home" type="button" title="Home">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          <span class="sidenav__label" data-i18n="nav.home">Home</span>
+        </button>
+        <button class="sidenav__item" data-nav="movies" type="button" title="Movies">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+          <span class="sidenav__label" data-i18n="nav.movies">Movies</span>
+        </button>
+        <button class="sidenav__item" data-nav="series" type="button" title="Series">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+          <span class="sidenav__label" data-i18n="nav.series">Series</span>
+        </button>
+        <button class="sidenav__item" data-nav="anime" type="button" title="Anime">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"></path><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"></path></svg>
+          <span class="sidenav__label" data-i18n="nav.anime">Anime</span>
+        </button>
+        <button class="sidenav__item" data-nav="friends" type="button" title="Friends">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          <span class="sidenav__label" data-i18n="nav.friends">Friends</span>
+        </button>
+        <button class="sidenav__item" data-nav="admin" type="button" title="Admin" hidden>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          <span class="sidenav__label">Admin</span>
+        </button>
+        <button class="sidenav__item" data-nav="history" type="button" title="Watch history">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+          <span class="sidenav__label" data-i18n="nav.history">Watch history</span>
+        </button>
+      </nav>
+
+      <nav class="sidenav__group" aria-label="Library">
+        <span class="sidenav__heading" data-i18n="heading.library">Library</span>
+        <button class="sidenav__item" data-nav="trending" type="button" title="Trending Now">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+          <span class="sidenav__label" data-i18n="nav.trending">Trending Now</span>
+        </button>
+        <button class="sidenav__item" data-nav="top-movies" type="button" title="Top Rated Movies">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          <span class="sidenav__label" data-i18n="nav.topMovies">Top Rated Movies</span>
+        </button>
+        <button class="sidenav__item" data-nav="top-tv" type="button" title="Top Rated Series">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          <span class="sidenav__label" data-i18n="nav.topSeries">Top Rated Series</span>
+        </button>
+        <button class="sidenav__item" data-nav="now-playing" type="button" title="In Theaters">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+          <span class="sidenav__label" data-i18n="nav.theaters">In Theaters</span>
+        </button>
+        <button class="sidenav__item" data-nav="airing-today" type="button" title="Airing Today">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+          <span class="sidenav__label" data-i18n="nav.airing">Airing Today</span>
+        </button>
+      </nav>
+
+      <nav class="sidenav__group sidenav__group--bottom" aria-label="Actions">
+        <button class="sidenav__item sidenav__item--accent" data-nav="start-room" type="button" title="Start a room">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          <span class="sidenav__label" data-i18n="nav.startRoom">Start a room</span>
+        </button>
+      </nav>
+    </aside>
+    <div class="app-shell__main">
+<nav class="topnav" id="home-nav">
+        <button id="nav-toggle-sidenav" class="topnav__hamburger" type="button" aria-label="Toggle navigation" aria-expanded="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <a class="brand" href="/" aria-label="WatchParty home">
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 12C10 7.5 4 7.5 4 12S10 16.5 12 12c2-4.5 8-4.5 8 0s-6 4.5-8 0Z" stroke-width="2.4"></path>
+        </svg>
+      </span>
+      <span class="brand__name">Watch<em>Party</em></span>
+    </a>
+    <div class="topnav__search">
+      <svg class="topnav__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input id="topnav-search-input" class="topnav__search-input" type="text" data-i18n-placeholder="search.placeholder" placeholder="Search movies &amp; series&hellip;" autocomplete="off" aria-label="Search movies and series" />
+    </div>
+    <div class="topnav__right">
+      <button id="nav-profile" class="topnav__profile" type="button" title="Your profile" aria-label="Your profile">
+        <span class="topnav__profile-fallback" aria-hidden="true">?</span>
+        <img id="nav-profile-avatar" class="topnav__profile-avatar" alt="" hidden />
+      </button>
+      <button id="nav-new-room" class="btn btn--ghost btn--sm" type="button" data-i18n="nav.startRoom">Start a room</button>
+      <button id="nav-join" class="btn btn--primary btn--sm" type="button" data-i18n="action.join">Join</button>
+    </div>
+  </nav>
+      <main id="home" class="home">
+        <div class="browse">
+      <div class="browse__hero">
+        <div class="hero">
+          <div class="hero__media">
+            <img src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="860"><defs><linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20304a"/><stop offset=".55" stop-color="#101826"/><stop offset="1" stop-color="#05070c"/></linearGradient><radialGradient id="p" cx=".72" cy=".3" r=".5"><stop offset="0" stop-color="#d9c9a3" stop-opacity=".55"/><stop offset="1" stop-color="#d9c9a3" stop-opacity="0"/></radialGradient></defs><rect width="1920" height="860" fill="url(#s)"/><rect width="1920" height="860" fill="url(#p)"/><circle cx="1382" cy="258" r="150" fill="#0e1420"/><circle cx="1382" cy="258" r="150" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="6"/></svg>" alt="" />
+          </div>
+          <div class="hero__content">
+            <span class="hero__badge">Movie</span>
+            <img class="hero__logo" src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="760" height="120"><text x="0" y="86" font-family="Helvetica,Arial" font-size="86" font-weight="700" letter-spacing="6" fill="#ffffff">INTERSTELLAR</text><text x="4" y="114" font-family="Helvetica,Arial" font-size="20" letter-spacing="10" fill="rgba(255,255,255,0.62)">A FILM BY C. NOLAN</text></svg>" alt="" aria-hidden="true" />
+            <div class="hero__meta"><span>8.7</span><span>2014</span><span>169 min</span><span>Adventure</span></div>
+            <p class="hero__overview">
+              With Earth's farmland failing, a former NASA pilot leads a small crew through a
+              wormhole near Saturn in search of a new home for humanity.
+            </p>
+            <div class="hero__actions">
+              <button class="btn btn--primary" type="button">Watch together</button>
+              <button class="btn btn--ghost" type="button">Details</button>
+            </div>
+          </div>
+        </div>
+      </div>
+          <div class="browse__rows">
+        <section class="row">
+          <h2 class="row__title">Trending now</h2>
+          <div class="row__scroller">
+          <article class="card-item">
+            <div class="card-item__poster">
+              <img src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="316" height="474"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c98a4b"/><stop offset="1" stop-color="#3a2a1c"/></linearGradient></defs><rect width="316" height="474" fill="url(#g)"/><text x="24" y="300" font-family="Helvetica,Arial" font-size="150" font-weight="700" fill="rgba(255,255,255,0.16)">D</text><text x="24" y="410" font-family="Helvetica,Arial" font-size="26" font-weight="700" fill="#fff">Dune: Part Two</text><text x="24" y="440" font-family="Helvetica,Arial" font-size="18" fill="rgba(255,255,255,0.72)">2024 · Sci-Fi</text></svg>" alt="" />
+              <span class="card-item__badge">Movie</span>
+              <button class="card-item__like" type="button" aria-label="Like">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            </div>
+            <div class="card-item__body">
+              <div class="card-item__title">Dune: Part Two</div>
+              <div class="card-item__meta">2024 · Sci-Fi</div>
+            </div>
+          </article>
+          <article class="card-item">
+            <div class="card-item__poster">
+              <img src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="316" height="474"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8d8f96"/><stop offset="1" stop-color="#20222a"/></linearGradient></defs><rect width="316" height="474" fill="url(#g)"/><text x="24" y="300" font-family="Helvetica,Arial" font-size="150" font-weight="700" fill="rgba(255,255,255,0.16)">O</text><text x="24" y="410" font-family="Helvetica,Arial" font-size="26" font-weight="700" fill="#fff">Oppenheimer</text><text x="24" y="440" font-family="Helvetica,Arial" font-size="18" fill="rgba(255,255,255,0.72)">2023 · Drama</text></svg>" alt="" />
+              <span class="card-item__badge">Movie</span>
+              <button class="card-item__like" type="button" aria-label="Like">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            </div>
+            <div class="card-item__body">
+              <div class="card-item__title">Oppenheimer</div>
+              <div class="card-item__meta">2023 · Drama</div>
+            </div>
+          </article>
+          <article class="card-item">
+            <div class="card-item__poster">
+              <img src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="316" height="474"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5fae8c"/><stop offset="1" stop-color="#16302a"/></linearGradient></defs><rect width="316" height="474" fill="url(#g)"/><text x="24" y="300" font-family="Helvetica,Arial" font-size="150" font-weight="700" fill="rgba(255,255,255,0.16)">T</text><text x="24" y="410" font-family="Helvetica,Arial" font-size="26" font-weight="700" fill="#fff">The Wild Robot</text><text x="24" y="440" font-family="Helvetica,Arial" font-size="18" fill="rgba(255,255,255,0.72)">2024 · Animation</text></svg>" alt="" />
+              <span class="card-item__badge">Movie</span>
+              <button class="card-item__like" type="button" aria-label="Like">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            </div>
+            <div class="card-item__body">
+              <div class="card-item__title">The Wild Robot</div>
+              <div class="card-item__meta">2024 · Animation</div>
+            </div>
+          </article>
+          <article class="card-item">
+            <div class="card-item__poster">
+              <img src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="316" height="474"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b4553f"/><stop offset="1" stop-color="#2a1512"/></linearGradient></defs><rect width="316" height="474" fill="url(#g)"/><text x="24" y="300" font-family="Helvetica,Arial" font-size="150" font-weight="700" fill="rgba(255,255,255,0.16)">G</text><text x="24" y="410" font-family="Helvetica,Arial" font-size="26" font-weight="700" fill="#fff">Godzilla x Kong</text><text x="24" y="440" font-family="Helvetica,Arial" font-size="18" fill="rgba(255,255,255,0.72)">2024 · Action</text></svg>" alt="" />
+              <span class="card-item__badge">Movie</span>
+              <button class="card-item__like" type="button" aria-label="Like">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            </div>
+            <div class="card-item__body">
+              <div class="card-item__title">Godzilla x Kong</div>
+              <div class="card-item__meta">2024 · Action</div>
+            </div>
+          </article>
+          <article class="card-item">
+            <div class="card-item__poster">
+              <img src="data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="316" height="474"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b06f9e"/><stop offset="1" stop-color="#2b1a29"/></linearGradient></defs><rect width="316" height="474" fill="url(#g)"/><text x="24" y="300" font-family="Helvetica,Arial" font-size="150" font-weight="700" fill="rgba(255,255,255,0.16)">P</text><text x="24" y="410" font-family="Helvetica,Arial" font-size="26" font-weight="700" fill="#fff">Poor Things</text><text x="24" y="440" font-family="Helvetica,Arial" font-size="18" fill="rgba(255,255,255,0.72)">2023 · Comedy</text></svg>" alt="" />
+              <span class="card-item__badge">Movie</span>
+              <button class="card-item__like" type="button" aria-label="Like">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+            </div>
+            <div class="card-item__body">
+              <div class="card-item__title">Poor Things</div>
+              <div class="card-item__meta">2023 · Comedy</div>
+            </div>
+          </article>
+          </div>
+        </section>
+          </div>
+        </div>
+      </main>
+<nav id="bottomnav" class="bottomnav" aria-label="Primary">
+        <button class="bottomnav__item is-active" data-nav="home" type="button" title="Home">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          <span class="bottomnav__label" data-i18n="nav.home">Home</span>
+        </button>
+        <button class="bottomnav__item" data-nav="movies" type="button" title="Movies">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+          <span class="bottomnav__label" data-i18n="nav.movies">Movies</span>
+        </button>
+        <!-- CENTRE SLOT: Friends. Opens the global friends drawer. -->
+        <button class="bottomnav__item bottomnav__item--center" data-nav="friends" type="button" title="Friends">
+          <span class="bottomnav__center-disc">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          </span>
+          <span class="bottomnav__label" data-i18n="nav.friends">Friends</span>
+        </button>
+        <button class="bottomnav__item" data-nav="series" type="button" title="Series">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="15" rx="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+          <span class="bottomnav__label" data-i18n="nav.series">Series</span>
+        </button>
+        <!-- MORE: the rest of the guide rail as a slide-in sheet. -->
+        <button id="bottomnav-more" class="bottomnav__item" data-nav="more" type="button" title="More" aria-expanded="false" aria-controls="sidenav">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
+          <span class="bottomnav__label" data-i18n="nav.more">More</span>
+        </button>
+      </nav>
+    </div>
+  </div>
+<div id="sidenav-backdrop" class="sidenav-backdrop" hidden></div>
+  </body>
+</html>
