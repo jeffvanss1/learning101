@@ -827,11 +827,13 @@ body.room-focus.rail-peek .sidenav {
 }
 
 /* Title art (Netflix-style wordmark) replaces the text title when TMDB has
-   one: never wider than the text block, never taller than three lines. */
+   one: never wider than the text block, never taller than three lines. ONE
+   measure for every shape — a square mark and a wide wordmark get the same
+   box, so the same title looks identical wherever it appears. */
 .hero__logo {
   display: block;
-  max-width: min(440px, 88%);
-  max-height: clamp(58px, 7vw, 116px);
+  max-width: min(520px, 84%);
+  max-height: clamp(96px, 9vw, 156px);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -1144,17 +1146,27 @@ body.room-focus.rail-peek .sidenav {
   text-overflow: ellipsis;
 }
 
-/* The tooltip shows the title ART when TMDB has one (same rule as the hero:
-   the text node stays for screen readers). */
+/* The tooltip shows the title ART when TMDB has one (the text node stays for
+   screen readers). ONE RULE FOR EVERY LOGO — the art's shape may never change
+   the treatment: the lockup is left-aligned with the text column and its CENTRE
+   sits on the fold between the trailer and the title text, so half of it covers
+   the trailer's bottom edge. Only the art's own height differs (a 6:1 wordmark
+   is naturally shorter than a square mark). `margin-top` here is the no-JS
+   fallback — the shipped JS measures the exact margin from the art's aspect
+   ratio. */
 .card-preview__logo {
   display: block;
-  max-width: 74%;
-  max-height: 44px;
+  max-width: 88%;
+  max-height: 104px;
   width: auto;
   height: auto;
+  margin-top: -52px; /* fallback: half of the 104px box */
   margin-bottom: 2px;
+  position: relative; /* paints above the trailer (it is a positioned layer) */
+  z-index: 2;
   object-fit: contain;
   object-position: left center;
+  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.62));
 }
 
 .card-preview__meta {
@@ -1297,8 +1309,12 @@ body.room-focus.rail-peek .sidenav {
   -webkit-line-clamp: 1;
 }
 
+/* The compact banner in the "choose a video" picker is a 140-220px strip, not a
+   billboard: ONE smaller measure for every logo shape, same rule as the big
+   surfaces (no wide-vs-square tiers anywhere). */
 .modal__card--wide .hero__logo {
-  max-height: 52px;
+  max-height: 72px;
+  max-width: min(340px, 58%);
 }
 
 .modal__head {
@@ -1388,11 +1404,12 @@ body.room-focus.rail-peek .sidenav {
   letter-spacing: -0.02em;
 }
 
-/* The detail header shows the title ART when TMDB has one. */
+/* The detail header shows the title ART when TMDB has one — the same single
+   measure as the hero, so all three surfaces agree. */
 .detail__logo {
   display: block;
-  max-width: min(420px, 84%);
-  max-height: clamp(46px, 5vw, 84px);
+  max-width: min(460px, 82%);
+  max-height: clamp(84px, 7vw, 132px);
   width: auto;
   height: auto;
   margin-bottom: 8px;
@@ -1536,43 +1553,6 @@ body.room-focus.rail-peek .sidenav {
   background: var(--bg-elev);
 }
 
-/* ---- Title logos: small/square art gets a REAL box ----------------------------------------- */
-/* A wide wordmark (2:1 or wider) fits the text column as it is. SQUARE or SHORT
-   art — a monogram, an emblem — rendered as a postage stamp at the old 44px
-   cap, so it gets a bigger box. In the hover tooltip that box STRADDLES THE
-   FOLD: the art is left-aligned with the text column and its centre sits on
-   the line where the trailer ends and the title text begins, so half of it
-   covers the trailer's bottom edge (the shipped JS measures the exact margin
-   from the art's aspect ratio; `margin-top` here is the no-JS fallback).
-   The text title stays hidden either way — it keeps the accessible name. */
-.card-preview__logo.is-logo-big {
-  max-width: 88%; /* was 74% */
-  max-height: 104px; /* was 44px */
-  margin-top: -52px; /* fallback: half of the 104px box */
-  position: relative; /* paints above the trailer (it is a positioned layer) */
-  z-index: 2;
-  filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.62));
-}
-
-/* The banner: the same art gets a real measure inside the hero. */
-.hero__logo.is-logo-big {
-  max-width: min(560px, 82%);
-  max-height: clamp(120px, 12vw, 210px);
-}
-
-/* The detail header (poster column on the left, lockup on the right). */
-.detail__logo.is-logo-big {
-  max-width: min(460px, 76%);
-  max-height: clamp(90px, 8vw, 150px);
-}
-
-/* The compact banner in the "choose a video" picker keeps its own, smaller
-   raised cap — it is a 140-220px strip, not a billboard. */
-.modal__card--wide .hero__logo.is-logo-big {
-  max-height: 92px;
-  max-width: min(320px, 58%);
-}
-
 /* ---- Responsive ---------------------------------------------------------------------------- */
 /* PHONE (<=720px): one column, the bottom bar owns the chrome, posters are
    thumb-sized. Everything here is additive to the desktop rules above. */
@@ -1588,19 +1568,14 @@ body.room-focus.rail-peek .sidenav {
     padding: 18px 16px;
     gap: 10px;
   }
+  /* A phone banner is 240-320px tall: the same single measure, scaled down. */
   .hero__logo {
-    max-width: 78%;
-    max-height: 76px;
+    max-width: 74%;
+    max-height: 108px;
   }
-  /* A phone banner is 240-320px tall: the big box grows, but with the phone's
-     proportions (never the desktop measure). */
-  .hero__logo.is-logo-big {
+  .detail__logo {
     max-width: 66%;
-    max-height: 132px;
-  }
-  .detail__logo.is-logo-big {
-    max-width: 58%;
-    max-height: 118px;
+    max-height: 104px;
   }
   .hero__meta {
     font-size: 13px;
@@ -1718,13 +1693,13 @@ body.room-focus.rail-peek .sidenav {
     font-size: 16px;
     -webkit-line-clamp: 3;
   }
-  .hero__logo.is-logo-big {
-    max-height: clamp(180px, 14vw, 280px);
+  .hero__logo {
+    max-height: clamp(150px, 12vw, 230px);
   }
-  .detail__logo.is-logo-big {
-    max-height: 186px;
+  .detail__logo {
+    max-height: 168px;
   }
-  .card-preview__logo.is-logo-big {
+  .card-preview__logo {
     max-height: 116px;
     margin-top: -58px; /* half of the 116px box */
   }
@@ -1754,14 +1729,11 @@ body.room-focus.rail-peek .sidenav {
     height: clamp(520px, 26vw, 720px);
   }
   .hero__logo {
-    max-height: 132px;
+    max-height: 280px;
+    max-width: min(680px, 80%);
   }
-  .hero__logo.is-logo-big {
-    max-height: 320px;
-    max-width: min(680px, 78%);
-  }
-  .detail__logo.is-logo-big {
-    max-height: 232px;
+  .detail__logo {
+    max-height: 200px;
   }
   .detail__title {
     font-size: 34px;

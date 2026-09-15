@@ -34,29 +34,25 @@
       .lo .card-preview__sound { pointer-events: none; }
       .lo__hero { position: relative; width: 100%; }
 
-      /* ---- Variant A: bigger, still in the text column ------------------- */
-      .opt-a .card-preview__logo { max-width: 100%; max-height: 76px; }
+      /* "Now" uses the SHIPPED rule: .card-preview__logo is the fold lockup
+         for every logo, so nothing extra is needed here. */
 
-      /* ---- Variant B: straddles the media/text fold, centred ------------ */
-      .opt-b .card-preview__logo {
-        position: absolute;
-        left: 50%;
-        top: 56.25%;                 /* the media box is 16:9 → the fold */
-        transform: translate(-50%, -50%);
-        max-width: 88%;              /* was 74% */
-        max-height: 104px;           /* was 44px */
-        z-index: 3;
-        filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.7));
+      /* ---- BEFORE: the old two-tier rule, mirrored for comparison --------
+         Wide wordmark: in the text column, 44px, no shadow, no overlap.
+         Square/short art: 104px, pulled over the trailer, with a shadow.
+         That split is what read as inconsistent. */
+      .opt-before .card-preview__logo {
+        max-width: 74%;
+        max-height: 44px;
+        margin-top: 0;
+        margin-bottom: 2px;
+        position: static;
+        filter: none;
       }
-      .opt-b .card-preview__body { padding-top: 46px; }
-
-      /* ---- CHOSEN (C): small/square art straddles the fold, LEFT-aligned -
-         This is now the SHIPPED rule: .card-preview__logo.is-logo-big (the
-         page mirrors it so the demo runs even before the pin lands). */
-      .opt-c .card-preview__logo {
+      .opt-before .card-preview__logo.is-was-big {
         max-width: 88%;
         max-height: 104px;
-        margin-top: -52px;           /* the shipped fallback; JS measures it */
+        margin-top: -52px;
         position: relative;
         z-index: 2;
         filter: drop-shadow(0 6px 20px rgba(0, 0, 0, 0.62));
@@ -85,12 +81,13 @@
     <div class="lo">
       <div class="lo__head">
         <div>
-          <h1 class="lo__title">Title logo: size &amp; placement options</h1>
+          <h1 class="lo__title">Title logo: one rule, every shape</h1>
           <p class="lo__hint">
-            Every tooltip below is the shipped <code>.card-preview</code> component; the badge on the
-            left names the treatment. Each variant is shown with a <strong>wide wordmark</strong>, a
-            <strong>medium wordmark (3:1)</strong> and a <strong>square mark</strong> — the square one is
-            what currently renders tiny (the shipped cap is <code>max-height: 44px</code>).
+            Every tooltip below is the shipped <code>.card-preview</code> component. Each row shows the
+            same three art shapes — a <strong>wide wordmark</strong>, a <strong>medium wordmark
+            (3:1)</strong> and a <strong>square mark</strong>. <strong>Before</strong> is the old
+            shape-based rule; <strong>Now</strong> is what ships: identical box, alignment, shadow and
+            fold position for all three, so no card can look like a different design.
           </p>
         </div>
         <div class="lo__seg">
@@ -104,12 +101,13 @@
       <div class="opt lo__hero">
         <div class="opt__head">
           <span class="opt__tag">Hero</span>
-          <span class="opt__name">The same problem in the banner (square mark)</span>
+          <span class="opt__name">One cap in the banner — wide wordmark and square mark</span>
         </div>
         <p class="opt__note">
-          The hero caps a logo at <code>clamp(58px, 7vw, 116px)</code> tall — fine for a wide
-          wordmark, small for a square mark in a 560px banner. Left: now. Right: the cap raised (a
-          taller box, art scaled up), which is what “let it be bigger” would mean here.
+          The hero (and the detail header) now use a single measure
+          (<code>clamp(96px, 9vw, 156px)</code>, scaled per breakpoint) for every logo shape, so the
+          same title presents the same way whether you meet it in the banner, the tooltip or the
+          details card.
         </p>
         <div class="lo__hero-grid" id="heroes"></div>
       </div>
@@ -197,24 +195,15 @@
 
       const VARIANTS = [
         {
+          tag: 'Before',
+          name: 'Two tiers: wide art in the text column, small art over the trailer',
+          note: 'What read as inconsistent: hovering a wide wordmark and a square mark gave two structurally different tooltips — different size, different position, and only one of them had a shadow (and overlapped the trailer).',
+          cls: 'opt-before',
+        },
+        {
           tag: 'Now',
-          name: 'Shipped: in the text column, max-height 44px',
-          note: 'The wide wordmark is already height-capped, and a square mark renders 44x44 — this is the “sometimes the logo is too small” report.',
-        },
-        {
-          tag: 'A',
-          name: 'Bigger, still in the text column',
-          note: 'No overlap: the caps are raised (max-width 100%, max-height 76px). The layout around it does not move.',
-        },
-        {
-          tag: 'B',
-          name: 'Straddles the trailer/text fold — CENTRED',
-          note: 'Not chosen: centred on the fold instead of aligned with the text column.',
-        },
-        {
-          tag: 'C',
-          name: 'Straddles the fold — LEFT-aligned lockup',
-          note: 'SHIPPED (your pick): the art is left-aligned with the text column and its centre sits on the fold, so half of it covers the trailer’s bottom edge; the title text flows right under it. Applied to small/square art on the tooltip, the hero and the details card.',
+          name: 'ONE rule for every logo — same box, same fold, same shadow',
+          note: 'Every logo is left-aligned with the text column and its CENTRE sits on the fold between the trailer and the title text, so half of it covers the trailer’s bottom edge. Only the art’s own height differs (a 6:1 wordmark is naturally shorter than a square mark) — never the treatment. The hero and the details header carry one cap for every shape too, and the compact “choose a video” banner keeps a single smaller measure.',
           pick: true,
         },
       ];
@@ -234,17 +223,15 @@
         const row = el('div', 'opt__row');
         ['wide', 'mid', 'square'].forEach((k) => {
           const cell = el('div', 'opt__cell');
-          const isBig = k === 'square';
-          const cls =
-            v.tag === 'C'
-              ? isBig
-                ? 'opt-c' // the chosen treatment: only square/short art changes
-                : ''
-              : v.tag === 'Now'
-                ? ''
-                : 'opt-' + v.tag.toLowerCase();
-          cell.appendChild(tooltip(k, cls));
-          cell.appendChild(el('div', 'opt__cap', LOGOS[k].label + (v.tag === 'C' && !isBig ? ' (unchanged)' : '')));
+          // BEFORE reproduced the old rule: only sub-2:1 art was "big".
+          const cls = v.tag === 'Before' ? 'opt-before' : '';
+          const node = tooltip(k, cls);
+          if (v.tag === 'Before') {
+            const im = node.querySelector('.card-preview__logo');
+            if (im && (LOGOS[k].w / LOGOS[k].h) < 2) im.classList.add('is-was-big');
+          }
+          cell.appendChild(node);
+          cell.appendChild(el('div', 'opt__cap', LOGOS[k].label));
           row.appendChild(cell);
         });
         box.appendChild(row);
@@ -254,8 +241,8 @@
       // ---- hero samples: shipped cap vs a raised cap ----------------------
       const heroes = document.getElementById('heroes');
       [
-        { cap: 'Now — max-height: clamp(58px, 7vw, 116px)', cls: '' },
-        { cap: 'Raised cap — the box grows, the art scales up', cls: 'opt-hero-big' },
+        { cap: 'Wide wordmark — one measure', cls: '', logo: 'wide' },
+        { cap: 'Square mark — the SAME measure', cls: '', logo: 'square' },
       ].forEach((h) => {
         const box = el('div', 'lo__hero');
         const hero = el('div', 'hero ' + h.cls);
@@ -269,7 +256,8 @@
         content.appendChild(el('span', 'hero__badge', 'Movie'));
         const logo = document.createElement('img');
         logo.className = 'hero__logo';
-        logo.src = logoUri(LOGOS.square, '#ffffff');
+        logo.dataset.k = h.logo;
+        logo.src = logoUri(LOGOS[h.logo], '#ffffff');
         logo.alt = '';
         content.appendChild(logo);
         content.appendChild(el('div', 'hero__meta', '\u2605 8.7 \u00b7 2014 \u00b7 169 min \u00b7 Adventure'));
@@ -307,11 +295,11 @@
       );
       paint('dark');
 
-      // Raised hero cap (the proposal, applied to the right-hand sample).
-      const extra = document.createElement('style');
-      extra.textContent =
-        '.opt-hero-big .hero__logo { max-height: clamp(110px, 13vw, 200px); max-width: min(520px, 78%); }';
-      document.head.appendChild(extra);
+      // Hero logos follow the same rule, so the theme repaint keeps their ink
+      // in sync with the tooltips (real logos are transparent anyway).
+      const heroTheme = document.createElement('style');
+      heroTheme.textContent = '.hero__logo { filter: drop-shadow(0 4px 18px rgba(0,0,0,.55)); }';
+      document.head.appendChild(heroTheme);
     </script>
   </body>
 </html>

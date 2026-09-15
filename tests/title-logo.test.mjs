@@ -27,8 +27,8 @@ function sliceLogoHelpers() {
   return (
     src.slice(start, end) +
     '\nreturn { detailPath: detailPath, pickLogo: pickLogo, pickLogoPath: pickLogoPath, ' +
-    'isSmallLogoArt: isSmallLogoArt, fetchLogo: fetchLogo, fetchLogoPath: fetchLogoPath, ' +
-    'paintTitleLogo: paintTitleLogo, LOGO_BIG_BOX: LOGO_BIG_BOX, applyTitleLogo: applyTitleLogo };'
+    'fetchLogo: fetchLogo, fetchLogoPath: fetchLogoPath, paintTitleLogo: paintTitleLogo, ' +
+    'LOGO_FOLD_BOX: LOGO_FOLD_BOX, applyTitleLogo: applyTitleLogo };'
   );
 }
 
@@ -215,27 +215,20 @@ test('applyTitleLogo: a title without art keeps its text title untouched', async
   assert.ok(!title.classList.contains('is-title-hidden'), 'and nothing was hidden');
 });
 
-test('pickLogo carries the art aspect; under 2:1 counts as SMALL art', () => {
-  const { pickLogo, pickLogoPath, isSmallLogoArt, LOGO_BIG_BOX } = makeBundle();
+test('pickLogo carries the art aspect (what the fold measurement needs)', () => {
+  const { pickLogo, pickLogoPath, LOGO_FOLD_BOX } = makeBundle();
   assert.deepEqual(pickLogo({ logos: [EN_LOGO] }), { path: '/en.png', aspect: 3.4 }, 'the chosen art reports its shape');
   assert.deepEqual(pickLogo({ logos: [SQUARE] }), { path: '/square.png', aspect: 0.8 }, 'a square mark too');
   assert.deepEqual(pickLogo({ logos: [] }), { path: '', aspect: 0 }, 'no art -> no path, no aspect');
   assert.deepEqual(pickLogo(null), { path: '', aspect: 0 }, 'a missing image block is not a crash');
   assert.equal(pickLogoPath({ logos: [EN_LOGO] }), '/en.png', 'the path-only helper is unchanged');
-
-  // The size rule: a wordmark (2:1 or wider) fits the text column; a square or
-  // short mark gets the big box (it rendered as a postage stamp at 44px).
-  assert.equal(isSmallLogoArt(0.8), true, 'a square mark');
-  assert.equal(isSmallLogoArt(1.99), true, 'a short mark just under the line');
-  assert.equal(isSmallLogoArt(2), false, '2:1 is a wordmark');
-  assert.equal(isSmallLogoArt(3.4), false, 'and so is a wide wordmark');
-  assert.equal(isSmallLogoArt(undefined), true, 'an unknown shape takes the safe (bigger) box');
-  assert.equal(isSmallLogoArt(0), true, 'a missing ratio too');
-  assert.equal(LOGO_BIG_BOX.maxH, 104, 'the tooltip box matches .card-preview__logo.is-logo-big');
+  assert.equal(LOGO_FOLD_BOX.maxH, 104, 'the measured box matches .card-preview__logo (max-height: 104px)');
+  assert.equal(LOGO_FOLD_BOX.maxWRatio, 0.88, 'and its width matches (max-width: 88%)');
 });
 
-test('small/square art takes the big box; a wide wordmark is left alone', async () => {
+test('ONE rule for every logo: the class never depends on the art shape', async () => {
   const square = { file_path: '/sq.png', iso_639_1: 'en', aspect_ratio: 0.9, vote_average: 5 };
+  const ultraWide = { file_path: '/uw.png', iso_639_1: 'en', aspect_ratio: 6.2, vote_average: 5 };
   const paint = async (logos) => {
     const bundle = makeBundle({ api: () => Promise.resolve({ images: { logos } }) });
     const parent = new FakeEl('div');
@@ -245,16 +238,24 @@ test('small/square art takes the big box; a wide wordmark is left alone', async 
     parent.appendChild(title);
     bundle.applyTitleLogo({ id: 1, type: 'movie' }, title, 'card-preview__logo');
     await new Promise((r) => setTimeout(r, 10));
-    return { logo: parent.children[0], title };
+    return { logo: parent.children[0], title, bundle };
   };
 
-  const small = await paint([square]);
-  assert.equal(small.logo.tagName, 'img');
-  assert.ok(small.logo.classList.contains('is-logo-big'), 'a square mark gets the big box');
-  assert.ok(small.title.classList.contains('is-title-hidden'), 'and the text title still yields to it');
+  // Shape is NOT a switch any more: square, mid and ultra-wide all land in the
+  // same lockup (it was "big box vs in-column" that looked inconsistent).
+  for (const [name, art] of [['square', square], ['wordmark', EN_LOGO], ['ultra-wide', ultraWide]]) {
+    const out = await paint([art]);
+    assert.equal(out.logo.tagName, 'img', name + ': the art is painted');
+    assert.equal(out.logo.className, 'card-preview__logo', name + ': one class, no tier');
+    assert.ok(out.title.classList.contains('is-title-hidden'), name + ': the text title yields');
+    assert.equal(out.bundle.pickLogo({ logos: [art] }).aspect, art.aspect_ratio, name + ': the shape is still measured');
+  }
 
-  const wide = await paint([EN_LOGO]);
-  assert.ok(!wide.logo.classList.contains('is-logo-big'), 'a wide wordmark keeps its in-column size');
+  // Not even a leftover hook: a shape-based class would drift back in.
+  const catalog = read('dist/js/catalog.js');
+  assert.ok(!/is-logo-big/.test(catalog), 'no tier class in the bundle');
+  assert.ok(!/isSmallLogoArt|LOGO_SMALL_ASPECT/.test(catalog), 'no shape-based branch left');
+  assert.ok(!/is-logo-big/.test(read('dist/css/catalog.css')), 'and none in the stylesheet');
 });
 
 test('the tooltip art is centred on the fold (measured from the aspect ratio)', async () => {
@@ -284,20 +285,27 @@ test('the tooltip art is centred on the fold (measured from the aspect ratio)', 
 
   paintTitleLogo({ path: '/sq.png', aspect: 1 }, title, 'card-preview__logo');
   const logo = text.children[0];
-  assert.ok(logo.classList.contains('is-logo-big'), 'square art in the tooltip is a big-box logo');
   // height = min(104, 300 * 0.88 / 1) = 104  ->  margin = -(104/2 + 14) = -66
-  assert.equal(logo.style.marginTop, '-66px', 'half of the art sits over the trailer, on the fold');
+  assert.equal(logo.style.marginTop, '-66px', 'half of the square art sits over the trailer, on the fold');
 
-  // A wide wordmark never gets a straddle margin (it stays in the column).
+  // ...and a WIDE wordmark is measured the same way — the treatment is one rule,
+  // only the art's own height differs: height = 300 * 0.88 / 6 = 44 -> -(22+14).
+  const wideBody = new FakeEl('div');
+  wideBody.className = 'card-preview__body';
   const wide = new FakeEl('div');
   wide.className = 'card-preview__text';
   wide.setRect({ width: 300, height: 120, top: 0, bottom: 0 });
+  wideBody.appendChild(wide);
   const wideTitle = new FakeEl('div');
   wideTitle.className = 'card-preview__title';
   wide.appendChild(wideTitle);
-  paintTitleLogo({ path: '/en.png', aspect: 3.4 }, wideTitle, 'card-preview__logo');
-  assert.equal(wide.children[0].style.marginTop, undefined, 'no negative margin for a wordmark');
-  assert.equal(LOGO_BIG_BOX.maxWRatio, 0.88, 'the measured width ratio matches the CSS max-width');
+  paintTitleLogo({ path: '/en.png', aspect: 6 }, wideTitle, 'card-preview__logo');
+  assert.equal(wide.children[0].style.marginTop, '-36px', 'a wordmark straddles the same fold, just shorter');
+
+  // Both are pulled up by exactly half their rendered height plus the body
+  // padding: the art's CENTRE is on the fold in either case.
+  assert.equal(14 + 104 / 2, 66, 'square: padding + half the box');
+  assert.equal(14 + 44 / 2, 36, 'wordmark: padding + half its own height');
 });
 
 test('the surfaces use the shared helpers (hero, tooltip, details)', () => {
@@ -332,24 +340,27 @@ test('CSS: the banner is bigger, the logo is bounded, the text clip is accessibl
   assert.match(hero, /isolation: isolate/, 'scrims stack predictably');
 
   const logo = css.slice(css.indexOf('.hero__logo {'), css.indexOf('.hero__meta {'));
-  assert.match(logo, /max-height: clamp\(58px, 7vw, 116px\)/, 'the wordmark scales with the screen');
-  assert.match(logo, /max-width: min\(440px, 88%\)/, 'and can never overflow the text block');
+  assert.match(logo, /max-height: clamp\(96px, 9vw, 156px\)/, 'the art scales with the screen (one measure)');
+  assert.match(logo, /max-width: min\(520px, 84%\)/, 'and can never overflow the text block');
   assert.match(logo, /object-fit: contain/, 'never stretched or cropped');
 
-  // Every logo slot is bounded (hero, tooltip, details).
-  assert.match(css, /\.card-preview__logo \{[^}]*max-height: 44px;/, 'tooltip logo bounded');
-  assert.match(css, /\.detail__logo \{[^}]*max-height: clamp\(46px, 5vw, 84px\);/, 'details logo bounded');
+  // ONE rule per surface (the consistency contract): the tooltip lockup lives on
+  // the BASE class, so the art's shape can never change the treatment...
+  const tipLogo = css.slice(css.indexOf('.card-preview__logo {'), css.indexOf('.card-preview__meta {'));
+  assert.match(tipLogo, /max-height: 104px;/, 'tooltip box');
+  assert.match(tipLogo, /max-width: 88%;/, 'tooltip width');
+  assert.match(tipLogo, /margin-top: -52px;/, 'the no-JS fold straddle');
+  assert.match(tipLogo, /position: relative;/, 'paints above the trailer');
+  assert.match(tipLogo, /z-index: 2;/, 'and stays above it');
+  assert.match(tipLogo, /filter: drop-shadow\(/, 'the same shadow on every logo (it used to be big-art only)');
+  assert.match(tipLogo, /object-position: left center;/, 'and the same left alignment');
+  assert.doesNotMatch(css, /\.is-logo-big/, 'no shape-based tier left in the stylesheet');
 
-  // ...and the SMALL/SQUARE art gets the bigger box on all three surfaces, with
-  // the tooltip straddling the fold (left-aligned, above the trailer).
-  const big = css.slice(css.indexOf('.card-preview__logo.is-logo-big {'));
-  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*max-height: 104px;/, 'tooltip big box (was 44px)');
-  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*max-width: 88%;/, 'and wider than the column cap');
-  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*margin-top: -52px;/, 'the no-JS fold straddle');
-  assert.match(big, /\.card-preview__logo\.is-logo-big \{[^}]*position: relative;/, 'paints above the trailer');
-  assert.match(big, /\.hero__logo\.is-logo-big \{[^}]*max-height: clamp\(120px, 12vw, 210px\);/, 'hero big box');
-  assert.match(big, /\.detail__logo\.is-logo-big \{[^}]*max-height: clamp\(90px, 8vw, 150px\);/, 'details big box');
-  assert.match(big, /\.modal__card--wide \.hero__logo\.is-logo-big \{[^}]*max-height: 92px;/, 'the compact picker banner keeps its own cap');
+  // ...and each surface carries ONE cap for every logo shape.
+  assert.match(css, /\.hero__logo \{[^}]*max-height: clamp\(96px, 9vw, 156px\);/, 'hero: one cap');
+  assert.match(css, /\.detail__logo \{[^}]*max-height: clamp\(84px, 7vw, 132px\);/, 'details: one cap');
+  assert.match(css, /\.modal__card--wide \.hero__logo \{[^}]*max-height: 72px;/, 'the compact picker banner keeps its own smaller measure');
+  assert.match(css, /\.modal__card--wide \.hero__logo \{[^}]*max-width: min\(340px, 58%\);/, 'and a width cap');
 
   // The clip keeps the text readable by a screen reader (never display:none).
   const util = style.slice(style.indexOf('.is-title-hidden {'), style.indexOf('/* Icon + label inside a button'));
@@ -364,20 +375,24 @@ test('CSS: the whole sheet scales from a phone to a 4K TV', () => {
   assert.match(phone, /min-height: clamp\(240px, 62vw, 320px\)/, 'a hero that fits above the fold on a phone');
   assert.match(phone, /padding-bottom: calc\(var\(--bottomnav-h\) \+ env\(safe-area-inset-bottom, 0px\)\)/, 'the last row clears the bottom bar');
 
-  const phoneBig = phone;
-  assert.match(phoneBig, /\.hero__logo\.is-logo-big \{[^}]*max-height: 132px;/, 'the big box scales down on a phone');
-  assert.match(phoneBig, /\.detail__logo\.is-logo-big \{[^}]*max-height: 118px;/, 'and in the phone detail header');
+  assert.match(phone, /\.hero__logo \{[^}]*max-height: 108px;/, 'the same measure, scaled for a phone');
+  assert.match(phone, /\.detail__logo \{[^}]*max-height: 104px;/, 'and in the phone detail header');
+  // ...and only ONE rule teaches that cap (a second copy is the stale-cascade bug
+  // that once silently overrode a themed fix). The modal-scoped rule does not
+  // count: it is a different selector at a different level.
+  assert.equal((phone.match(/^  \.hero__logo \{/gm) || []).length, 1, 'exactly one phone hero-logo cap');
 
   const tv = css.slice(css.indexOf('@media (min-width: 1600px) {'), css.indexOf('@media (min-width: 2400px) {'));
   assert.match(tv, /--card-w: 182px;/, 'desktop-large posters grow');
   assert.match(tv, /\.hero \{\s*\n\s*height: clamp\(420px, 30vw, 620px\);/, 'and the banner grows with them');
-  assert.match(tv, /\.hero__logo\.is-logo-big \{[^}]*max-height: clamp\(180px, 14vw, 280px\);/, 'the big box grows on a TV');
-  assert.match(tv, /\.card-preview__logo\.is-logo-big \{[^}]*max-height: 116px;/, 'tooltip too');
+  assert.match(tv, /\.hero__logo \{[^}]*max-height: clamp\(150px, 12vw, 230px\);/, 'the measure grows on a TV');
+  assert.match(tv, /\.card-preview__logo \{[^}]*max-height: 116px;/, 'tooltip too');
 
   const uhd = css.slice(css.indexOf('@media (min-width: 2400px) {'));
   assert.match(uhd, /--card-w: 214px;/, '4K keeps scaling instead of shrinking into a corner');
   assert.match(uhd, /\.hero \{\s*\n\s*height: clamp\(520px, 26vw, 720px\);/, '4K banner');
-  assert.match(uhd, /\.hero__logo\.is-logo-big \{[^}]*max-height: 320px;/, '4K big box');
+  assert.match(uhd, /\.hero__logo \{[^}]*max-height: 280px;/, '4K measure');
+  assert.match(uhd, /\.detail__logo \{[^}]*max-height: 200px;/, '4K details');
   assert.match(read('dist/css/style.css'), /--page-max: 1560px;/, 'the content column token lives in the shell sheet');
   assert.match(read('dist/css/style.css'), /@media \(min-width: 2400px\) \{\s*\n\s*:root \{\s*\n\s*--topnav-h: 78px;/, 'the top bar scales too');
   assert.match(css, /orientation: landscape/, 'landscape phones are handled (banner must not eat the screen)');

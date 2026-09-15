@@ -240,7 +240,7 @@ test('minimal shape pass: no oval buttons — flat radii, circles only where the
   assert.match(social, /\.avatar-frame \{[^}]*border-radius: 50%;/, 'avatars stay circular');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /css\/style\.css\?v=27/, 'style cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=31/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=32/, 'catalog cache-bumped');
   assert.match(html, /css\/social\.css\?v=19/, 'social cache-bumped');
 });
 
@@ -259,8 +259,8 @@ test('cover survives episode switch + season covers in both modals', () => {
   assert.match(c, /episodes-modal__season', 'Season ' \+ curSeason/, 'season label initial');
   assert.match(c, /episodes-modal__season', episodes \+ ' episodes'/, 'anime modal shows the episode count');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/catalog\.js\?v=32/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=31/, 'catalog css cache-bumped');
+  assert.match(html, /js\/catalog\.js\?v=33/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=32/, 'catalog css cache-bumped');
 });
 
 test('room cover broken-art guard + profile showcase has no empty poster-height holes', () => {
@@ -315,7 +315,7 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/app\.js\?v=57/, 'app cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=31/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=32/, 'catalog css cache-bumped');
 });
 
 test('episode selector watched fade: local + server watched states on every grid', () => {
@@ -332,8 +332,8 @@ test('episode selector watched fade: local + server watched states on every grid
   assert.match(css, /\.ep-btn--watched::after \{[^}]*color: var\(--on-accent\);/s, 'badge ink is theme-driven (color audit)');
   assert.match(css, /\.ep-btn--partial::after \{[^}]*width: var\(--wp, 0%\);/s, 'partial = mini progress bar');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/catalog\.js\?v=32/, 'catalog cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=31/, 'catalog css cache-bumped');
+  assert.match(html, /js\/catalog\.js\?v=33/, 'catalog cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=32/, 'catalog css cache-bumped');
 });
 
 test('/history never-silent guarantees: error surface + self-explanatory empty', () => {
@@ -368,7 +368,7 @@ test('history is SERVER-FIRST with an on-page status line', () => {
   assert.match(s, /function getServerHistoryStatus\(\)/, 'status-bearing fetch');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /id="history-status"/, 'status element exists');
-  assert.match(html, /js\/social\.js\?v=53/, 'social cache-bumped');
+  assert.match(html, /js\/social\.js\?v=54/, 'social cache-bumped');
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history__status--err \{/, 'error status styled');
 });
@@ -382,7 +382,7 @@ test('history self-diagnosis: card counts in the status line + empty-scroller ca
   assert.match(css, /\.history-card \{[^}]*display: block;/, 'cards are guaranteed opaque boxes');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/app\.js\?v=57/, 'app cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=31/, 'catalog css cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=32/, 'catalog css cache-bumped');
 });
 
 test('history poster self-heal: bounded TMDB lookup paints cards and patches the DB rows', () => {
@@ -422,7 +422,7 @@ test('landscape history art: backdrop column end-to-end + healer prefers it', ()
   assert.match(a, /!v\.backdrop && v\.id/, 'rows missing a backdrop get healed');
   assert.match(a, /w780' \+ d\.backdrop_path/, 'TMDB backdrop at w780');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/social\.js\?v=53/, 'social cache-bumped');
+  assert.match(html, /js\/social\.js\?v=54/, 'social cache-bumped');
 });
 
 test('host sovereignty: only external controller commands drive the host + explicit CSP', () => {

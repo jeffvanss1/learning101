@@ -572,13 +572,13 @@
   // node is never removed: it carries the accessible name and is visually
   // clipped once the logo is on screen.
   const LOGO_LANGS = ['en', 'null']; // catalog content is pinned to en-US
-  // WIDE art (a wordmark, 2:1 or wider) fits the text column as it is. SQUARE
-  // or SHORT art (a monogram/emblem) rendered as a postage stamp at the old
-  // 44px cap, so it gets a real box — and in the hover tooltip it straddles
-  // the fold between the trailer and the title text (see the CSS).
-  const LOGO_SMALL_ASPECT = 2;
-  // The tooltip's big box: matches .card-preview__logo.is-logo-big in the CSS.
-  const LOGO_BIG_BOX = { maxH: 104, maxWRatio: 0.88, pad: 14 };
+  // ONE RULE FOR EVERY LOGO (user directive: "its a bit inconsistance, make it
+  // consistance"). The treatment may never depend on the art's shape: a wide
+  // wordmark and a square monogram get the same box, the same alignment and the
+  // same fold straddle in the tooltip — only their own proportions decide how
+  // tall the art renders. The box below mirrors .card-preview__logo in the CSS
+  // (max-width 88%, max-height 104px, no-JS margin-top -52px).
+  const LOGO_FOLD_BOX = { maxH: 104, maxWRatio: 0.88, pad: 14 };
   const logoPaths = new Map(); // "movie:157336" -> { path, aspect } (miss: path '')
 
   /** @param {any} item @returns {string} API path for the details payload. */
@@ -616,15 +616,6 @@
   }
 
   /**
-   * Does this art need the big box? A missing aspect ratio counts as small
-   * (the wider box is the safe side: art is capped by the CSS either way).
-   * @param {number} aspect @returns {boolean}
-   */
-  function isSmallLogoArt(aspect) {
-    return !(Number(aspect) >= LOGO_SMALL_ASPECT);
-  }
-
-  /**
    * Logo for an item (memoized; a miss is memoized too). Never throws.
    * @param {any} item @returns {Promise<{ path: string, aspect: number }>}
    */
@@ -653,11 +644,12 @@
   /**
    * Put the art's CENTRE on the line where the trailer ends and the text
    * begins, so half of it covers the trailer's bottom edge (left-aligned with
-   * the text column, like the rest of the lockup). The margin comes from the
-   * art's aspect ratio — known from the same API response — so it lands
-   * exactly on the fold for any shape: no waiting for the image to decode and
-   * no jump after it does. Without a measurable DOM the CSS fallback margin
-   * keeps the same look.
+   * the text column, like the rest of the lockup) — for EVERY logo, whatever
+   * its shape: only the art's own height changes, never the treatment. The
+   * margin comes from the art's aspect ratio — known from the same API
+   * response — so it lands exactly on the fold: no waiting for the image to
+   * decode and no jump after it does. Without a measurable DOM the CSS
+   * fallback margin keeps the same look.
    * @param {HTMLImageElement} logo @param {number} aspect
    */
   function straddleFold(logo, aspect) {
@@ -668,8 +660,8 @@
     const width = col.getBoundingClientRect().width || 0;
     const ratio = Number(aspect) || 0;
     if (!width || !ratio) return;
-    const height = Math.min(LOGO_BIG_BOX.maxH, (width * LOGO_BIG_BOX.maxWRatio) / ratio);
-    let pad = LOGO_BIG_BOX.pad;
+    const height = Math.min(LOGO_FOLD_BOX.maxH, (width * LOGO_FOLD_BOX.maxWRatio) / ratio);
+    let pad = LOGO_FOLD_BOX.pad;
     try {
       const cs = global.getComputedStyle && global.getComputedStyle(body);
       if (cs && cs.paddingTop) pad = parseFloat(cs.paddingTop) || pad;
@@ -691,10 +683,6 @@
     im.alt = '';
     im.decoding = 'async';
     im.setAttribute('aria-hidden', 'true');
-    // SMALL/SQUARE art gets the big box; a wide wordmark keeps its in-column
-    // size.
-    const bigBox = isSmallLogoArt(logo.aspect);
-    if (bigBox) im.classList.add('is-logo-big');
     // A broken logo means the text title is the UI (never an empty banner).
     im.onerror = () => {
       im.remove();
@@ -702,9 +690,10 @@
     };
     im.onload = () => textEl.classList.add('is-title-hidden');
     textEl.parentNode.insertBefore(im, textEl);
-    // ...and in the tooltip it straddles the fold. Measured AFTER insertion:
-    // the margin has to be computed against the laid-out text column.
-    if (bigBox && cls === 'card-preview__logo') straddleFold(im, logo.aspect);
+    // The tooltip lockup straddles the fold — every logo, every shape.
+    // Measured AFTER insertion: the margin has to be computed against the
+    // laid-out text column.
+    if (cls === 'card-preview__logo') straddleFold(im, logo.aspect);
     // The text is hidden from the start too: the image is already in the DOM,
     // so the swap cannot flash a duplicate title while it decodes.
     textEl.classList.add('is-title-hidden');
@@ -2142,7 +2131,6 @@
     fetchRecommendations,
     pickLogo,
     pickLogoPath,
-    isSmallLogoArt,
     fetchLogo,
     fetchLogoPath,
     detailPath,
