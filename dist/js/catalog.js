@@ -794,8 +794,33 @@
     // buildPreview() requests `unMute` right after load when the audio
     // preference is ON (the default), so it plays with sound wherever the
     // browser allows it and still plays silently where it does not.
+    //
+    // Every OTHER parameter here exists to strip YouTube's chrome off the
+    // preview (there is no library that can do it for us: a cross-origin
+    // iframe cannot be restyled or re-skinned from the outside):
+    //   controls=0            no control bar - and with it the "Watch on
+    //                         YouTube" button that lives in that bar.
+    //   rel=0                 end-screen suggestions stay on this trailer's
+    //                         own channel instead of the whole of YouTube.
+    //   loop=1&playlist=<id>  the preview LOOPS, so it never reaches the end
+    //                         screen at all (the playlist parameter has to
+    //                         repeat the id - that is the only way to loop a
+    //                         single video through the embed API).
+    //   iv_load_policy=3      no annotation/card overlays on the frame.
+    //   cc_load_policy=0      no caption track turned on by the embed.
+    //   disablekb=1           the preview must not swallow arrow keys while
+    //                         the user is paging the row underneath it.
+    //   fs=0                  a tooltip can never take over the screen.
+    //   modestbranding=1 is GONE: YouTube removed that parameter in August
+    //                         2023 and ignores it today, so it only ever
+    //                         suggested a fix that no longer exists. The
+    //                         bottom-right YouTube watermark cannot be removed
+    //                         by ANY parameter (deliberate on their side) —
+    //                         .card-preview__media::after covers it instead.
     let src = 'https://www.youtube.com/embed/' + encodeURIComponent(key) +
-      '?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1';
+      '?autoplay=1&mute=1&controls=0&rel=0&playsinline=1&enablejsapi=1' +
+      '&iv_load_policy=3&cc_load_policy=0&disablekb=1&fs=0' +
+      '&loop=1&playlist=' + encodeURIComponent(key);
     try {
       if (global.location && global.location.origin) {
         src += '&origin=' + encodeURIComponent(global.location.origin);

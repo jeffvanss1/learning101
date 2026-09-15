@@ -318,6 +318,61 @@ test('trailer audio: muting during the boot delay is not undone by the late unMu
   assert.deepEqual(postedFuncs(iframe), ['mute'], 'the deferred unMute was cancelled by the preference');
 });
 
+test('trailer chrome: the embed asks YouTube for the least chrome its API allows', async () => {
+  const app = harness({ trailerKey: 'AbC123' });
+  const { preview } = await openPreview(app);
+  const src = preview.querySelector('iframe').src;
+  const params = new URLSearchParams(src.slice(src.indexOf('?') + 1));
+
+  assert.equal(params.get('controls'), '0', 'no control bar - and no "Watch on YouTube" button with it');
+  assert.equal(params.get('rel'), '0', 'end-screen suggestions stay on this trailer\'s own channel');
+  assert.equal(params.get('loop'), '1', 'a hover preview loops instead of ending');
+  assert.equal(params.get('playlist'), 'AbC123', 'the playlist repeats the id - the only way to loop ONE video');
+  assert.equal(params.get('iv_load_policy'), '3', 'no annotation / card overlays');
+  assert.equal(params.get('cc_load_policy'), '0', 'no caption track switched on');
+  assert.equal(params.get('disablekb'), '1', 'the preview never swallows the arrow keys');
+  assert.equal(params.get('fs'), '0', 'a tooltip can never take over the screen');
+  // Both of these also suppress the "Watch on YouTube" link a paused player
+  // shows; the bar it normally lives in is gone with controls=0.
+  assert.equal(params.get('autoplay'), '1', 'autoplay');
+  assert.equal(params.get('mute'), '1', 'muted first (unmuted autoplay is not guaranteed)');
+  assert.equal(params.get('playsinline'), '1', 'plays in place on a phone');
+  assert.equal(params.get('enablejsapi'), '1', 'the audio toggle still commands the player');
+  assert.equal(params.get('origin'), 'https://example.test', 'origin is preserved');
+  // Deprecated by YouTube in August 2023 and ignored today: keeping it would
+  // document a fix that no longer exists (the watermark it once removed is now
+  // covered by our own corner seat).
+  assert.equal(params.has('modestbranding'), false, 'the dead modestbranding flag is gone');
+  app.closePreview();
+});
+
+test('trailer chrome: our own ink covers what YouTube will not give up', () => {
+  const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
+  // The iframe is cross-origin: NO selector of ours can reach the player's own
+  // markup, and the bottom-right watermark cannot be switched off by any
+  // parameter (YouTube dropped modestbranding in Aug 2023). So the residue is
+  // covered by OUR overlays sitting on the media box.
+  assert.equal(/\.ytp-[a-zA-Z-]+\s*[,{]/.test(css), false, 'we never pretend to style INSIDE the player');
+  assert.match(css, /cross-origin YouTube iframe/, 'the WHY is written down next to the rules');
+  assert.match(
+    css,
+    /\.card-preview__media::before,\s*\.card-preview__media::after \{\s*content: '';/,
+    'both overlays exist'
+  );
+  const shared = css.slice(css.indexOf('.card-preview__media::before,'), css.indexOf('.card-preview__media::before {'));
+  assert.match(shared, /pointer-events: none;/, 'the trailer stays fully interactive underneath');
+  assert.match(shared, /z-index: 1;/, 'above the iframe, below the logo lockup');
+  // NOTE: the shared rule also ends with `::after`, so the CORNER rule is the
+  // LAST occurrence (the top shade is the only standalone `::before` rule).
+  const top = css.slice(css.indexOf('.card-preview__media::before {'), css.lastIndexOf('.card-preview__media::after {'));
+  assert.match(top, /height: 26%;/, 'the top shade uses the hero\'s own 26%');
+  assert.match(top, /rgba\(0, 0, 0, 0\.34\) 0%/, 'and the hero\'s own 0.34 -> 0 wash: one language');
+  const corner = css.slice(css.lastIndexOf('.card-preview__media::after {'));
+  assert.match(corner, /right: 0;\s*bottom: 0;/, 'the seat sits in the corner YouTube brands');
+  assert.match(corner, /to top left/, 'ramping out of that corner');
+  assert.match(corner, /rgba\(0, 0, 0, 0\.7\) 0%/, 'opaque enough to actually cover the watermark');
+});
+
 test('trailer audio: CSS ships the bigger tooltip + the ghost icon toggle (theme-safe)', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   const preview = css.slice(css.indexOf('.card-preview {'), css.indexOf('.card-preview__media {'));
@@ -335,8 +390,8 @@ test('trailer audio: CSS ships the bigger tooltip + the ghost icon toggle (theme
   assert.match(sound, /\.card-preview__sound:hover \{[^}]*background: var\(--bg-hover\);/, 'hover wash like the sidenav icons');
   assert.match(css, /\.card-preview__sound\.is-on \{[^}]*color: var\(--text\);/, 'ON state brightens the icon (themed ink)');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/catalog\.js\?v=34/, 'catalog js cache-bumped');
-  assert.match(html, /css\/catalog\.css\?v=35/, 'catalog css cache-bumped');
+  assert.match(html, /js\/catalog\.js\?v=35/, 'catalog js cache-bumped');
+  assert.match(html, /css\/catalog\.css\?v=36/, 'catalog css cache-bumped');
 });
 
 test('icons: the shipped UI carries NO emoji glyphs (inline SVG only)', () => {

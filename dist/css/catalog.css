@@ -1230,6 +1230,43 @@ html[dir='rtl'] .row__nav svg { transform: scaleX(-1); }
   border: 0;
 }
 
+/* The trailer is a cross-origin YouTube iframe: its DOM is untouchable (the
+   player's own class names (ytp-*) are out of reach from here, and the CSS
+   overlay advice that floats around only works when YOU own the player markup,
+   where YouTube's ToS also forbids it). YouTube's own
+   switches (catalog.js trailerEmbed) turn off the control bar, the "Watch on
+   YouTube" button, cards, captions and the end screen - what is left over is
+   covered by OUR ink instead: a light top shade (the same 0.34 -> 0 the hero
+   uses) for the title row that appears on hover, and a corner seat where the
+   bottom-right YouTube watermark sits. The seat doubles as the dark the title
+   logo overhangs, so it earns its place in the design rather than hiding. */
+.card-preview__media::before,
+.card-preview__media::after {
+  content: '';
+  position: absolute;
+  z-index: 1; /* above the iframe, below the logo lockup (z-index 2) */
+  pointer-events: none; /* the trailer stays interactive underneath */
+}
+
+.card-preview__media::before {
+  inset: 0 0 auto;
+  height: 26%;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0) 100%);
+}
+
+.card-preview__media::after {
+  right: 0;
+  bottom: 0;
+  width: 58%;
+  height: 56%;
+  background: linear-gradient(
+    to top left,
+    rgba(0, 0, 0, 0.7) 0%,
+    rgba(0, 0, 0, 0.26) 36%,
+    rgba(0, 0, 0, 0) 70%
+  );
+}
+
 /* Text area = title/meta/plot + the trailer AUDIO TOGGLE pinned to its right
    (the control lives with the text, never over the video). */
 .card-preview__body {

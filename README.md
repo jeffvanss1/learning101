@@ -1853,3 +1853,47 @@ ui-2026-09-15.94.
   shipped `WP.Catalog.mountRail` rather than a copy of it.
 Tests 267/267, check clean. catalog js v34 / catalog css v35 / i18n v5 /
 social v57 / ui-2026-09-15.95.
+
+## Trailer embed: the YouTube chrome, minimised (ui-2026-09-15.96)
+- QUESTION: "can we use https://plyr.io/ to minimize the youtube clutter elements
+  from the embed?" ANSWER, measured: Plyr is a UI layer for media you OWN - a
+  `<video>`/`<audio>` element, or a YouTube/Vimeo player it instantiates itself
+  through Google's SDK. It cannot re-skin someone else's page, so it can do
+  nothing for the ROOM player (that iframe is bingr.one, a cross-origin page
+  driven through Bingr's own Embed API). And for OUR trailer it would be the
+  wrong tool: Plyr's YouTube plugin loads `https://www.youtube.com/iframe_api`
+  (our CSP is `script-src 'self' 'unsafe-inline'` - the whole point of the
+  measured header), ships ~150KB of its own CSS/JS with its own design system,
+  and its YouTube provider applies the SAME embedding parameters we already set
+  (`controls: 0` + `modestbranding`, which YouTube dropped in Aug 2023). It
+  cannot remove the one element that actually remains - the watermark.
+- WHAT SHIPPED (catalog.js trailerEmbed): the embed now asks for every switch
+  YouTube still honours - `controls=0` (no bar, and no "Watch on YouTube" button
+  in it), `rel=0`, `loop=1&playlist=<id>` (the preview LOOPS, so the end screen
+  with its suggested videos is never reached; repeating the id is the only way
+  to loop one video), `iv_load_policy=3`, `cc_load_policy=0`, `disablekb=1` (the
+  tooltip must not swallow the arrow keys while a row is being paged), `fs=0`,
+  and the autoplay-safe `autoplay=1&mute=1&playsinline=1&enablejsapi=1&origin`.
+- `modestbranding=1` is GONE: YouTube removed the parameter in August 2023 and
+  ignores it today - keeping it would advertise a fix that no longer exists.
+- WHAT CANNOT BE REMOVED: the bottom-right YouTube watermark. No parameter
+  removes it (that is deliberate on YouTube's side), `youtube-nocookie` does not
+  either, and a cross-origin iframe cannot be restyled from the outside - which
+  is also why the widely copy-pasted `.ytp-*` CSS "fix" cannot work here (it
+  needs the player markup in YOUR document; on someone else's player it is also
+  a ToS violation). No selector of ours touches the player: pinned by test.
+- SO THE RESIDUE IS COVERED BY OUR OWN INK (catalog.css): two overlays on
+  `.card-preview__media` - a top shade (the hero's own 0.34 -> 0 over 26%) for
+  the title row YouTube shows on hover, and a corner seat (`to top left`, 0.7 at
+  the corner) exactly where the watermark sits. Both are `pointer-events: none`
+  (the trailer stays interactive underneath) and `z-index: 1`, so they sit above
+  the iframe but below the title-logo lockup that overhangs the fold.
+- TESTS: tests/preview-audio.test.mjs gained two cases - one EXECUTES the embed
+  and asserts every parameter (plus the absence of `modestbranding`), the other
+  pins the mask contract (both overlays, their geometry, the pointer-events and
+  stacking rules, and that no `.ytp-` selector ever appears in our CSS).
+- PREVIEW: scripts/logo-options.html now shows the same tooltip twice over a
+  stand-in YouTube frame - BEFORE (masks off: title row + watermark visible)
+  vs NOW (what ships). The review page never loads a real YT player.
+Tests 269/269, check clean. catalog js v35 / catalog css v36 / social v58 /
+ui-2026-09-15.96.

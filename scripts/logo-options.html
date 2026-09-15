@@ -97,6 +97,14 @@
       .lo__rails { display: grid; gap: 22px; margin-top: 6px; }
       .lo__rail-cap { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; }
 
+      /* ---- Trailer chrome samples ---------------------------------------- */
+      /* The masks themselves are SHIPPED (.card-preview__media::before/::after);
+         the BEFORE sample turns them off, so the difference is the shipped
+         behaviour - not a simulation of it. */
+      .opt-nochrome .card-preview__media::before,
+      .opt-nochrome .card-preview__media::after { content: none; }
+      .lo__chrome { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 360px)); gap: 22px; }
+
       /* ---- Hero samples -------------------------------------------------- */
       .lo__hero .hero { height: clamp(260px, 30vw, 420px); }
       .lo__hero-grid { display: grid; gap: 22px; }
@@ -154,6 +162,26 @@
           fits shows no arrows at all. Hover a row, resize the window, or switch to Light.
         </p>
         <div class="lo__rails" id="rails"></div>
+      </div>
+
+      <div class="opt">
+        <div class="opt__head">
+          <span class="opt__tag opt__tag--pick">Now</span>
+          <span class="opt__name">Trailer embed: YouTube's leftovers, and what covers them</span>
+        </div>
+        <p class="opt__note">
+          The trailer is a <strong>cross-origin YouTube iframe</strong>: nothing of ours can reach
+          inside it, and YouTube has no parameter left that removes everything — <code>modestbranding</code>
+          was dropped in August 2023, and the bottom-right watermark is deliberate on their side.
+          So the embed now switches off what it still can (<code>controls=0</code> kills the control bar
+          and the “Watch on YouTube” button, <code>rel=0</code> keeps end-screen suggestions on the
+          trailer's own channel, <code>loop=1&amp;playlist=…</code> means the preview never reaches the
+          end screen at all, plus no cards, no captions, no keyboard stealing, no fullscreen), and
+          <strong>our own ink covers the rest</strong>: a light top shade for the title row and a corner
+          seat where the watermark sits — the same 0.34 → 0 wash the hero uses. The frames below are a
+          stand-in for YouTube's player (the review page never loads one).
+        </p>
+        <div class="lo__chrome" id="chrome"></div>
       </div>
     </div>
 
@@ -368,6 +396,47 @@
           rail.sync();
         }
         rails.appendChild(el('div', 'lo__rail-cap', sample.cap));
+      });
+
+      // ---- trailer chrome: BEFORE (bare embed) vs NOW (our ink on top) -----
+      /** A stand-in YouTube frame: poster art + the chrome YouTube leaves. */
+      function ytArtUri(w, h) {
+        const svg =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+          '<defs><linearGradient id="v" x1="0" y1="0" x2="1" y2="1">' +
+          '<stop offset="0" stop-color="#3c4a63"/><stop offset=".55" stop-color="#22303f"/>' +
+          '<stop offset="1" stop-color="#0d141c"/></linearGradient></defs>' +
+          '<rect width="' + w + '" height="' + h + '" fill="url(#v)"/>' +
+          // the video frame's own bright area (so the chrome has something to sit on)
+          '<circle cx="' + Math.round(w * 0.7) + '" cy="' + Math.round(h * 0.42) + '" r="' +
+          Math.round(h * 0.3) + '" fill="#ffffff" opacity="0.12"/>' +
+          // YouTube chrome: channel avatar + title / share row, top-left
+          '<circle cx="40" cy="38" r="17" fill="#ffffff" opacity="0.85"/>' +
+          '<rect x="68" y="26" width="250" height="13" rx="6" fill="#ffffff" opacity="0.92"/>' +
+          '<rect x="68" y="46" width="140" height="11" rx="5" fill="#ffffff" opacity="0.55"/>' +
+          '<rect x="' + (w - 210) + '" y="26" width="86" height="26" rx="6" fill="#ffffff" opacity="0.22"/>' +
+          '<rect x="' + (w - 116) + '" y="26" width="86" height="26" rx="6" fill="#ffffff" opacity="0.22"/>' +
+          // YouTube watermark, bottom-right (what no parameter can remove)
+          '<rect x="' + (w - 148) + '" y="' + (h - 46) + '" width="124" height="30" rx="8" ' +
+          'fill="#000000" opacity="0.35"/>' +
+          '<text x="' + (w - 86) + '" y="' + (h - 26) + '" text-anchor="middle" ' +
+          'font-family="Helvetica,Arial" font-weight="700" font-size="17" fill="#ffffff" opacity="0.92">' +
+          'YouTube</text></svg>';
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+      }
+
+      const chromeHost = document.getElementById('chrome');
+      [
+        { cap: 'BEFORE — the bare embed: YouTube\u2019s title row and watermark', cls: 'opt-nochrome' },
+        { cap: 'NOW — our ink covers the watermark and the title row', cls: '' },
+      ].forEach((sample) => {
+        const cell = el('div', 'opt__cell');
+        const node = tooltip('wide', sample.cls);
+        const art = node.querySelector('.card-preview__media img');
+        if (art) art.src = ytArtUri(720, 405);
+        cell.appendChild(node);
+        cell.appendChild(el('div', 'opt__cap', sample.cap));
+        chromeHost.appendChild(cell);
       });
 
       // ---- theme ----------------------------------------------------------
