@@ -2388,6 +2388,15 @@
       handleDeepLink(roomMatch[1]);
       return;
     }
+    // /history has its own URL (the nav pushes it) and routeCurrent() restores
+    // it on popstate — but boot() had no branch for it, so a RELOAD (or a
+    // shared link) on the history page rendered Home while the address bar
+    // still said /history. Restore it like any other dedicated surface.
+    if (HISTORY_RE.test(location.pathname)) {
+      showHistoryView();
+      setActiveNav('history');
+      return;
+    }
     const profileMatch = location.pathname.match(PROFILE_RE);
     if (profileMatch) {
       showProfileView(decodeURIComponent(profileMatch[1]));

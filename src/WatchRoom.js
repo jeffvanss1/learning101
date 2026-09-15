@@ -395,7 +395,12 @@ export class WatchRoom {
       case MSG.JOIN: {
         const name = sanitizeName(msg.name);
         const video = sanitizeMeta(msg.video);
-        const becameOwner = !this.meta.ownerId && !this.hasLiveOwner();
+        // LIVE-OWNER TEST (not `!meta.ownerId`): a persisted owner id whose
+        // session/socket is gone must not keep the room hostage — the old
+        // `!this.meta.ownerId && !this.hasLiveOwner()` short-circuited to
+        // `!this.meta.ownerId`, so a stale id blocked promotion FOREVER and
+        // every play/pause/seek was silently dropped for everyone.
+        const becameOwner = !this.hasLiveOwner();
 
         peer.name = name;
         peer.emote = emoteForName(name);
@@ -813,9 +818,13 @@ export class WatchRoom {
     // LIVENESS PASS: the runtime's live-socket list is the truth. A session
     // whose socket is gone (laptop slept, app killed, close frame lost) is a
     // GHOST — the refresh loop below would otherwise renew its WATCHING
-    // presence every minute FOREVER ("user watching is stuck even they
-    // already left"). webSocketClose covers the polite path; this covers the
-    // impolite ones within one alarm tick.
+    // presence every 5 min FOREVER ("user watching is stuck even they already
+    // left"). webSocketClose covers the polite path; this covers the impolite
+    // ones within one alarm tick.
+    //
+    // EVERY ghost is pruned, anonymous ones included: an anonymous ghost used
+    // to stay in the roster forever (and the owner's ghost kept the host badge
+    // and blocked all promotion, see hasLiveOwner).
     const livePeerIds = new Set();
     for (const ws of this.ctx.getWebSockets()) {
       try {
@@ -826,16 +835,25 @@ export class WatchRoom {
     let pruned = false;
     for (let i = this.sessions.length - 1; i >= 0; i--) {
       const s = this.sessions[i];
-      if (!s.userId) continue; // anonymous sessions own no presence
-      if (!livePeerIds.has(s.id)) {
-        this.sessions.splice(i, 1);
-        pruned = true;
+      if (livePeerIds.has(s.id)) continue;
+      this.sessions.splice(i, 1);
+      pruned = true;
+      if (s.userId) {
         try {
           await clearPresenceIfRoom(this.env, s.userId, this.meta.id);
         } catch (_) {}
       }
     }
     if (pruned) await this.persist();
+
+    // OWNERSHIP RECOVERY: pruning the ghost that held ownership (or any stale
+    // ownerId left by a redeploy) used to leave meta.ownerId pointing at a
+    // peer that no longer exists — isOwner() was false for everybody, so
+    // play/pause/seek/videoChange were all dropped and no joiner could ever be
+    // promoted. Hand the room to the oldest live peer instead.
+    if (this.meta.ownerId && !this.hasLiveOwner()) {
+      await this.transferOwnership();
+    }
 
     const alive = this.sessions.filter((s) => s.userId && s.presence);
     for (const s of alive) {
@@ -878,9 +896,21 @@ export class WatchRoom {
     return this.isOwner(peer) || this.allowedSet().has(peer && peer.id);
   }
 
+  /**
+   * Is the room's owner actually CONNECTED? Liveness comes from the runtime's
+   * socket list (authoritative, and survives hibernation) — a persisted
+   * session whose socket died must not count: it would leave the room with a
+   * "host" that cannot act and no one able to take over.
+   */
   hasLiveOwner() {
     if (!this.meta.ownerId) return false;
-    return this.sessions.some((p) => p.id === this.meta.ownerId);
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const a = ws.deserializeAttachment();
+        if (a && a.peerId === this.meta.ownerId) return true;
+      } catch (_) {}
+    }
+    return false;
   }
 
   async transferOwnership() {

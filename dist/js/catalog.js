@@ -1724,6 +1724,12 @@
           }
           // No AniList match: fall through to the TMDB grid (best effort).
         }
+        // Cover art: the show's poster (the season list below falls back to it).
+        // DECLARED BEFORE the map: the map callback runs eagerly, so reading a
+        // `const` declared further down threw a TDZ ReferenceError whenever a
+        // season had no poster of its own — the whole modal then answered
+        // "Could not load episodes" for that show.
+        const showPoster = (extra && extra.poster_path ? img(extra.poster_path, 'w154') : '') || video.poster || '';
         const usable = ((extra && extra.seasons) || [])
           .filter((s) => s && Number(s.season_number) > 0)
           .map((s) => ({
@@ -1744,8 +1750,8 @@
 
         // Cover row: the show's art, following the selected season (TMDB
         // ships a poster per season) — the modal no longer looks like a
-        // bare numbered list.
-        const showPoster = (extra && extra.poster_path ? img(extra.poster_path, 'w154') : '') || video.poster || '';
+        // bare numbered list. (`showPoster` is declared above the season map,
+        // which falls back to it.)
         const cov = document.createElement('img');
         cov.className = 'episodes-modal__cover';
         cov.alt = '';
