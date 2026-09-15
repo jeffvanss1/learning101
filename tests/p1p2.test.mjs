@@ -368,7 +368,7 @@ test('history is SERVER-FIRST with an on-page status line', () => {
   assert.match(s, /function getServerHistoryStatus\(\)/, 'status-bearing fetch');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /id="history-status"/, 'status element exists');
-  assert.match(html, /js\/social\.js\?v=50/, 'social cache-bumped');
+  assert.match(html, /js\/social\.js\?v=51/, 'social cache-bumped');
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history__status--err \{/, 'error status styled');
 });
@@ -422,7 +422,7 @@ test('landscape history art: backdrop column end-to-end + healer prefers it', ()
   assert.match(a, /!v\.backdrop && v\.id/, 'rows missing a backdrop get healed');
   assert.match(a, /w780' \+ d\.backdrop_path/, 'TMDB backdrop at w780');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/social\.js\?v=50/, 'social cache-bumped');
+  assert.match(html, /js\/social\.js\?v=51/, 'social cache-bumped');
 });
 
 test('host sovereignty: only external controller commands drive the host + explicit CSP', () => {
@@ -436,7 +436,7 @@ test('host sovereignty: only external controller commands drive the host + expli
   const w = readFileSync(join(ROOT, 'src/worker.ts'), 'utf8');
   assert.match(w, /style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline';/, 'CSP explicit elem/attr');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/player\.js\?v=15/, 'player cache-bumped');
+  assert.match(html, /js\/player\.js\?v=16/, 'player cache-bumped');
   assert.match(html, /js\/app\.js\?v=57/, 'app cache-bumped');
 });
 

@@ -496,6 +496,14 @@ seek — no more snap-back, no need to scroll down to the in-app progress
 row. Guests' native seeks are still re-converged (sync wins; only
 controllers steer the room).
 
+**A reported pause is not a pause.** The embed's `playing` flag lags right
+after a play command (and can flap mid-playback) while its clock keeps
+advancing, so the client believes a pause only when the reported position is
+frozen and the boot window of our own play command has passed; an unconfirmed
+claim is answered with an immediate `getStatus` so real pauses still land in
+milliseconds, and the chat banner needs a real change past the 2s mark. See
+the false-pause section below.
+
 ## Project layout
 
 ```
@@ -1598,3 +1606,50 @@ a "More" sheet; the bar hides inside a room (the in-room peek brings it back).
   and the theme — design review without a device.
 Tests 225/225, check clean. catalog css v29 / style css v26 / app v57 /
 social v50 / i18n v4 / ui-2026-09-15.88.
+
+## False pause at the start of a room: the clock decides, not the flag (ui-2026-09-15.89)
+
+USER: "i found bugs false pause at first start a room but the video still play
+and give like pause banner appear" — the just-started room showed a paused
+button (and could write "⏸️ Host paused the movie" into the chat) while the
+video never stopped.
+
+WHAT ACTUALLY HAPPENED: right after a room starts, the embed reports
+`playing: false` while its own clock keeps advancing (boot lag / a flapping
+status). The client assigned `localPlaying = d.playing` unconditionally, so
+
+- the play/pause control + progress flipped to "paused" while the video played,
+- the mirror treated it as a user action and broadcast a PAUSE, and the Durable
+  Object wrote that banner, and
+- a "paused" report within 2.5s of the duration could even be read as the END
+  of the episode.
+
+- THE RULE NOW: `_believePaused()` — a "paused" report is believed only when
+  its own clock is frozen (`PAUSE_CLOCK_EPSILON` 0.35s against the previous
+  report, window `PAUSE_CLOCK_WINDOW_MS` 2s) AND we are past the boot window of
+  our own play command (`START_LATCH_MS`). A paused player cannot advance, so a
+  "paused" report whose position moves is a lie about the pause.
+- AN UNCONFIRMED CLAIM IS NOT DISCARDED, IT IS QUERIED: it triggers one
+  throttled `getStatus` (250ms) so a GENUINE pause lands in milliseconds while
+  a lagging one dies. No "false paused" flicker, no lost real pause.
+- ONLY `playing: true` RELEASES THE START LATCH. A healed (false) pause used to
+  clear it, which let the very next lagging pause through — and re-opened the
+  play/pause war (the client posted `play` again, and again).
+- A stale pause also keeps `localPlaying = true`, is never counted as fresh
+  mirror evidence (`_mirrorCandidate` is reset instead), is never a derived
+  END, and a boot-window clock jump is no longer mirrored to the room as a seek.
+- SERVER HALF (src/WatchRoom.js): a chat banner now needs a REAL change with
+  something to describe — play requires `!wasPlaying && t > 2s`, pause requires
+  `wasPlaying && t > 2s` (`START_BANNER_MIN_SECONDS`). The playback state
+  itself still applies to the room either way, so nothing is lost: only the
+  noise is. A suppressed banner does not consume the 2s log-dedupe window.
+- TESTS: tests/false-pause.test.mjs (10 cases) runs the SHIPPED player.js
+  against fake iframe messages and the SHIPPED Durable Object for the banner
+  half: a moving clock never pauses or broadcasts, a boot-window "paused"
+  event is not a pause, the latch survives a healed report (exactly ONE `play`
+  is posted), a genuine pause after a poll gap is confirmed by the immediate
+  status request and then broadcast once, a lagging pause near the end is not
+  an episode end (while the confirmed one IS), and a boot clock jump is not a
+  seek. The derived-end fixture in player-seek now confirms the pause the way
+  the embed does (same position twice) — the strictness is the point.
+Tests 235/235, check clean. player v16 / ui-2026-09-15.89.
