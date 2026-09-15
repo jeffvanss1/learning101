@@ -1399,3 +1399,20 @@ Fix (app v53):
 Harness-proven: anime-from-history E99 -> E100 (+id attached),
 unmatched anime E3 -> S1E4, TV finale -> S2E1. Tests 191/191, check
 clean. app v53 / ui-2026-09-14.83.
+
+## The /history split-UI: the room swap forgot the history page (ui-2026-09-14.84)
+
+USER: "watching from history its broken the ui is splitting". Root
+cause, byte-verified: enterRoom's view swap hid home-nav/home/profile
+and tore down #discovery (with a comment documenting the EXACT failure
+mode: "leaving it visible stacks the player and the grid on top of each
+other") — but #history-page, which shares the same fixed-height column,
+was never added. Entering a room from /history (the only path where
+that page is visible) stacked the history grid and the player = the
+split UI.
+
+Fix: teardownHistoryView() joins the swap (discovery -> history ->
+room). Pins updated: stability now counts 4 teardown sites; the
+discovery no-stacking regex accepts the history teardown in sequence.
+(Sandbox reset #7 recovered before patching; suite green on ad8927f
+first.) app v54 / ui-2026-09-14.84. Tests 192/192, check clean.

@@ -100,7 +100,7 @@ test('history: dedicated /history page; home page no longer hosts it', async () 
   assert.equal((app.match(/function renderHistory\(/g) || []).length, 1, 'single renderer (re-rendered by merge/filter/remove)');
   assert.match(app, /function showHistoryView\(\)/, 'view renderer exists');
   assert.match(app, /function teardownHistoryView\(\)/, 'teardown exists');
-  assert.equal((app.match(/teardownHistoryView\(\);/g) || []).length, 3, 'torn down from routeCurrent fall-through + profile + discovery views (history view itself tears those down instead)');
+  assert.equal((app.match(/teardownHistoryView\(\);/g) || []).length, 4, 'torn down from routeCurrent fall-through + profile + discovery views + the ROOM SWAP (entering a room from /history used to split the UI)');
   assert.match(app, /history\.pushState\(null, '', '\/history'\);/, 'sidenav pushes the /history URL');
   assert.match(app, /setActiveNav\('history'\);/, 'nav state follows the page');
 

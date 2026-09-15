@@ -119,7 +119,7 @@ test('entering a room tears the discovery view down (no stacking)', () => {
   // The room and #discovery are siblings in .app-shell__main; a room-enter
   // that forgets to hide #discovery stacks the player and the grid (seen
   // live 2026-09-13: discovery -> play -> room over discovery).
-  const re = /\$\('profile'\)\.hidden = true;\s*(?:\/\/[^\n]*\n\s*)*teardownDiscoveryView\(\);\s*(?:\/\/[^\n]*\n\s*)*\$\('room'\)\.hidden = false;/;
+  const re = /\$\('profile'\)\.hidden = true;\s*(?:\/\/[^\n]*\n\s*)*teardownDiscoveryView\(\);\s*(?:\/\/[^\n]*\n\s*)*(?:teardownHistoryView\(\);\s*(?:\/\/[^\n]*\n\s*)*)?\$\('room'\)\.hidden = false;/;
   assert.ok(re.test(appJs), "the room-enter path must call teardownDiscoveryView() before showing #room");
 });
 
