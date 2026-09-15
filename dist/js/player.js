@@ -59,6 +59,13 @@
   const CONTROL_SUPPRESS_MS = 1200; // ignore mirror right after our own command
   const REMOTE_ECHO_GUARD_MS = 1500; // the player's DELAYED status echo must never be mirrored
   const FRESH_ASSERT_MS = 1800; // window in which a fresh remote state may re-assert (dropped commands)
+  // "False pause" guards. A report that claims PAUSED is only believed when its
+  // own clock is frozen (a paused player cannot advance) and we are past the
+  // boot window of our play command. Boot lag reports "paused" while the video
+  // plays — believing it painted a paused button/banner and broadcast a pause
+  // to the room while the video never stopped.
+  const PAUSE_CLOCK_WINDOW_MS = 2000; // how long a paused-clock observation stays valid
+  const PAUSE_CLOCK_EPSILON = 0.35; // seconds of clock movement that falsify a pause
 
   class PlaybackSyncManager {
     constructor(iframeEl) {
@@ -90,6 +97,8 @@
       this._mirroredPlaying = null; // play/pause state the room already knows
       this._mirrorCandidate = { playing: null, since: 0, confirmations: 0 };
       this._lastStatus = { time: -1, at: 0 }; // native-seek detection baseline
+      this._pauseClock = null; // { t, at } = last "paused" report's position (credibility check)
+      this._lastStatusReqAt = 0; // throttle for the confirm-my-pause status requests
       this._mirrorTimer = null;
       this._statusTimer = null;
       this._readyTimer = null;
@@ -145,6 +154,8 @@
       this._remoteAppliedAt = 0;
       this._lastPauseAssert = 0;
       this._lastStatus = { time: -1, at: 0 }; // stale baseline = bogus native-seek on the new title
+      this._pauseClock = null; // a new title starts with a clean pause-credibility window
+      this._lastStatusReqAt = 0;
       this._lastBufferingAt = 0;
       this._mirrorCandidate = { playing: null, since: 0, confirmations: 0 };
       if (this._mirrorTimer) {
@@ -539,6 +550,49 @@
       }
     }
 
+    /**
+     * Is a "paused" report BELIEVABLE? The clock decides, never the flag alone.
+     *
+     *   1. BOOT LAG: right after OUR play command the embed reports "paused"
+     *      until it finishes buffering (the start latch) — not a pause.
+     *   2. A MOVING CLOCK: a paused player's position cannot advance, so a
+     *      "paused" report whose position moves is a lie about the pause. This
+     *      was the "false pause at first start a room while the video still
+     *      plays" bug: the paused button/banner appeared and a PAUSE was
+     *      broadcast to the room while playback never stopped.
+     *
+     * Consecutive paused reports must therefore ALL show the same position; the
+     * first one is believed only when it did not move since the previous report
+     * of any kind. An unconfirmed claim is answered with an immediate status
+     * request, so the ambiguity resolves in milliseconds, not polls.
+     * @param {number} reportedTime
+     * @returns {boolean}
+     */
+    _believePaused(reportedTime) {
+      if (this._awaitingStart && Date.now() - this._playCmdAt < START_LATCH_MS) return false;
+      const t = Number(reportedTime);
+      if (!Number.isFinite(t)) return true;
+      const at = Date.now();
+      const prev = this._pauseClock;
+      let frozen;
+      if (prev && at - prev.at <= PAUSE_CLOCK_WINDOW_MS) {
+        frozen = Math.abs(t - prev.t) <= PAUSE_CLOCK_EPSILON;
+      } else {
+        const last = /** @type {{ time: number, at: number }} */ (this._lastStatus);
+        frozen = !last || last.time < 0 || Math.abs(t - last.time) <= PAUSE_CLOCK_EPSILON;
+      }
+      this._pauseClock = { t: t, at: at };
+      if (!frozen) {
+        // The claim is not credible YET: ask for the next status right away so
+        // a genuine pause is confirmed fast and a lagging one is discarded.
+        if (at - this._lastStatusReqAt > 250) {
+          this._lastStatusReqAt = at;
+          this._requestStatus();
+        }
+      }
+      return frozen;
+    }
+
     // Detect a seek performed on the player's OWN seek bar: the reported
     // time jumped beyond what playback could have covered since the last
     // status. Controllers get it mirrored to the room ('control'/'seek');
@@ -549,6 +603,10 @@
       const prev = /** @type {{ time: number, at: number }} */ (this._lastStatus);
       this._lastStatus = { time: t, at: at };
       if (!this.isController || prev.time < 0 || this.isBuffering) return;
+      // BOOT WINDOW: until the embed confirms it is playing, a position jump
+      // is our own play/seek command being absorbed by the player — not the
+      // user dragging the bar. Mirroring it spammed the room with seeks.
+      if (this._awaitingStart && Date.now() - this._playCmdAt < START_LATCH_MS) return;
       if (Date.now() - this._suppressed < CONTROL_SUPPRESS_MS) return; // our own command
       const elapsed = Math.max(0, (at - prev.at) / 1000);
       const expected = prev.time + (this.localPlaying ? elapsed : 0);
@@ -597,11 +655,28 @@
             this.localUpdatedAt = Date.now();
           }
           if (typeof d.duration === 'number') this.duration = d.duration;
+          // A claimed pause is only a pause when the clock agrees (see
+          // _believePaused). Otherwise the video is running and the report is
+          // boot lag — keep the playing state so the UI never shows a pause
+          // for a video that is playing.
+          const claimedPause = d.playing === false;
+          const crediblePause = claimedPause && this._believePaused(d.currentTime);
+          const stalePause = claimedPause && !crediblePause;
           if (typeof d.playing === 'boolean') {
-            this.localPlaying = d.playing;
             if (d.playing) {
+              // A POSITIVE play confirmation is the only thing that releases
+              // the start latch (a healed false pause must not: the very next
+              // lagging pause would be believed).
+              this.localPlaying = true;
               this._hasPlayed = true;
               this._awaitingStart = false; // the embed confirmed play — pauses are real again
+              this._pauseClock = null;
+            } else if (crediblePause) {
+              this.localPlaying = false;
+            } else {
+              // The embed claims paused but the video is running: keep the
+              // playing state (no paused button, no pause banner).
+              this.localPlaying = true;
             }
           }
           this.isBuffering = false;
@@ -612,6 +687,7 @@
             !this._endedFired &&
             this._hasPlayed &&
             d.playing === false &&
+            !stalePause && // a lagging "paused" near the end is not the end
             typeof d.currentTime === 'number' &&
             this.duration > 30 &&
             this.duration - d.currentTime <= 2.5
@@ -625,9 +701,16 @@
             this._startPolling();
             this.emit('ready', {});
           }
-          // Controller: mirror a genuine in-player play/pause to the room
-          // BEFORE converging, so convergence never fights the user's action.
-          this._maybeMirrorControl(true); // a fresh status = fresh evidence
+          if (stalePause) {
+            // The embed lied about the pause: no fresh evidence for the mirror
+            // (a lie must never start a play OR pause candidate) — just clear
+            // the candidate so nothing is broadcast from it.
+            this._mirrorCandidate = { playing: this.localPlaying, since: Date.now(), confirmations: 0 };
+          } else {
+            // Controller: mirror a genuine in-player play/pause to the room
+            // BEFORE converging, so convergence never fights the user's action.
+            this._maybeMirrorControl(true); // a fresh status = fresh evidence
+          }
           // Controller: mirror a genuine drag on the player's OWN seek bar
           // (otherwise convergence reads it as drift and snaps it back).
           this._detectNativeSeek();
@@ -656,6 +739,7 @@
           this._hasPlayed = true;
           this.isBuffering = false;
           this._awaitingStart = false;
+          this._pauseClock = null; // playing again: the pause window is closed
           this.emit('progress', {
             time: this.localTime,
             playing: true,
@@ -666,6 +750,21 @@
 
         case 'pause':
         case 'paused':
+          // A pause EVENT during the boot window is the same boot lag the
+          // status path guards against: the embed announces "paused" before it
+          // has actually started playing. Never paint that as a real pause.
+          if (!this._believePaused(this.localTime)) {
+            // Keep playing, but do NOT claim an embed play confirmation: the
+            // start latch must survive a lagging report, otherwise the next
+            // lagging pause would be believed.
+            this.localPlaying = true;
+            this.emit('progress', {
+              time: this.localTime,
+              playing: true,
+              duration: this.duration,
+            });
+            break;
+          }
           this.localPlaying = false;
           this.emit('progress', {
             time: this.localTime,

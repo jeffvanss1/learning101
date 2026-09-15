@@ -288,6 +288,9 @@ test('derived end: paused-at-end after playing fires ended ONCE (no explicit eve
   sync.duration = 120; // duration learned from the embed
   fire(118, true); // playing -> _hasPlayed = true
   fire(120, false); // paused AT the end; the embed NEVER sent an 'ended' event
+  fire(120, false); // the confirm: the clock did not move (a pause claim that
+  //                   follows a >0.35s gap is only believed once the embed
+  //                   answers our immediate getStatus with the same position)
   assert.equal(ended.length, 1, 'derived ended fired exactly once');
   fire(120, false); // later polls (paused at the end) must not re-fire
   fire(119.8, false);

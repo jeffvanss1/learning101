@@ -61,6 +61,11 @@ export const MSG = {
 const MAX_CHAT = 200; // messages kept per room
 const MAX_REQUESTS = 50; // video requests kept per room
 const MAX_PLAYBACK_STATE_AGE_MS = 2 * 60 * 60 * 1000; // 2h before state is stale
+// Play/pause chat banners describe a REAL change with something to describe:
+// below this position nothing had actually played (the startup window), so
+// "paused the movie" / "resumed the movie" would be noise — and a startup
+// false-pause wrote exactly that banner while the video kept playing.
+const START_BANNER_MIN_SECONDS = 2;
 const EMOTE_DIGITS = 6;
 
 // ---------------------------------------------------------------------------
@@ -483,6 +488,7 @@ export class WatchRoom {
         // A message without a usable time keeps the CURRENT position —
         // a raw clampTime(undefined) snapped the room back to 0.
         const t = Number.isFinite(rawT) ? this.clampTime(rawT) : this.playback.time;
+        const wasPlaying = this.playback.isPlaying;
         this.playback.isPlaying = true;
         this.playback.time = t;
         this.playback.timestamp = now();
@@ -493,7 +499,11 @@ export class WatchRoom {
           playback: this.playback,
           by: peer.name,
         });
-        if (this.shouldLogPlayback('play')) {
+        // BANNER RULE: only a REAL state change that has something to resume is
+        // announced. A re-assert from a room that is already playing (the old
+        // play/pause war at startup) or a "resume" at position zero would write
+        // "resumed the movie" into the chat for nothing.
+        if (!wasPlaying && t > START_BANNER_MIN_SECONDS && this.shouldLogPlayback('play')) {
           this.logSystem('\u25b6\ufe0f ' + (peer.name || 'Host') + ' resumed the movie');
         }
         dirty = true;
@@ -506,6 +516,7 @@ export class WatchRoom {
         // A message without a usable time keeps the CURRENT position —
         // a raw clampTime(undefined) snapped the room back to 0.
         const t = Number.isFinite(rawT) ? this.clampTime(rawT) : this.playback.time;
+        const wasPlaying = this.playback.isPlaying;
         this.playback.isPlaying = false;
         this.playback.time = t;
         this.playback.timestamp = now();
@@ -516,7 +527,15 @@ export class WatchRoom {
           playback: this.playback,
           by: peer.name,
         });
-        if (this.shouldLogPlayback('pause')) {
+        // BANNER RULE: a pause that lands before the room ever played (position
+        // ~0, i.e. the startup window) is not "paused the movie" — nothing was
+        // playing yet. That banner appearing at the first start of a room while
+        // the video kept playing was the reported false-pause symptom.
+        if (
+          wasPlaying &&
+          t > START_BANNER_MIN_SECONDS &&
+          this.shouldLogPlayback('pause')
+        ) {
           this.logSystem('\u23f8\ufe0f ' + (peer.name || 'Host') + ' paused the movie');
         }
         dirty = true;
