@@ -521,6 +521,38 @@
   let previewEl = null;
   let previewFor = null; // item currently previewed
 
+  /** Trailer audio preference for the hover preview (device pref, default ON). */
+  const TRAILER_SOUND_KEY = 'wp:trailersound';
+
+  /** @returns {boolean} true when the trailer should play WITH sound */
+  function trailerSoundOn() {
+    try {
+      return localStorage.getItem(TRAILER_SOUND_KEY) !== '0';
+    } catch (_) {
+      return true; // default: sound on
+    }
+  }
+
+  /** @param {boolean} on */
+  function setTrailerSound(on) {
+    try {
+      localStorage.setItem(TRAILER_SOUND_KEY, on ? '1' : '0');
+    } catch (_) {}
+  }
+
+  /**
+   * Send a YouTube iframe-API command to the trailer in the OPEN preview
+   * (no-op when nothing is playing). Used for mute / unMute.
+   * @param {string} func
+   */
+  function commandPreview(func) {
+    const frame = previewEl ? previewEl.querySelector('iframe') : null;
+    if (!frame || !frame.contentWindow) return;
+    try {
+      frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: [] }), '*');
+    } catch (_) {}
+  }
+
   function closePreview() {
     if (previewTimer) {
       clearTimeout(previewTimer);
@@ -560,8 +592,21 @@
   }
 
   function trailerEmbed(key) {
-    return 'https://www.youtube.com/embed/' + encodeURIComponent(key) +
-      '?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1';
+    // `enablejsapi=1` lets the preview flip sound on/off after the player has
+    // started (raw postMessage commands). The embed ALWAYS starts muted: a
+    // hover is not a user gesture, so only muted autoplay is guaranteed —
+    // starting unmuted can leave a frozen first frame instead of a trailer.
+    // buildPreview() requests `unMute` right after load when the audio
+    // preference is ON (the default), so it plays with sound wherever the
+    // browser allows it and still plays silently where it does not.
+    let src = 'https://www.youtube.com/embed/' + encodeURIComponent(key) +
+      '?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1';
+    try {
+      if (global.location && global.location.origin) {
+        src += '&origin=' + encodeURIComponent(global.location.origin);
+      }
+    } catch (_) {}
+    return src;
   }
 
   function buildPreview(item) {
@@ -575,6 +620,28 @@
       im.alt = '';
       media.appendChild(im);
     }
+    // AUDIO TOGGLE: the trailer starts muted (autoplay policy) — this control
+    // is the user's one-click way to get sound, and it doubles as the visible
+    // mute state. Default ON for every new preview; the choice persists so it
+    // is not re-decided on every hover.
+    const sound = document.createElement('button');
+    sound.type = 'button';
+    sound.className = 'card-preview__sound' + (trailerSoundOn() ? ' is-on' : '');
+    sound.setAttribute('aria-pressed', String(trailerSoundOn()));
+    sound.title = trailerSoundOn() ? 'Trailer sound: on' : 'Trailer sound: muted';
+    sound.textContent = trailerSoundOn() ? '🔊' : '🔇';
+    sound.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const on = !sound.classList.contains('is-on');
+      setTrailerSound(on);
+      sound.classList.toggle('is-on', on);
+      sound.setAttribute('aria-pressed', String(on));
+      sound.title = on ? 'Trailer sound: on' : 'Trailer sound: muted';
+      sound.textContent = on ? '🔊' : '🔇';
+      commandPreview(on ? 'unMute' : 'mute');
+    });
+    media.appendChild(sound);
     el.appendChild(media);
 
     const body = h('div', 'card-preview__body');
@@ -621,12 +688,28 @@
           if (!previewEl || previewFor !== item || !key) return;
           const media = previewEl.querySelector('.card-preview__media');
           if (!media) return;
-          media.innerHTML = '';
+          // Drop the placeholder art only — `media.innerHTML = ''` would take
+          // the audio toggle with it.
+          const posterImg = media.querySelector('img');
+          if (posterImg) posterImg.remove();
           const iframe = document.createElement('iframe');
           iframe.src = trailerEmbed(key);
           iframe.title = item.title || 'Trailer';
           iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
           iframe.setAttribute('allowfullscreen', '');
+          // Sound ON (the default): ask the player to unmute once it has had
+          // time to boot. Sent unconditionally — if the browser blocked
+          // unmuted playback the trailer keeps playing silently instead of
+          // showing a frozen frame, and the audio button stays authoritative.
+          iframe.addEventListener('load', () => {
+            if (!trailerSoundOn()) return;
+            setTimeout(() => {
+              // Re-check BOTH identity (the preview may have been swapped or
+              // closed) and the preference — a click during this boot delay
+              // must not be undone by a late unMute.
+              if (previewEl && previewFor === item && trailerSoundOn()) commandPreview('unMute');
+            }, 700);
+          });
           media.appendChild(iframe);
         })
         .catch(() => {});

@@ -810,7 +810,9 @@ body.room-focus.rail-peek .sidenav {
 .card-preview {
   position: fixed;
   z-index: 400;
-  width: 304px;
+  /* "Slightly bigger": 304 -> 360px (the poster rows are 158px wide, so this
+     is still a tooltip-sized panel — just roomier to read). */
+  width: 360px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -841,13 +843,49 @@ body.room-focus.rail-peek .sidenav {
   border: 0;
 }
 
+/* Trailer audio toggle (bottom-right of the media box, always visible so the
+   muted/unmuted state is readable at a glance). A CIRCLE by design; the chip
+   keeps the black-chip + white-ink on-media treatment in both themes. */
+.card-preview__sound {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.card-preview__sound:hover {
+  background: rgba(0, 0, 0, 0.86);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.card-preview__sound:active {
+  transform: scale(0.94);
+}
+/* Sound ON is the accented state (the default). */
+.card-preview__sound.is-on {
+  background: var(--red);
+  border-color: var(--red);
+}
+
 .card-preview__body {
-  padding: 12px 14px;
+  padding: 13px 15px 15px;
 }
 
 .card-preview__title {
   font-weight: 600;
-  font-size: 14.5px;
+  font-size: 15.5px;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -855,14 +893,14 @@ body.room-focus.rail-peek .sidenav {
 }
 
 .card-preview__meta {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-muted);
-  margin: 2px 0 6px;
+  margin: 3px 0 7px;
 }
 
 .card-preview__overview {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-dim);
   line-height: 1.5;
   display: -webkit-box;

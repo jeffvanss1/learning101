@@ -1416,3 +1416,68 @@ room). Pins updated: stability now counts 4 teardown sites; the
 discovery no-stacking regex accepts the history teardown in sequence.
 (Sandbox reset #7 recovered before patching; suite green on ad8927f
 first.) app v54 / ui-2026-09-14.84. Tests 192/192, check clean.
+
+## Full-system audit: episode-modal TDZ, room ownership recovery, /history reload (ui/api-2026-09-15.85)
+
+Three defects found in a full read of the worker, the Durable Object, the
+D1/KV routes and every shipped bundle; each one is now pinned by a test that
+EXECUTES the shipped code (or the DO harness) and fails on the pre-fix build.
+
+1. EPISODE SWITCHER DIED FOR MANY SERIES (dist/js/catalog.js). The season
+   list is built with a `.map()` whose poster falls back to the show's own
+   art (`... || showPoster`), and `const showPoster` was declared BELOW that
+   map. `.map()` runs eagerly, so a season with no `poster_path` of its own
+   read the const inside its temporal dead zone: ReferenceError -> the
+   modal's catch -> "Could not load episodes — try again." for the whole
+   show. A truthy season poster short-circuits `||`, which is why it looked
+   intermittent. Declaration hoisted above the map.
+   New tests/episodes-modal.test.mjs executes the real bundle in a stub DOM:
+   red before the hoist, green after.
+
+2. A ROOM COULD LOSE ITS HOST FOREVER (src/WatchRoom.js). `join` promoted a
+   newcomer only when `!meta.ownerId`, so its `&& !hasLiveOwner()` guard was
+   dead code and a stale ownerId (redeploy, or the alarm's ghost prune)
+   blocked promotion permanently — every play/pause/seek/videoChange was
+   dropped with no recovery path. The alarm's liveness pass also skipped
+   anonymous sessions, so an anonymous host's ghost kept its roster slot and
+   the host badge indefinitely, and pruning never transferred ownership.
+   `hasLiveOwner()` now reads the runtime's live socket list (authoritative,
+   survives hibernation), EVERY ghost is pruned, and the alarm hands the room
+   to the oldest live peer when the owner is gone.
+   New tests/room-ownership.test.mjs fails 3/4 on the old code.
+
+3. /history DID NOT SURVIVE A RELOAD (dist/js/app.js). Room, profile and
+   discovery deep links were all restored in boot(); /history had no branch,
+   so refreshing (or opening a shared) /history rendered Home while the URL
+   still said /history. New tests/boot-routing.test.mjs executes boot() with
+   stubs and asserts all four surfaces.
+
+Pins: catalog v29, app v55 (test pins updated with them). Tests 200/200,
+check clean.
+
+## Trailer hover preview: bigger tooltip + audio toggle (ui-2026-09-15.86)
+
+USER: "make hover tool tip slightly bigger and add audio toggle to it,
+default is on for trailer".
+
+- SIZE: .card-preview 304px -> 360px, with the body/text scaled to match
+  (title 15.5px, meta 12.5px, overview 13px, roomier padding). Still a
+  tooltip-sized panel beside a 158px poster row.
+- AUDIO: new .card-preview__sound chip on the media box, bottom-right.
+  Default ON for every new preview; the choice persists in
+  wp:trailersound and drives the next hover. Clicking it sends the YouTube
+  iframe-API mute/unMute command via postMessage (no reload, the trailer
+  keeps playing).
+- AUTOPLAY REALITY: a hover is not a user gesture, so an unmuted autoplay is
+  not guaranteed — starting unmuted can leave a frozen first frame. The
+  embed therefore always starts muted (`mute=1&enablejsapi=1&origin=...`) and
+  the code requests `unMute` ~700ms after the player's load event when the
+  preference is ON, so the default plays with sound wherever the browser
+  allows it and still plays silently where it does not. The boot-delay
+  request re-checks the preference, so a click during those 700ms is never
+  undone.
+Tests: tests/preview-audio.test.mjs slices the shipped hover-preview section
+out of catalog.js and drives it (toggle present + ON by default, persistence,
+command order, persisted-OFF silence, the boot-delay race). 4/5 of its cases
+fail without the feature. Tests 205/205, check clean. catalog v29 /
+css v25 / ui-2026-09-15.86.
