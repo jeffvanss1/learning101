@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WatchParty — false-pause lab</title>
+    <link rel="stylesheet" href="../dist/css/style.css" />
+    <link rel="stylesheet" href="../dist/css/catalog.css" />
+    <link rel="stylesheet" href="../dist/css/social.css" />
+    <style>
+      /* Dev page chrome only: every component below uses the SHIPPED classes. */
+      body { padding: 26px 30px 70px; }
+      .lab { max-width: 1080px; margin: 0 auto; }
+      .lab h1 { font-size: 21px; margin: 0 0 8px; }
+      .lab__hint { color: var(--text-muted); font-size: 13px; line-height: 1.6; margin: 0 0 22px; max-width: 78ch; }
+      .lab__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+      @media (max-width: 900px) { .lab__grid { grid-template-columns: 1fr; } }
+      .lab__card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-soft); padding: 16px; }
+      .lab__card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0 0 12px; }
+      .lab__row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+      .lab__state { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; font-size: 13.5px; }
+      .lab__pill { border-radius: 999px; padding: 4px 12px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--border); }
+      .lab__pill--playing { color: #6ee7a8; border-color: #6ee7a855; background: #6ee7a814; }
+      .lab__pill--paused { color: #f5a524; border-color: #f5a52455; background: #f5a52414; }
+      .lab__log { display: grid; gap: 6px; max-height: 330px; overflow: auto; font-size: 12.5px; }
+      .lab__log div { padding: 5px 9px; border-radius: 7px; background: var(--bg-elev, #ffffff0a); border-left: 3px solid var(--border); }
+      .lab__log .is-bad { border-left-color: #ff5c5c; }
+      .lab__log .is-good { border-left-color: #6ee7a8; }
+      .lab__log code { color: var(--text-muted); }
+      .lab__chat { display: grid; gap: 8px; min-height: 120px; align-content: start; }
+      .lab__note { color: var(--text-muted); font-size: 12.5px; margin: 10px 0 0; }
+      iframe { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="lab">
+      <h1>False-pause lab</h1>
+      <p class="lab__hint">
+        This page runs the <strong>shipped</strong> <code>dist/js/player.js</code> (the same bundle the app
+        loads) and replays the exact sequences from the bug report. The right column shows what the app's
+        play/pause state would be and what the room chat would say — the chat rule is the shipped one:
+        a banner needs a real change and a position past 0:02. Feed a sequence and watch the log.
+      </p>
+
+      <div class="lab__grid">
+        <div class="lab__card">
+          <h2>1 · Feed the player (as if the embed reported it)</h2>
+          <div class="lab__row">
+            <button class="btn btn--primary btn--sm" data-scenario="boot">Boot lag (the reported bug)</button>
+            <button class="btn btn--sm" data-scenario="real">Genuine pause</button>
+            <button class="btn btn--sm" data-scenario="jump">Boot clock jump</button>
+            <button class="btn btn--sm" data-scenario="end">Lagging pause near the end</button>
+          </div>
+          <div class="lab__row">
+            <button class="btn btn--ghost btn--sm" id="lab-reset">Reset</button>
+          </div>
+          <p class="lab__note">
+            "Boot lag" = starting a room: the embed reports <code>playing:false</code> while its clock keeps
+            advancing (0.3 → 1.1 → 2.4 → 3.5 → 4.4). Before the fix this painted a paused state and the room
+            got a PAUSE. "Genuine pause" = the clock freezes at 41.5 and the embed answers our getStatus with
+            the same position.
+          </p>
+        </div>
+
+        <div class="lab__card">
+          <h2>2 · What the app and the room see</h2>
+          <div class="lab__state">
+            <span>Player UI:</span>
+            <span class="lab__pill" id="lab-state">unknown</span>
+            <span>room gets:</span>
+            <span class="lab__pill" id="lab-room">nothing yet</span>
+          </div>
+          <div class="lab__chat" id="lab-chat" style="margin-top: 14px"></div>
+          <p class="lab__note">
+            A red log line or a chat bubble with a pause is what the bug looked like: the video plays on,
+            the room is told it paused.
+          </p>
+        </div>
+
+        <div class="lab__card" style="grid-column: 1 / -1">
+          <h2>3 · Event log</h2>
+          <div class="lab__log" id="lab-log"></div>
+        </div>
+      </div>
+    </div>
+
+    <iframe id="lab-iframe" title="fake embed"></iframe>
+
+    <script src="../dist/js/player.js"></script>
+    <script>
+      (function () {
+        const iframeEl = document.getElementById('lab-iframe');
+        const logEl = document.getElementById('lab-log');
+        const chatEl = document.getElementById('lab-chat');
+        const stateEl = document.getElementById('lab-state');
+        const roomEl = document.getElementById('lab-room');
+        const START_BANNER_MIN_SECONDS = 2; // the shipped WatchRoom rule
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+        /** The fake embed: it echoes our commands back to us as status reports. */
+        const embed = iframeEl.contentWindow;
+
+        function log(text, kind) {
+          const row = document.createElement('div');
+          if (kind) row.className = kind;
+          row.innerHTML = text;
+          logEl.prepend(row);
+          if (logEl.children.length > 60) logEl.lastChild.remove();
+        }
+
+        function say(line) {
+          const el = document.createElement('div');
+          el.className = 'chat-msg chat-msg--system';
+          el.textContent = line;
+          chatEl.appendChild(el);
+          while (chatEl.children.length > 3) chatEl.firstChild.remove();
+        }
+
+        function paintState() {
+          const sync = window.__labSync;
+          const playing = sync.localPlaying !== false;
+          stateEl.textContent = playing ? 'PLAYING' : 'PAUSED';
+          stateEl.className = 'lab__pill ' + (playing ? 'lab__pill--playing' : 'lab__pill--paused');
+        }
+
+        // ---- wire the SHIPPED manager to our fake iframe -------------------
+        function boot() {
+          if (window.__labSync) {
+            try { window.__labSync.destroy(); } catch (_) {} // stop the old poll timer
+          }
+          logEl.innerHTML = '';
+          chatEl.innerHTML = '';
+          roomEl.textContent = 'nothing yet';
+          roomEl.className = 'lab__pill';
+          window.__sawPause = false;
+          window.__sawEnded = false;
+          window.__sawSeek = false;
+
+          const iframe = {
+            contentWindow: embed,
+            addEventListener() {},
+            removeEventListener() {},
+            getAttribute: () => null,
+          };
+          const sync = new window.WP.PlaybackSyncManager(iframe);
+          window.__labSync = sync;
+          sync.isController = true;
+          sync.selfName = 'Host';
+          sync.on('control', (e) => {
+            const time = Number(sync.localTime) || 0;
+            if (e.action === 'pause') window.__sawPause = true;
+            if (e.action === 'seek') window.__sawSeek = true;
+            // The shipped room: a banner needs a REAL change and a position
+            // past 0:02 — otherwise the change still lands, silently.
+            if (e.action === 'pause') {
+              if (time > START_BANNER_MIN_SECONDS) {
+                roomEl.textContent = 'PAUSE';
+                roomEl.className = 'lab__pill lab__pill--paused';
+                say('⏸️ Host paused the movie');
+                log('room control → <code>pause</code> at ' + time.toFixed(1) + 's → chat banner written', 'is-good');
+              } else {
+                roomEl.textContent = 'pause (silent)';
+                roomEl.className = 'lab__pill lab__pill--paused';
+                log('room control → <code>pause</code> at ' + time.toFixed(1) + 's → state applied, no banner', '');
+              }
+            } else if (e.action === 'play') {
+              roomEl.textContent = 'PLAY';
+              roomEl.className = 'lab__pill lab__pill--playing';
+              if (time > START_BANNER_MIN_SECONDS) say('▶️ Host resumed the movie');
+              log('room control → <code>play</code> at ' + time.toFixed(1) + 's', '');
+            } else {
+              log('room control → <code>' + e.action + '</code> ' + JSON.stringify(e.time ?? '') , '');
+            }
+          });
+          sync.on('progress', paintState);
+          sync.on('ended', () => {
+            window.__sawEnded = true;
+            log('player says <code>ended</code> (episode over)', 'is-good');
+          });
+
+          // Commands the manager posts to the embed are visible to us because
+          // the iframe is same-origin about:blank.
+          embed.addEventListener('message', (ev) => {
+            const cmd = ev.data && ev.data.command;
+            if (!cmd) return;
+            log('→ player command <code>' + cmd + '</code>' + (ev.data.time != null ? ' ' + Number(ev.data.time).toFixed(2) + 's' : ''));
+          });
+
+          // ---- status injection: a report FROM the embed ------------------
+          window.__report = (currentTime, playing, duration) =>
+            window.dispatchEvent(
+              new MessageEvent('message', {
+                data: {
+                  type: 'PLAYER_EVENT',
+                  data: { event: 'playerstatus', currentTime, playing, duration: duration || 1200 },
+                },
+                source: embed,
+              })
+            );
+
+          // A room start: the host picked a title, so the player is loaded and
+          // the room state says "playing from 0".
+          sync.loadVideo({ id: 1, src: 'https://bingr.one/watch/movie/1' });
+          sync._iframeLoaded = true;
+          sync.applyRemote({ isPlaying: true, time: 0, timestamp: Date.now() });
+          paintState();
+          log('room started: loadVideo + room state “playing from 0:00”');
+          return sync;
+        }
+
+        const scenarios = {
+          async boot() {
+            // EXACTLY the reported sequence: the room starts, the embed says
+            // paused while its clock runs away.
+            const seq = [[0.3, false], [1.1, true], [2.4, false], [3.5, false], [4.4, false]];
+            log('— boot lag: the embed claims “paused” while the clock advances —');
+            for (const [t, playing] of seq) {
+              window.__report(t, playing);
+              log('embed status: t=' + t + 's playing=' + playing);
+              paintState();
+              await sleep(320);
+            }
+            await sleep(500);
+            if (!window.__sawPause && window.__labSync.localPlaying) {
+              log('RESULT: no pause in the player UI, no pause sent to the room ✔ (the bug is fixed)', 'is-good');
+            } else {
+              log('RESULT: the false pause came back ✘', 'is-bad');
+            }
+          },
+          async real() {
+            log('— genuine pause: playback has run, then the clock freezes —');
+            window.__report(40, true);
+            log('embed status: t=40s playing=true');
+            await sleep(1400); // past the command-suppression window
+            window.__report(41.5, false); // the user pauses: a single report
+            log('embed status: t=41.5s playing=false (first report — moved 1.5s)');
+            await sleep(150);
+            window.__report(41.5, false); // our getStatus confirm: same position
+            log('embed status: t=41.5s playing=false (getStatus confirm — frozen)');
+            await sleep(900);
+            paintState();
+            if (!window.__labSync.localPlaying) {
+              log('RESULT: the real pause landed (UI paused, room told once) ✔', 'is-good');
+            } else {
+              log('RESULT: a real pause was swallowed ✘', 'is-bad');
+            }
+          },
+          async jump() {
+            log('— boot window: the player absorbs our play/seek (clock jump 0.2 → 9.6s) —');
+            window.__report(0.2, false);
+            await sleep(80);
+            window.__report(9.6, false);
+            await sleep(200);
+            if (window.__sawSeek) {
+              log('RESULT: a boot jump was mirrored to the room as a user seek ✘', 'is-bad');
+            } else {
+              log('RESULT: a boot jump is not a user drag — no seek went to the room ✔', 'is-good');
+            }
+          },
+          async end() {
+            log('— near the end: “paused” at 1199s while the clock still moves —');
+            window.__report(10, true, 1200);
+            await sleep(100);
+            window.__report(10, true, 1200);
+            await sleep(1400);
+            window.__report(1199, false, 1200);
+            await sleep(300);
+            window.__report(1199.8, false, 1200);
+            await sleep(300);
+            if (window.__sawEnded) {
+              log('RESULT: a moving clock near the end fired the episode end ✘', 'is-bad');
+            } else {
+              log('RESULT: a moving clock near the end is not an episode end ✔ (no next-episode jump)', 'is-good');
+            }
+          },
+        };
+
+        document.querySelectorAll('[data-scenario]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            boot();
+            await scenarios[btn.getAttribute('data-scenario')]();
+          });
+        });
+        document.getElementById('lab-reset').addEventListener('click', () => boot());
+        boot();
+      })();
+    </script>
+  </body>
+</html>

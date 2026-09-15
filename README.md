@@ -1652,4 +1652,10 @@ status). The client assigned `localPlaying = d.playing` unconditionally, so
   an episode end (while the confirmed one IS), and a boot clock jump is not a
   seek. The derived-end fixture in player-seek now confirms the pause the way
   the embed does (same position twice) — the strictness is the point.
-Tests 235/235, check clean. player v16 / ui-2026-09-15.89.
+- PREVIEW: scripts/false-pause-lab.html runs the SHIPPED player.js in the
+  browser against a fake embed and replays each sequence from the bug report
+  (boot lag, a genuine pause, a boot clock jump, a lagging pause near the end),
+  showing the play/pause state, every command the client posts, what the room
+  is told, and the chat banner the room would write. `python3 -m http.server`
+  from the repo root, then open /scripts/false-pause-lab.html.
+Tests 239/239, check clean. player v16 / ui-2026-09-15.89.
