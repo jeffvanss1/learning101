@@ -1375,3 +1375,27 @@ now explicit (the "style-src-elem was not explicitly set" fallback
 note is gone; our page never relied on external styles/fonts — the
 reported font block originates inside the bingr embed's own CSP).
 190/190, check clean. app v52 / player v15 / ui+api-2026-09-14.82.
+
+## Auto-advance sequential fix for history-started anime (ui-2026-09-14.83)
+
+Sandbox reset #6 mid-investigation (recovered: stash snapshot 6 ->
+reset to FETCH_HEAD f281fd5 -> npm ci -> suite green 190/190 before
+any patch).
+
+USER: "auto advance doesn't advance sequentially". The resolver itself
+was execution-proven sequential (TV E5->E6, specials skipped, season
+rollover S1E3->S2E1, anime absolute E99->E100). The REAL break: anime
+started from a SERVER-FIRST HISTORY CARD has no anilistId (the D1 row
+doesn't carry it) and the anime branch dead-ended (null = "nothing to
+advance to") AND its src used the TMDB id in place of the AniList id.
+
+Fix (app v53):
+- startRoomWithVideo: anime-from-history resolves its anilistId (+
+  malId) once, bounded 4s, and rebuilds the src with the REAL id before
+  the room starts (same object flows into state.video).
+- resolveNextEpisode: the anime null dead-end is GONE - a missing
+  anilistId is resolved in place (bounded), and if AniList has nothing
+  the TMDB season walk (tvAdvance) still advances sequentially.
+Harness-proven: anime-from-history E99 -> E100 (+id attached),
+unmatched anime E3 -> S1E4, TV finale -> S2E1. Tests 191/191, check
+clean. app v53 / ui-2026-09-14.83.

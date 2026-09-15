@@ -352,6 +352,23 @@
     // position this device doesn't (watched on the phone, resuming on the
     // laptop). tryResume() only consumes _pendingResume once the room is
     // drivable, so upgrading it mid-setup is safe; consumed = harmless no-op.
+    // ANIME FROM A HISTORY CARD: server-first rows carry no anilistId - the
+    // anime src (watch/anime/<anilistId>/<ep>) AND sequential auto-advance
+    // both need it. Resolve once, bounded 4s, then start (same object flows
+    // into the room, so the ended-path sees the id even mid-play).
+    if (video && video.type === 'anime' && video.anilistId == null && video.id && WP.Catalog && WP.Catalog.anilistApi) {
+      try {
+        const info = await Promise.race([
+          WP.Catalog.anilistApi(String(video.id)),
+          new Promise((r) => setTimeout(() => r(null), 4000)),
+        ]);
+        if (info && info.anilistId != null) {
+          video.anilistId = String(info.anilistId);
+          if (info.malId != null) video.malId = String(info.malId);
+          video.src = WP.Catalog.buildVideo(video, { episode: video.episode || 1 }).src;
+        }
+      } catch (_) {}
+    }
     if (video && video.id && WP.Social && WP.Social.getServerEntry && WP.Social.getSession && WP.Social.getSession()) {
       const wantSeason = video.season != null ? Number(video.season) : null;
       const wantEp = video.episode != null ? Number(video.episode) : null;
@@ -1696,11 +1713,32 @@
   function resolveNextEpisode(v) {
     if (v.type === 'anime') {
       const curEp = Number(v.episode) || 1;
-      // ANILIST-NATIVE: the canonical `episodes` count we already resolve
-      // (worker endpoint -> direct GraphQL fallback). Absolute numbering.
-      if (v.anilistId == null) return Promise.resolve(null);
+      // ANILIST-NATIVE: the canonical `episodes` count (worker endpoint ->
+      // direct GraphQL fallback). Absolute numbering. NO anilistId (rows
+      // started from a server-first history card): resolve it NOW (bounded)
+      // instead of dead-ending the binge, then fall back to the TMDB walk.
       const withTimeout = (/** @type {Promise<number|null>} */ p) =>
         Promise.race([p, new Promise((r) => setTimeout(() => r(null), 4000))]);
+      if (v.anilistId == null) {
+        const resolved = WP.Catalog.anilistApi
+          ? withTimeout(
+              WP.Catalog.anilistApi(v.id)
+                .then((/** @type {any} */ info) => {
+                  if (info && info.anilistId != null) {
+                    v.anilistId = String(info.anilistId);
+                    if (info.malId != null) v.malId = String(info.malId);
+                    return Number(info.episodes) || null;
+                  }
+                  return null;
+                })
+                .catch(() => null)
+            )
+          : Promise.resolve(null);
+        return resolved.then((count) => {
+          if (count) return curEp + 1 <= count ? { episode: curEp + 1 } : null;
+          return tvAdvance(v); // unmatched anime: TMDB walk still advances sequentially
+        });
+      }
       return withTimeout(
         WP.Catalog.anilistApi(v.id)
           .then((/** @type {any} */ info) => (info && info.episodes != null ? Number(info.episodes) : null))
@@ -1710,6 +1748,11 @@
         return curEp + 1 <= count ? { episode: curEp + 1 } : null; // series finale
       });
     }
+    return tvAdvance(v);
+  }
+
+  /** TV/UNMATCHED-ANIME sequential advance: real TMDB season list, skip specials. */
+  function tvAdvance(v) {
     const curSeason = Number(v.season) || 1;
     const curEp = Number(v.episode) || 1;
     return WP.Catalog.api('/tv/' + encodeURIComponent(String(v.id)) + '/season/' + curSeason)

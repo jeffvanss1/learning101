@@ -302,7 +302,7 @@ test('server watch memory: client pings progress, resumes across devices', () =>
   assert.match(a, /position: Number\(h\.positionSeconds\) \|\| 0/, 'history cards carry server positions');
   assert.match(a, /card\.addEventListener\('click', \(\) => startRoomWithVideo\(v\)\);/, 'single click path: server cards rebuilt playable, position rides along');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
 });
 
 test('history page renders (dead-guard regression) + watched fade bar', () => {
@@ -314,7 +314,7 @@ test('history page renders (dead-guard regression) + watched fade bar', () => {
   const css = readFileSync(join(ROOT, 'dist/css/catalog.css'), 'utf8');
   assert.match(css, /\.history-card__progress-fill--done \{[^}]*opacity: 0\.45;/, 'faded done-bar styled');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
@@ -352,7 +352,7 @@ test('history nav dead-end fixed + never-blank view setup + global error surface
   assert.match(a, /window\.addEventListener\('error', \(ev\) =>/, 'uncaught errors surface as a visible toast');
   assert.match(a, /window\.addEventListener\('unhandledrejection', \(ev\) =>/, 'rejections surface too');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
 });
 
 test('history is SERVER-FIRST with an on-page status line', () => {
@@ -381,7 +381,7 @@ test('history self-diagnosis: card counts in the status line + empty-scroller ca
   assert.match(css, /#history-scroller:empty::after/, 'empty scroller prints the red canary');
   assert.match(css, /\.history-card \{[^}]*display: block;/, 'cards are guaranteed opaque boxes');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
   assert.match(html, /css\/catalog\.css\?v=24/, 'catalog css cache-bumped');
 });
 
@@ -395,7 +395,7 @@ test('history poster self-heal: bounded TMDB lookup paints cards and patches the
   assert.match(a, /console\.log\('\[history\] healing posters:', missing\.length\)/, 'heal feedback is console-only (clean status line)');
   assert.match(a, /'https:\/\/image\.tmdb\.org\/t\/p\/w500' \+ d\.poster_path/, 'TMDB art resolved from the id');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
 });
 
 test('history cards carry CONTENT (empty-box regression - appends were lost)', () => {
@@ -403,7 +403,7 @@ test('history cards carry CONTENT (empty-box regression - appends were lost)', (
   assert.match(a, /card\.appendChild\(poster\);/, 'poster attached to the card');
   assert.match(a, /card\.appendChild\(body\);/, 'body attached to the card');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
 });
 
 test('landscape history art: backdrop column end-to-end + healer prefers it', () => {
@@ -437,5 +437,16 @@ test('host sovereignty: only external controller commands drive the host + expli
   assert.match(w, /style-src-elem 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline';/, 'CSP explicit elem/attr');
   const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
   assert.match(html, /js\/player\.js\?v=15/, 'player cache-bumped');
-  assert.match(html, /js\/app\.js\?v=52/, 'app cache-bumped');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
+});
+
+test('auto-advance stays sequential for anime started from history cards', () => {
+  const a = readFileSync(join(ROOT, 'dist/js/app.js'), 'utf8');
+  assert.match(a, /ANIME FROM A HISTORY CARD/, 'anilistId resolved at history start (bounded 4s)');
+  assert.match(a, /video\.src = WP\.Catalog\.buildVideo\(video, \{ episode: video\.episode \|\| 1 \}\)\.src;/, 'src rebuilt with the real anilist id');
+  assert.match(a, /return tvAdvance\(v\); \/\/ unmatched anime: TMDB walk still advances sequentially/, 'anime dead-end removed: TMDB fallback');
+  assert.match(a, /function tvAdvance\(v\)/, 'shared sequential walker');
+  assert.doesNotMatch(a, /if \(v\.anilistId == null\) return Promise\.resolve\(null\);/, 'the old anime null dead-end is gone');
+  const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
+  assert.match(html, /js\/app\.js\?v=53/, 'app cache-bumped');
 });
