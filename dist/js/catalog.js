@@ -1069,6 +1069,114 @@
     container.appendChild(hero);
   }
 
+  // ---- row rail (chevron buttons + the fade into the page) --------------------
+  // A mouse has no horizontal wheel axis and a desktop has no swipe, so a row
+  // of posters was reachable only through its (thin) scrollbar. Every row
+  // therefore carries its own pair of buttons, and whichever edge still hides
+  // cards fades into the page - the artwork sliding under the background, like
+  // the reference. Buttons and fades read ONE measurement (railMetrics), so an
+  // arrow can never point at nothing.
+  const RAIL_SLOP = 4; // px: a fractional scrollLeft must not flip an end state
+  const RAIL_MIN_STEP = 160; // px: one click always travels at least a card
+  const RAIL_PAGE_RATIO = 0.86; // share of the visible width one click covers
+
+  /**
+   * Where a row sits: how much of it is visible, how far it can still travel,
+   * and how far it has come. RTL scrollers start at the RIGHT edge and report a
+   * NEGATIVE scrollLeft, so the distance from the start is the magnitude.
+   * @param {HTMLElement} scroller
+   */
+  function railMetrics(scroller) {
+    const view = Math.max(0, scroller.clientWidth || 0);
+    const total = Math.max(0, scroller.scrollWidth || 0);
+    const max = Math.max(0, total - view);
+    return { view: view, max: max, pos: Math.min(max, Math.abs(scroller.scrollLeft || 0)) };
+  }
+
+  /**
+   * Paint the two end states: `can-prev` / `can-next` name the edge that still
+   * hides cards, and the CSS offers exactly that end's fade and button.
+   * @param {HTMLElement} rail
+   * @param {{ view: number, max: number, pos: number }} m
+   */
+  function paintRail(rail, m) {
+    // No layout yet (built while hidden): there is nothing to point at, so the
+    // rail offers nothing. The sync after insertion paints the real state.
+    const live = m.view > 0 && m.max > RAIL_SLOP;
+    const hasPrev = live && m.pos > RAIL_SLOP;
+    const hasNext = live && m.pos < m.max - RAIL_SLOP;
+    if (hasPrev) rail.classList.add('can-prev');
+    else rail.classList.remove('can-prev');
+    if (hasNext) rail.classList.add('can-next');
+    else rail.classList.remove('can-next');
+  }
+
+  /**
+   * Travel one step (dir: -1 back, +1 forward) and report where the row is
+   * HEADING: a smooth scroll keeps reporting its old position until the
+   * animation actually moves it, so the rail is painted from the target.
+   * @param {HTMLElement} scroller
+   * @param {number} dir
+   */
+  function scrollRail(scroller, dir) {
+    const m = railMetrics(scroller);
+    const step = Math.max(RAIL_MIN_STEP, Math.round(m.view * RAIL_PAGE_RATIO));
+    const pos = Math.max(0, Math.min(m.max, m.pos + dir * step));
+    const doc = scroller.ownerDocument;
+    const rtl = !!(doc && doc.documentElement && doc.documentElement.getAttribute('dir') === 'rtl');
+    const delta = (pos - m.pos) * (rtl ? -1 : 1);
+    if (typeof scroller.scrollBy === 'function') scroller.scrollBy({ left: delta });
+    else scroller.scrollLeft = (scroller.scrollLeft || 0) + delta;
+    return { view: m.view, max: m.max, pos: pos };
+  }
+
+  /**
+   * Wrap a row's scroller in its rail: the two fades, the two buttons, and the
+   * listeners that keep them honest. `sync()` repaints after cards are added (a
+   * longer row can open a "next" edge); a resize is handled once per surface,
+   * not once per row.
+   * @param {HTMLElement} scroller
+   * @returns {{ el: HTMLElement, sync: () => void }}
+   */
+  function mountRail(scroller) {
+    const rail = h('div', 'row__rail');
+    const sync = () => paintRail(rail, railMetrics(scroller));
+
+    // The buttons are POSITIONS, not hand sides: the CSS puts prev on the
+    // inline-start edge and next on the inline-end edge, so in RTL they swap
+    // with the content (and the chevron mirrors). The labels stay
+    // direction-agnostic for the same reason.
+    const prev = h('button', 'row__nav row__nav--prev');
+    prev.type = 'button';
+    prev.setAttribute('aria-label', tr('row.prev', 'Scroll back'));
+    prev.appendChild(ic('chevron-left', 22));
+    prev.addEventListener('click', () => paintRail(rail, scrollRail(scroller, -1)));
+
+    const next = h('button', 'row__nav row__nav--next');
+    next.type = 'button';
+    next.setAttribute('aria-label', tr('row.next', 'Scroll forward'));
+    next.appendChild(ic('chevron-right', 22));
+    next.addEventListener('click', () => paintRail(rail, scrollRail(scroller, 1)));
+
+    // Fades first, buttons second: a chevron rides ON the fade, never under it.
+    const fadePrev = h('span', 'row__fade row__fade--prev');
+    fadePrev.setAttribute('aria-hidden', 'true');
+    const fadeNext = h('span', 'row__fade row__fade--next');
+    fadeNext.setAttribute('aria-hidden', 'true');
+
+    rail.appendChild(scroller);
+    rail.appendChild(fadePrev);
+    rail.appendChild(fadeNext);
+    rail.appendChild(prev);
+    rail.appendChild(next);
+
+    // The scroller is what actually scrolls (a row never does), so the state
+    // follows ITS position - including while a smooth scroll animates.
+    scroller.addEventListener('scroll', sync, { passive: true });
+    sync();
+    return { el: rail, sync: sync };
+  }
+
   // ---- detail / episode picker ---------------------------------------------------------
   function openDetail(item, onPick) {
     const overlay = h('div', 'modal');
@@ -1465,9 +1573,15 @@
       sec.appendChild(h('h2', 'row__title', def.title));
       const scroller = h('div', 'row__scroller');
       items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
-      sec.appendChild(scroller);
+      // The rail owns the buttons and the fades and wraps the scroller. It gets
+      // a second measurement once the section is in the layout, so a row that
+      // already fits ships with no arrows at all instead of dead ones.
+      const rail = mountRail(scroller);
+      sec.appendChild(rail.el);
       rowsWrap.insertBefore(sec, sentinel);
       def.el = sec;
+      def.rail = rail;
+      rail.sync();
       return scroller;
     }
 
@@ -1475,6 +1589,8 @@
       if (!def || !def.el || !items || !items.length) return;
       const scroller = def.el.querySelector('.row__scroller');
       items.forEach((it) => scroller.appendChild(cardNode(it, choose)));
+      // New cards can open a "next" edge the row did not have before.
+      if (def.rail) def.rail.sync();
     }
 
     async function createSection(idx) {
@@ -1774,6 +1890,16 @@
       }
     }
 
+    // A resize changes how much of every row is visible, so all the rails
+    // repaint together - one listener per surface, removed with the surface
+    // (a listener per row would outlive the rows themselves).
+    function syncRails() {
+      sections.forEach((s) => {
+        if (s && s.rail) s.rail.sync();
+      });
+    }
+    global.addEventListener('resize', syncRails);
+
     loadBrowse();
     setupInfiniteScroll();
 
@@ -1781,6 +1907,7 @@
       destroy() {
         destroyed = true;
         closePreview();
+        global.removeEventListener('resize', syncRails);
         if (io) { io.disconnect(); io = null; }
         inputs.forEach((inp) => {
           if (inp) inp.removeEventListener('input', onInput);
@@ -2134,5 +2261,6 @@
     fetchLogo,
     fetchLogoPath,
     detailPath,
+    mountRail,
   };
 })(window);

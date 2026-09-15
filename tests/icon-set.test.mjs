@@ -75,7 +75,7 @@ test('WP.icon: every icon is a themed inline SVG (real bundle run)', async () =>
 
   const names = ['volume-2', 'volume-x', 'star', 'heart', 'heart-fill', 'check', 'x', 'zap',
     'edit', 'copy', 'alert', 'key', 'users', 'user', 'play', 'pause', 'fast-forward',
-    'skip-forward', 'rotate-cw', 'arrow-left', 'film'];
+    'skip-forward', 'rotate-cw', 'arrow-left', 'chevron-left', 'chevron-right', 'film'];
   names.forEach((name) => {
     assert.equal(WP.hasIcon(name), true, name + ' exists in the set');
     const svg = WP.icon(name, 18);

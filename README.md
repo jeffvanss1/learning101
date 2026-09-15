@@ -1800,3 +1800,56 @@ in a soft dark wash).
   scrim) next to NOW (the long ramp) with the same art and logo.
 Tests 252/252, check clean. catalog v33 / catalog css v34 / social v56 /
 ui-2026-09-15.94.
+
+## Row rail: chevron paging + the edge fade into the page (ui-2026-09-15.95)
+- WHY: a mouse has no horizontal wheel axis and a desktop has no swipe, so a
+  row of posters was reachable only through its (thin) scrollbar. The reference
+  treatment (Netflix) is a rounded translucent chevron at the row edge with the
+  artwork dissolving into the page behind it - both are shipped now.
+- WHAT: `mountRail(scroller)` (catalog.js, module scope and exported so the
+  review page drives the real component) wraps every `.row__scroller` in a
+  `.row__rail` carrying two fades and two `<button>`s. ONE measurement
+  (`railMetrics`) drives the fades AND the buttons, so an arrow can never point
+  at nothing.
+- ONE CLICK = 86% of the visible width, floored at 160px (always at least a
+  card) and clamped at both ends. A click paints the TARGET state immediately,
+  because a smooth scroll keeps reporting its old position until it animates;
+  the scroller's own `scroll` event then keeps both ends honest.
+- STATE: `.can-prev` / `.can-next` name the edge that still hides cards. A row
+  that already fits renders with no state class at all: no arrows, no fade, no
+  extra tab stops. A row built while hidden (0 width) offers nothing until the
+  post-insert measurement proves otherwise.
+- REVEAL: `.row__rail:hover .row__nav` or `.row__nav:focus-visible` (never
+  `:focus-within` - a focused CARD must not park arrows over the artwork). An
+  unrevealed button is `pointer-events: none`, so it can never eat a card
+  click. `@media (hover: none)` drops them entirely: a phone swipes.
+- THE FADE: `linear-gradient(to right, var(--bg), transparent)` (mirrored on
+  the other edge) - the ramp is the PAGE background, so it disappears into the
+  page in BOTH themes and is never a black or white wash. The chevron sits ON
+  the fade, and both use logical properties (`inset-inline-start/end`): in RTL
+  the ramps flip, the buttons swap sides and the chevron mirrors.
+- CENTRING: `inset-block-start: calc(50% - 10px)` - the scroller's own bottom
+  padding and scrollbar must not push the arrows off-centre with the cards.
+- INK: the button reuses the app's on-media recipe (`.card-item__badge`):
+  `rgba(0, 0, 0, 0.62)` + white ink + `blur(6px)`, so it reads over artwork in
+  dark AND light. Color audit allowlist: catalog.css `#fff` 7 -> 8 (justified:
+  the rail button is on-media ink).
+- WIRING: `makeSectionRow` builds the row through `mountRail` and re-measures
+  once the section is in the layout; `appendToSection` calls `rail.sync()` (a
+  new page of cards can open a "next" edge); a resize repaints every rail
+  through ONE listener per surface, removed in `destroy()` - never one
+  listener per row.
+- i18n: the buttons carry `row.prev` / `row.next` labels in all six
+  dictionaries (an unlabelled arrow is useless to a screen reader).
+- TESTS: tests/rail-nav.test.mjs (15 cases) EXECUTES the shipped catalog.js:
+  the wrapper structure, the short row, a hidden row, both end states, the
+  click math + clamping, the RTL sign flip, the labels and their dictionary
+  parity, the row wiring, and the CSS contract (page-background ramp, one
+  button per live end, hover/keyboard reveal, `hover: none`, RTL mirror,
+  reduced motion, logical edges).
+- PREVIEW: scripts/logo-options.html gained a rail block - BEFORE (plain
+  scroller) vs NOW (at the start, and mid-row where BOTH ends are live), on the
+  page background (a panel would misrepresent the `--bg` ramp), driven by the
+  shipped `WP.Catalog.mountRail` rather than a copy of it.
+Tests 267/267, check clean. catalog js v34 / catalog css v35 / i18n v5 /
+social v57 / ui-2026-09-15.95.

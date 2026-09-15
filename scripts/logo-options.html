@@ -89,6 +89,14 @@
         color: var(--text-muted);
       }
 
+      /* ---- Row rail samples: the rows sit on the PAGE background ---------
+         (the shipped fade ramps to var(--bg), so a demo on a panel would
+         misrepresent it - exactly the bug this page exists to catch). */
+      .lo__rail { display: grid; gap: 4px; }
+      .lo__rail .row { margin-top: 0; }
+      .lo__rails { display: grid; gap: 22px; margin-top: 6px; }
+      .lo__rail-cap { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; }
+
       /* ---- Hero samples -------------------------------------------------- */
       .lo__hero .hero { height: clamp(260px, 30vw, 420px); }
       .lo__hero-grid { display: grid; gap: 22px; }
@@ -130,8 +138,30 @@
         </p>
         <div class="lo__hero-grid" id="heroes"></div>
       </div>
+
+      <div class="lo__rail">
+        <div class="opt__head">
+          <span class="opt__tag opt__tag--pick">Now</span>
+          <span class="opt__name">Rows page with a chevron — and the edge fades into the page</span>
+        </div>
+        <p class="opt__note">
+          A mouse has no horizontal wheel axis and a desktop has no swipe, so a poster row used to
+          be reachable only through its (thin) scrollbar. <strong>BEFORE</strong> is that row.
+          <strong>NOW</strong> the row carries a button at each end that still hides cards, and that
+          edge fades into the page under it — <code>--bg</code>, so it is right in both themes and
+          never a black or white wash. One click travels ~86% of the visible width (at least a
+          card), the arrows are <em>positions</em> (they swap sides in RTL), and a row that already
+          fits shows no arrows at all. Hover a row, resize the window, or switch to Light.
+        </p>
+        <div class="lo__rails" id="rails"></div>
+      </div>
     </div>
 
+    <!-- The rail preview drives the REAL component: utils.js builds the inline
+         SVG chevrons and catalog.js owns mountRail (the same function every
+         poster row calls), so this page cannot drift from the app. -->
+    <script src="../dist/js/utils.js"></script>
+    <script src="../dist/js/catalog.js"></script>
     <script>
       // ---- stand-in artwork (TMDB ships transparent PNG wordmarks) --------
       const LOGOS = {
@@ -291,6 +321,53 @@
         box.appendChild(hero);
         box.appendChild(el('div', 'opt__cap', h.cap));
         heroes.appendChild(box);
+      });
+
+      // ---- row rail: BEFORE vs NOW, through the shipped mountRail ----------
+      function posterCard(i) {
+        const card = el('div', 'card-item');
+        card.setAttribute('role', 'button');
+        card.tabIndex = 0;
+        const poster = el('div', 'card-item__poster');
+        const im = document.createElement('img');
+        im.src = artUri(300, 450);
+        im.alt = '';
+        poster.appendChild(im);
+        poster.appendChild(el('span', 'card-item__badge', i % 2 ? 'Series' : 'Movie'));
+        card.appendChild(poster);
+        const body = el('div', 'card-item__body');
+        body.appendChild(el('div', 'card-item__title', 'Title ' + i));
+        body.appendChild(el('div', 'card-item__meta', '\u2605 ' + (7 + (i % 3) * 0.4).toFixed(1) + ' \u00b7 ' + (2010 + i)));
+        card.appendChild(body);
+        return card;
+      }
+
+      const rails = document.getElementById('rails');
+      [
+        { cap: 'BEFORE — no buttons: a mouse could only drag the thin scrollbar', nav: false },
+        { cap: 'NOW — at the start: one chevron, and the right edge fades into the page', nav: true, at: 0 },
+        { cap: 'NOW — mid-row: the left end appears too, both edges fading', nav: true, at: 700 },
+      ].forEach((sample) => {
+        const sec = el('section', 'row');
+        const scroller = el('div', 'row__scroller');
+        for (let i = 1; i <= 12; i++) scroller.appendChild(posterCard(i));
+        let rail = null;
+        if (sample.nav) {
+          rail = window.WP.Catalog.mountRail(scroller);
+          sec.appendChild(rail.el);
+        } else {
+          sec.appendChild(scroller);
+        }
+        rails.appendChild(sec);
+        if (rail) {
+          // Same as a real row: measure once the section is in the layout, then
+          // land the mid-row sample where both ends are live.
+          if (sample.at && typeof scroller.scrollTo === 'function') {
+            scroller.scrollTo({ left: sample.at, behavior: 'instant' });
+          }
+          rail.sync();
+        }
+        rails.appendChild(el('div', 'lo__rail-cap', sample.cap));
       });
 
       // ---- theme ----------------------------------------------------------

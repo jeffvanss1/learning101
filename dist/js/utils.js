@@ -143,6 +143,14 @@
         ['polyline', { points: '12 19 5 12 12 5' }],
       ],
     },
+    // Rail chevrons: a bare angle on the same 24px grid as the rest (a row
+    // button points off the edge it sits on, so the ink direction matters).
+    'chevron-left': {
+      p: [['polyline', { points: '15 5 8 12 15 19' }]],
+    },
+    'chevron-right': {
+      p: [['polyline', { points: '9 5 16 12 9 19' }]],
+    },
     film: {
       p: [
         ['rect', { x: 2, y: 2, width: 20, height: 20, rx: 2.18 }],
