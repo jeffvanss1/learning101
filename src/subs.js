@@ -1,0 +1,668 @@
+// subs.js — subtitle pipeline for the Cloudflare edge (OpenSubtitles v3 API).
+//
+// The room player (Bingr embed) reports its playback clock via postMessage,
+// so the frontend renders its OWN subtitle overlay in perfect sync (with a
+// user-adjustable offset). This module is the worker-side half:
+//
+//   GET /api/subs/search?type=movie|tv&tmdb=<id>&season=&episode=&lang=<code>
+//     -> OpenSubtitles search by TMDB id (+ season/episode for series),
+//        shaped into compact candidates ranked for auto-pick.
+//
+//   GET /api/subs/file?fileId=<id>
+//     -> download endpoint -> subtitle file -> converted to WebVTT.
+//        VTT text is cached in KV (`subs:vtt:<fileId>`, 7 days) so the API's
+//        tight daily download quota is amortized across ALL users/rooms —
+//        one download per subtitle ever, per isolate-cold-start at worst.
+//
+// Plain JS (like geo.js / anilist.js) so node --test runs the exact logic.
+//
+// @ts-check
+
+export const SUBS_KV_PREFIX = 'subs:vtt:';
+export const SEARCH_TIMEOUT_MS = 8000; // fan-out search hard-stop: fail fast into the fallback
+export const SUBS_KV_TTL_S = 7 * 24 * 60 * 60; // subtitles never change
+
+const OPENSUBTITLES_ORIGIN = 'https://api.opensubtitles.com';
+const DOWNLOAD_TIMEOUT_MS = 12_000;
+
+/**
+ * Build the OpenSubtitles search query string for a video.
+ * @param {{ type: string, tmdb: string, season?: number | null, episode?: number | null, lang?: string }} v
+ * @returns {string} query string (no leading '?')
+ */
+export function buildSearchQuery(v) {
+  const params = new URLSearchParams();
+  // OpenSubtitles (July 2025 API change, confirmed by their admin): queries
+  // without an explicit `type` return ZERO results. movie -> 'movie',
+  // series/anime -> 'episode'.
+  params.set('type', v.type === 'movie' ? 'movie' : 'episode');
+  if (v.type === 'movie') {
+    // Movies: the movie's own TMDB id.
+    params.set('tmdb_id', String(v.tmdb));
+  } else {
+    // Series/anime (docs): the SHOW's TMDB id goes in parent_tmdb_id,
+    // together with season_number + episode_number. tmdb_id + season/
+    // episode is an invalid combination and returns wrong/empty results.
+    params.set('parent_tmdb_id', String(v.tmdb));
+    if (v.season != null) params.set('season_number', String(v.season));
+    if (v.episode != null) params.set('episode_number', String(v.episode));
+  }
+  if (v.lang) params.set('languages', v.lang);
+  return params.toString();
+}
+
+/**
+ * Parse "HH:MM:SS,mmm" (SRT) or "HH:MM:SS.mmm" (VTT) into seconds.
+ * @param {string} s
+ * @returns {number | null}
+ */
+export function parseTimestamp(s) {
+  const m = /^\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*$/.exec(s);
+  if (!m) return null;
+  return (
+    Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, '0')) / 1000
+  );
+}
+
+/** @param {number} s @returns {string} VTT timestamp "HH:MM:SS.mmm" */
+export function formatVttTimestamp(s) {
+  const ms = Math.round(s * 1000);
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  const milli = ms % 1000;
+  /** @param {number} n @param {number} w */
+  const pad = (n, w) => String(n).padStart(w, '0');
+  return pad(h, 2) + ':' + pad(m, 2) + ':' + pad(sec, 2) + '.' + pad(milli, 3);
+}
+
+/**
+ * Convert subtitle text to WebVTT. Accepts SRT (the overwhelmingly common
+ * case) and passes VTT through (normalized). Anything else (ASS/SSA/VobSub…)
+ * returns null — callers move on to the next candidate.
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function toVtt(text) {
+  if (!text) return null;
+  const trimmed = text.replace(/^\uFEFF/, '').trim();
+  if (/^WEBVTT/.test(trimmed)) return trimmed;
+
+  const isSrt = /^\d+\s*\r?\n\d{1,2}:\d{2}:\d{2},\d{1,3}\s+-->/m.test(trimmed);
+  if (!isSrt) return null;
+
+  const out = ['WEBVTT', ''];
+  // SRT block: index line (optional once indexed), timing line, text lines.
+  const blocks = trimmed.split(/\r?\n\r?\n/);
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).filter((l) => l.trim() !== '' || true);
+    while (lines.length && lines[0].trim() === '') lines.shift();
+    if (!lines.length) continue;
+    if (/^\d+$/.test(lines[0].trim())) lines.shift(); // SRT index
+    const timing = lines.shift();
+    if (!timing) continue;
+    const tm = /^\s*(\S+)\s+-->\s+(\S+)(.*)$/.exec(timing);
+    if (!tm) continue;
+    const start = parseTimestamp(tm[1]);
+    const end = parseTimestamp(tm[2]);
+    if (start == null || end == null || end <= start) continue;
+    // Text: strip basic markup tags, keep line breaks.
+    const body = lines
+      .join('\n')
+      .replace(/<\/?[a-zA-Z][^>]*>/g, '')
+      .replace(/\{\\[^}]*\}/g, '') // ASS-style override blocks
+      .trim();
+    if (!body) continue;
+    out.push(formatVttTimestamp(start) + ' --> ' + formatVttTimestamp(end));
+    out.push(body);
+    out.push('');
+  }
+  // A usable VTT has at least one cue.
+  return out.length > 3 ? out.join('\n') : null;
+}
+
+/**
+ * Rank OpenSubtitles search results for auto-pick. Preference order:
+ *   1. not "foreign parts only" (those only subtitle the non- dialog),
+ *   2. machine-translated ones last,
+ *   3. more downloads (popular, usually the matching release),
+ *   4. fps 23.976/24 preferred (the embed's usual frame rates).
+ * @param {any[]} results raw `data` array from /api/v1/subtitles
+ * @returns {{ fileId: number, release: string, lang: string, downloads: number, fps: number | null, machineTranslated: boolean, foreignPartsOnly: boolean } | null}
+ */
+export function pickBest(results) {
+  const shaped = [];
+  for (const r of Array.isArray(results) ? results : []) {
+    const file = r && r.files && Array.isArray(r.files) ? r.files[0] : null;
+    if (!file || file.file_id == null) continue;
+    const attrs = r.attributes || {};
+    const feature = attrs.feature_details || {};
+    shaped.push({
+      fileId: Number(file.file_id),
+      release: String((attrs.release_dates && attrs.release_dates[0] && attrs.release_dates[0].release) || attrs.title || ''),
+      lang: String((attrs.language || '').slice(0, 3)),
+      downloads: Number(attrs.download_count || 0),
+      fps: feature.frame_rate ? Number(feature.frame_rate) : null,
+      machineTranslated: !!attrs.ai_translated,
+      foreignPartsOnly: !!attrs.foreign_parts_only,
+      _rank:
+        (attrs.foreign_parts_only ? 4_000_000_000 : 0) +
+        (attrs.ai_translated ? 2_000_000_000 : 0) +
+        (feature.frame_rate && feature.frame_rate >= 23 && feature.frame_rate <= 24 ? 0 : 500_000_000) -
+        Number(attrs.download_count || 0),
+    });
+  }
+  if (!shaped.length) return null;
+  shaped.sort((a, b) => a._rank - b._rank);
+  const best = shaped[0];
+  return {
+    fileId: best.fileId,
+    release: best.release,
+    lang: best.lang,
+    downloads: best.downloads,
+    fps: best.fps,
+    machineTranslated: best.machineTranslated,
+    foreignPartsOnly: best.foreignPartsOnly,
+  };
+}
+
+/**
+ * Shape the raw search response into the compact candidate list the panel shows.
+ * @param {any} payload
+ * @returns {any[]}
+ */
+export function shapeSearchResponse(payload) {
+  const list = Array.isArray(payload && payload.data) ? payload.data : [];
+  const out = [];
+  for (const r of list) {
+    const file = r && r.files && Array.isArray(r.files) ? r.files[0] : null;
+    if (!file || file.file_id == null) continue;
+    const attrs = r.attributes || {};
+    out.push({
+      fileId: Number(file.file_id),
+      release: String(
+        (attrs.release_dates && attrs.release_dates[0] && attrs.release_dates[0].release) ||
+          attrs.title ||
+          ''
+      ).slice(0, 80),
+      lang: String((attrs.language || '').slice(0, 3)),
+      downloads: Number(attrs.download_count || 0),
+      fps: (attrs.feature_details && attrs.feature_details.frame_rate) || null,
+      machineTranslated: !!attrs.ai_translated,
+      foreignPartsOnly: !!attrs.foreign_parts_only,
+    });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/**
+ * Fetch the subtitle file for `fileId` and return WebVTT text. Worker-only
+ * (needs the API key + KV); kept here so the route handler stays thin.
+ * @param {number | string} fileId
+ * @param {string} apiKey
+ * @param {{ get(key: string): Promise<string | null>, put(key: string, value: string, opts?: any): Promise<void> } | null} kv
+ * @returns {Promise<{ vtt: string, cached: boolean }>}
+ */
+export async function fetchSubtitleVtt(fileId, apiKey, kv) {
+  const cacheKey = SUBS_KV_PREFIX + String(fileId);
+  if (kv) {
+    try {
+      const hit = await kv.get(cacheKey);
+      if (hit) return { vtt: hit, cached: true };
+    } catch (_) {}
+  }
+
+  const headers = {
+    'Api-Key': apiKey,
+    Accept: 'application/json',
+    'User-Agent': 'WatchParty v1.0.0',
+  };
+  const dlRes = await fetch(OPENSUBTITLES_ORIGIN + '/api/v1/download?file_id=' + encodeURIComponent(String(fileId)), {
+    headers,
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!dlRes.ok) {
+    // Free tier download quota is tiny (~10/day) — say so plainly when it
+    // bites (406 DownloadLimitExceeded / 429 throttled). KV-cached subs
+    // keep working regardless.
+    if (dlRes.status === 406 || dlRes.status === 429) {
+      throw new Error(
+        'OpenSubtitles daily download limit reached — resets daily. Already-cached subtitles keep working.'
+      );
+    }
+    throw new Error('OpenSubtitles download ' + dlRes.status);
+  }
+  const dl = /** @type {any} */ (await dlRes.json());
+  if (!dl || !dl.link) throw new Error('OpenSubtitles download returned no link');
+
+  const fileRes = await fetch(dl.link, {
+    headers: { Accept: '*/*', 'User-Agent': 'WatchParty v1.0.0' },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!fileRes.ok) throw new Error('subtitle file fetch ' + fileRes.status);
+  const vtt = toVtt(await fileRes.text());
+  if (!vtt) throw new Error('unsupported subtitle format (need SRT/VTT)');
+
+  if (kv) {
+    try {
+      await kv.put(cacheKey, vtt, { expirationTtl: SUBS_KV_TTL_S });
+    } catch (_) {}
+  }
+  return { vtt: vtt, cached: false };
+}
+
+
+// ---- Wyzie Subs provider (primary; https://sub.wyzie.io) -------------------
+//
+// Free/libre aggregator (OpenSubtitles, Subf2m, YIFY, Jimaku, ...): search by
+// TMDB id, JSON array back, DIRECT subtitle-file URLs. Needs a key as a
+// `key` query param (free at store.wyzie.io/redeem, 1000 req/day) — the key
+// is appended by the WORKER only, never sent to the browser.
+//
+// The frontend contract is unchanged: search returns the same compact
+// candidate shape, with `fileId` now carrying an OPAQUE base64url token of
+// the record's direct URL. /api/subs/file decodes it behind a strict host
+// allowlist (sub.wyzie.io) — the endpoint can never be abused as a proxy.
+
+export const WYZIE_ORIGIN = 'https://sub.wyzie.io';
+// Wyzie aggregates sources and returns the SOURCE's own file urls. Host
+// policy, learned from live traffic (2026-09-13):
+//   * dl.opensubtitles.org|.com are GATED (401 without OS credentials) —
+//     those titles belong in the authenticated OpenSubtitles fallback
+//     pipeline, so gated records are dropped from the Wyzie candidate list.
+//   * everything on the fetchable suffix list is fetched server-side; the
+//     list is explicit and suffix-checked so /api/subs/file can never be
+//     steered to an arbitrary host. New source hosts appear in the
+//     dropped-host diagnostics first and are added here deliberately.
+export const WYZIE_ALLOWED_SUFFIXES = [
+  '.wyzie.io',
+  'subf2m.co.uk',
+  'yifysubtitles.com',
+  'podnapisi.net',
+  'titlovi.com',
+];
+export const WYZIE_GATED_SUFFIXES = ['.opensubtitles.org', '.opensubtitles.com'];
+
+// Free Wyzie keys can ONLY query these source codes (per Wyzie support,
+// 2026-09-14). 'all' is NOT the union on free keys — it silently degrades
+// to the opensubtitles source, whose download host is gated (401 on fetch).
+export const WYZIE_FREE_SOURCES = ['alpha', 'charlie', 'kilo', 'lima'];
+
+/** @param {string} url @returns {'fetchable' | 'gated' | 'foreign'} */
+export function wyzieHostPolicy(url) {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol !== 'https:') return 'foreign';
+    const host = u.hostname;
+    /** @param {string[]} list */
+    const matches = (list) =>
+      list.some((/** @type {string} */ suffix) => host === suffix.slice(1) || host.endsWith(suffix));
+    if (matches(WYZIE_GATED_SUFFIXES)) return 'gated';
+    if (matches(WYZIE_ALLOWED_SUFFIXES)) return 'fetchable';
+    return 'foreign';
+  } catch (_) {
+    return 'foreign';
+  }
+}
+
+/**
+ * Build a Wyzie search URL. `key` is optional so tests and the response's
+ * `query` echo never embed a secret.
+ * @param {{ tmdb: string, season?: number | null, episode?: number | null, lang?: string, key?: string, source?: string }} v
+ * @returns {string}
+ */
+export function buildWyzieSearchUrl(v) {
+  const params = new URLSearchParams();
+  params.set('id', String(v.tmdb));
+  if (v.season != null && v.episode != null) {
+    params.set('season', String(v.season));
+    params.set('episode', String(v.episode));
+  }
+  if (v.lang) params.set('language', v.lang);
+  params.set('format', 'srt'); // our converter's native input
+  params.set('source', v.source || 'all'); // caller picks the source code; fan-out queries the free set explicitly
+  if (v.key) params.set('key', v.key);
+  return WYZIE_ORIGIN + '/search?' + params.toString();
+}
+
+/**
+ * Rewrite a RAW source download URL into Wyzie's own proxy file path — the
+ * format their docs show as the record's url. LIVE (2026-09-14): the search
+ * returns raw dl.opensubtitles.org/.../vrf-<hash>/file/<id> links, which are
+ * GATED (401 without OS credentials) — but sub.wyzie.io/c/<hash>/id/<id>
+ * serves the same file publicly (verified live: The Martian 1955024019).
+ * @param {string} rawUrl
+ * @returns {string | null} the proxy URL, or null when the raw URL isn't derivable
+ */
+export function wyzieProxyUrl(rawUrl) {
+  const m = /\/vrf-([0-9a-zA-Z]+)\/file\/(\d+)/.exec(String(rawUrl || ''));
+  if (!m) return null;
+  return WYZIE_ORIGIN + '/c/' + m[1] + '/id/' + m[2] + '?format=srt&encoding=UTF-8';
+}
+
+/**
+ * Parse a /sources payload into the source-code list a key may query.
+ * Prefers the key-scoped 'available' list, then the global free tier,
+ * then the caller's fallback. Returns null when nothing usable remains.
+ * @param {any} payload
+ * @param {string[]} fallback
+ * @returns {string[] | null}
+ */
+export function parseWyzieSources(payload, fallback) {
+  if (!payload || typeof payload !== 'object') return null;
+  const pick = (/** @type {any} */ v) =>
+    Array.isArray(v) && v.length ? v.filter((/** @type {any} */ x) => typeof x === 'string' && x) : null;
+  const scoped = payload.key && payload.key.valid !== false ? pick(payload.available) : null;
+  const free = payload.allFree === false ? pick(payload.free) : pick(payload.sources);
+  const chosen = scoped || free || pick(fallback);
+  return chosen && chosen.length ? chosen : null;
+}
+
+/**
+ * Ask the API which sources THIS key can actually query (GET /sources).
+ * Does not consume search quota (per docs). Returns null on any failure —
+ * the caller then uses its fallback list.
+ * @param {{ fetchImpl?: typeof fetch, key?: string, fallback: string[] }} o
+ * @returns {Promise<string[] | null>}
+ */
+export async function fetchWyzieAvailableSources(o) {
+  const fetchImpl = o.fetchImpl || globalThis.fetch;
+  const url = WYZIE_ORIGIN + '/sources' + (o.key ? '?key=' + encodeURIComponent(o.key) : '');
+  try {
+    const r = await fetchImpl(url, { headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' } });
+    if (!r.ok) return null;
+    const payload = await r.json();
+    return parseWyzieSources(payload, o.fallback);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Fan a Wyzie search out over every source code the key can access, in
+ * parallel, and merge the raw records (deduped by url). Per-source fate is
+ * reported so an empty merge is explainable DOWN TO THE SOURCE CODE.
+ * @param {{ fetchImpl?: typeof fetch, sources?: string[], tmdb: any, season?: any, episode?: any, lang?: string, key?: string }} o
+ * @returns {Promise<{ records: any[], note: string, perSource: Array<{source: string, count: number, gated: number, foreign: number, host: string, http: number, bad: boolean}> }>}
+ */
+export async function fetchWyzieMultiSource(o) {
+  const sources = o.sources && o.sources.length ? o.sources : ['all'];
+  const fetchImpl = o.fetchImpl || globalThis.fetch;
+  /** @param {any} u */
+  const hostOf = (u) => {
+    try {
+      return new URL(String(u)).hostname;
+    } catch (_) {
+      return '';
+    }
+  };
+  const settled = await Promise.all(
+    sources.map(async (source) => {
+      const url = buildWyzieSearchUrl({ tmdb: o.tmdb, season: o.season, episode: o.episode, lang: o.lang, key: o.key, source: source });
+      try {
+        const r = await fetchImpl(url, {
+          headers: { Accept: 'application/json', 'User-Agent': 'WatchParty v1.0.0' },
+          signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(SEARCH_TIMEOUT_MS) : undefined,
+        });
+        if (!r.ok) return { source: source, records: [], http: r.status, bad: false };
+        let payload = null;
+        try {
+          payload = await r.json();
+        } catch (_) {
+          return { source: source, records: [], http: 0, bad: true };
+        }
+        const extracted = wyzieExtractList(payload);
+        return { source: source, records: Array.isArray(extracted.list) ? extracted.list : [], http: 0, bad: !Array.isArray(extracted.list) };
+      } catch (_) {
+        return { source: source, records: [], http: 0, bad: true };
+      }
+    })
+  );
+  const seen = new Set();
+  const records = [];
+  for (const one of settled) {
+    for (const rec of one.records) {
+      const k = String((rec && rec.url) || '');
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      records.push(rec);
+    }
+  }
+  const perSource = settled.map((one) => {
+    let gated = 0;
+    let foreign = 0;
+    let host = '';
+    for (const rec of one.records) {
+      const policy = wyzieHostPolicy(rec && rec.url);
+      if (policy === 'gated') {
+        gated++;
+        if (!host) host = hostOf(rec.url);
+      } else if (policy === 'foreign') {
+        foreign++;
+        if (!host) host = hostOf(rec.url);
+      }
+    }
+    return { source: one.source, count: one.records.length, gated: gated, foreign: foreign, host: host, http: one.http, bad: one.bad };
+  });
+  const note = perSource
+    .map((p) => {
+      let t = p.source + ':' + p.count;
+      if (p.http) t += ':http' + p.http;
+      else if (p.bad) t += ':bad';
+      else if (p.count) {
+        const bits = [];
+        if (p.gated) bits.push('g' + p.gated);
+        if (p.foreign) bits.push('f' + p.foreign);
+        if (p.host && (p.gated || p.foreign)) bits.push('@' + p.host);
+        if (bits.length) t += '(' + bits.join('') + ')';
+      }
+      return t;
+    })
+    .join(' ');
+  return { records: records, note: note, perSource: perSource };
+}
+
+// Live-observed (2026-09-14): lima answers movie queries with http400 —
+// it is a TV-only source. Querying it for movies wastes a full upstream
+// roundtrip on every search.
+export const WYZIE_TV_ONLY_SOURCES = ['lima'];
+
+/**
+ * Sources to actually fan out over. TV-only codes are dropped for movies
+ * (season+episode absent) — they can only 400 there.
+ * @param {string[]} sources
+ * @param {boolean} hasEpisodes
+ * @returns {string[]}
+ */
+export function wyzieFanSources(sources, hasEpisodes) {
+  if (hasEpisodes) return sources;
+  return sources.filter((/** @type {string} */ x) => WYZIE_TV_ONLY_SOURCES.indexOf(x) === -1);
+}
+
+/**
+ * KV cache key for a shaped search response. Includes the fan-out list so a
+ * WYZIE_SOURCES change never serves stale provenance.
+ * @param {{ tmdb: any, season?: any, episode?: any, lang?: string, sources: string[] }} o
+ * @returns {string}
+ */
+export function wyzieSearchCacheKey(o) {
+  return (
+    'subs:search:v2:' + String(o.tmdb) +
+    ':' + (o.season != null ? String(o.season) : '-') +
+    'x' + (o.episode != null ? String(o.episode) : '-') +
+    ':' + (o.lang || '') +
+    ':' + o.sources.join(',')
+  );
+}
+
+/**
+ * Final wyzieNote for the success path. The 'gated:N' token is LOAD-BEARING:
+ * the frontend parses it to say "found but provider-gated" instead of "none".
+ * @param {{ shape: string }} shaped
+ * @param {{ note: string }} ms
+ */
+export function composeWyzieNote(shaped, ms) {
+  const ix = shaped.shape.indexOf(' dropped:');
+  const dropPart = ix >= 0 ? ' |' + shaped.shape.slice(ix) : '';
+  const srcPart = ms && ms.note ? ' | src ' + ms.note : '';
+  return 'ok' + dropPart + srcPart;
+}
+
+/** @param {string} url @returns {string} urlsafe base64 (no padding) */
+export function encodeWyzieToken(url) {
+  return btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** @param {string} token @returns {string | null} the decoded URL iff it points at the allowlisted host */
+export function decodeWyzieToken(token) {
+  try {
+    let b64 = String(token).replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const url = atob(b64);
+    if (wyzieHostPolicy(url) !== 'fetchable') return null;
+    return url;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Rank a raw Wyzie record for auto-pick: human translations over AI,
+ * non-hearing-impaired over HI, then download count.
+ * @param {any} rec @returns {number}
+ */
+function wyzieScore(rec) {
+  return (rec.ai ? 0 : 4_000_000) + (rec.isHearingImpaired ? 0 : 2_000_000) + Number(rec.downloadCount || 0);
+}
+
+/**
+ * Shape + rank raw Wyzie results into the compact candidate contract.
+ * @param {any} list
+ * @returns {{ results: any[], best: any }}
+ */
+/**
+ * Extract the record list from a Wyzie payload. Their API returns a JSON
+ * ARRAY on success — but their ERROR responses are OBJECTS, so the success
+ * shape may be (or become) wrapped too. Tolerate the common wrappers and
+ * report what was seen so an 'empty' result is never a mystery.
+ * @param {any} payload
+ * @returns {{ list: any[], shape: string }}
+ */
+/** @param {any} payload */
+export function wyzieExtractList(payload) {
+  if (Array.isArray(payload)) return { list: payload, shape: 'array' };
+  if (payload && typeof payload === 'object') {
+    for (const key of ['results', 'subs', 'data', 'items', 'subtitles']) {
+      if (Array.isArray(payload[key])) return { list: payload[key], shape: 'object:' + key };
+    }
+    if (payload.code && payload.message) return { list: [], shape: 'error:' + payload.code };
+    return { list: [], shape: 'object:' + Object.keys(payload).slice(0, 4).join(',') };
+  }
+  return { list: [], shape: typeof payload };
+}
+
+/** @param {any} payload */
+export function shapeWyzieResults(payload) {
+  const extracted = wyzieExtractList(payload);
+  // Score the RAW records first, shape in ranked order (the shaped record
+  // renames ai -> machineTranslated, so shaping first would lose the flags).
+  // Dropped records are counted and classified so an empty result is
+  // explainable: 'dropped:N(fields)' / 'dropped:N(host)' / 'dropped:N(mixed)'.
+  const seen = extracted.list.length;
+  const usable = [];
+  let missingFields = 0;
+  let foreignHost = 0;
+  let gatedHost = 0;
+  let foreignSample = '';
+  for (const r of extracted.list) {
+    if (!r || typeof r !== 'object' || !r.url || !r.id) {
+      missingFields++;
+      continue;
+    }
+    // Gated-source URLs (dl.opensubtitles.org/.../vrf-<hash>/file/<id>) are
+    // rewritten to Wyzie's documented proxy path, which serves the file
+    // publicly — verified live 2026-09-14. Underable gated URLs still drop.
+    const fetchUrl = wyzieProxyUrl(r.url) || r.url;
+    const policy = wyzieHostPolicy(fetchUrl);
+    if (policy === 'gated') {
+      gatedHost++;
+      continue;
+    }
+    if (policy === 'foreign') {
+      foreignHost++;
+      if (!foreignSample) {
+        try {
+          foreignSample = new URL(String(r.url)).hostname;
+        } catch (_) {
+          foreignSample = 'unparseable';
+        }
+      }
+      continue;
+    }
+    usable.push(r);
+  }
+  usable.sort((a, b) => wyzieScore(b) - wyzieScore(a));
+  const raw = usable;
+  let dropped = '';
+  if (missingFields + foreignHost + gatedHost > 0) {
+    dropped =
+      ' dropped:' + (missingFields + foreignHost + gatedHost) +
+      (missingFields ? '(fields:' + missingFields + ')' : '') +
+      (gatedHost ? '(gated:' + gatedHost + ')' : '') +
+      (foreignHost ? '(host:' + foreignHost + (foreignSample ? '@' + foreignSample : '') + ')' : '');
+  }
+  const out = [];
+  for (const r of raw) {
+    /** @type {any} */ const rec = {
+      fileId: encodeWyzieToken(String(wyzieProxyUrl(r.url) || r.url)),
+      release: String(r.release || r.fileName || r.media || '').slice(0, 80),
+      lang: String(r.language || '').slice(0, 3),
+      display: String(r.display || ''),
+      downloads: Number(r.downloadCount || 0),
+      machineTranslated: !!r.ai,
+      foreignPartsOnly: false,
+      source: String(r.source || ''),
+    };
+    out.push(rec);
+    if (out.length >= 12) break;
+  }
+  const best = out.length ? { ...out[0] } : null;
+  return { results: out, best: best, shape: extracted.shape + (dropped ? ' |' + dropped : '') };
+}
+
+/**
+ * Fetch a Wyzie subtitle file (direct URL from the token) and return WebVTT.
+ * @param {string} token
+ * @param {{ get(key: string): Promise<string | null>, put(key: string, value: string, opts?: any): Promise<void> } | null} kv
+ * @returns {Promise<{ vtt: string, cached: boolean }>}
+ */
+export async function fetchWyzieVtt(token, kv) {
+  const url = decodeWyzieToken(token);
+  if (!url) throw new Error('invalid subtitle token');
+  const cacheKey = SUBS_KV_PREFIX + 'w:' + token;
+  if (kv) {
+    try {
+      const hit = await kv.get(cacheKey);
+      if (hit) return { vtt: hit, cached: true };
+    } catch (_) {}
+  }
+  const res = await fetch(url, {
+    headers: { Accept: '*/*', 'User-Agent': 'WatchParty v1.0.0' },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(
+      'subtitle file fetch ' + res.status +
+      (res.status === 401 || res.status === 403 ? ' (gated host — needs credentials)' : '')
+    );
+  }
+  const vtt = toVtt(await res.text());
+  if (!vtt) throw new Error('unsupported subtitle format (need SRT/VTT)');
+  if (kv) {
+    try {
+      await kv.put(cacheKey, vtt, { expirationTtl: SUBS_KV_TTL_S });
+    } catch (_) {}
+  }
+  return { vtt: vtt, cached: false };
+}

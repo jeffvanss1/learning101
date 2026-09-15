@@ -15,14 +15,19 @@
 (function (global) {
   'use strict';
 
+  // UI strings via the i18n dictionaries (worker resolves the locale; when
+  // i18n.js is absent — e.g. a stale cached page — fall back to English).
+  const tr = (key, fallback) => (global.WP && global.WP.I18N ? global.WP.I18N.t(key, fallback) : fallback);
+
   const PROXY = '/api/tmdb';
   const BINGR_WATCH = 'https://bingr.one/watch';
   const IMG = 'https://image.tmdb.org/t/p';
   const CACHE_KEY_PREFIX = 'wp:cat:';
   const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
   const ANIME_KEYWORD = 210024; // TMDB keyword id for "anime"
-  const ANILIST_CACHE_PREFIX = 'wp:anilist:';
-  const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  const ANILIST_CACHE_PREFIX = 'wp:anilist:v4:'; // v4: busts the v3 entries (which cached UNRESOLVED results for 7 days - the Boruto bug)
+  const ANILIST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for RESOLVED matches
+  const ANILIST_NULL_TTL_MS = 5 * 60 * 1000; // misses live 5 minutes - a fix must reach users fast, a blip must not poison a week
 
   // ---- tiny DOM helpers ------------------------------------------------------
   function h(tag, cls, text) {
@@ -75,10 +80,14 @@
       const raw = localStorage.getItem(cacheKey);
       if (raw) {
         const o = JSON.parse(raw);
-        if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data;
+        // RESOLVED results live 7 days; UNRESOLVED (anilistId:null) only 5
+        // minutes - a single transient blip must not poison the cache for
+        // a week (this was the Boruto "couldn't match on AniList" bug).
+        const ttl = o.data && o.data.anilistId != null ? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS;
+        if (Date.now() - o.ts < ttl) return o.data;
       }
     } catch (_) {}
-    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId), {
+    const res = await fetch('/api/anilist/' + encodeURIComponent(tmdbId) + '?v=3', { // v=3: never-hit URL (v2 responses may hold stale misses)
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -95,8 +104,17 @@
       (r) => r && r.type === 'tv' && r._animeChecked !== true
     );
     if (!tvs.length) return;
-    await Promise.all(
-      tvs.map(async (r) => {
+    // BOUNDED CONCURRENCY (3, staggered): a feed view resolves 20-40 titles;
+    // firing them ALL at once hammered AniList into rate-limiting the whole
+    // batch -> mass unresolved -> the anime feed went EMPTY. The worker's
+    // day-long cache makes repeat views free; this keeps the first view polite.
+    const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+    let idx = 0;
+    const run = async () => {
+      for (;;) {
+        const i = idx++;
+        if (i >= tvs.length) return;
+        const r = tvs[i];
         r._animeChecked = true;
         try {
           const info = await anilistApi(r.id);
@@ -105,8 +123,10 @@
         } catch (_) {
           r.isAnime = false;
         }
-      })
-    );
+        await sleep(150);
+      }
+    };
+    await Promise.all([run(), run(), run()]);
   }
 
   // ---- direct (browser -> AniList) lookup ------------------------------------
@@ -170,7 +190,8 @@
       const raw = localStorage.getItem(cacheKey);
       if (raw) {
         const o = JSON.parse(raw);
-        if (Date.now() - o.ts < ANILIST_CACHE_TTL_MS) return o.data || null;
+        const ttl = o.data && o.data.id != null ? ANILIST_CACHE_TTL_MS : ANILIST_NULL_TTL_MS;
+        if (Date.now() - o.ts < ttl) return o.data || null;
       }
     } catch (_) {}
     try {
@@ -249,6 +270,7 @@
       type,
       id: String(item.id),
       anilistId: item.anilistId != null ? String(item.anilistId) : null,
+      malId: item.malId != null ? String(item.malId) : null,
       src: watchUrl({ type, id: item.id, anilistId: item.anilistId }, opts),
       title: item.title || '',
       year: item.year || '',
@@ -259,6 +281,201 @@
       season: type === 'tv' ? opts.season || 1 : null,
       episode: type === 'movie' ? null : opts.episode || 1,
     };
+  }
+
+  /** Episode-name tooltips cache (showId:season -> Map(ep -> name)). */
+  const epNamesCache = new Map();
+
+  // ---- Watched episodes (faded in the episode selectors) ---------------------
+  // WATCHED FADE: episodes already watched render faded + a check; partially
+  // watched ones carry a mini progress bar. Sources: local history (sync
+  // baseline) + the server history (cross-device, cached per show).
+  /** showId -> Promise<Map<ep, {pos, dur, completed}>> (server view). */
+  const watchedServerCache = new Map();
+
+  /**
+   * Episodes of ONE show/season the user already watched.
+   * @param {string|number} showId
+   * @param {number|null} season tv: the season number; anime: null (absolute)
+   * @returns {{ local: Map<number, {pos: number, dur: number, completed: boolean}>, server: Promise<Map<number, any>> | null }}
+   */
+  function watchedEpisodesFor(showId, season) {
+    const wantSeason = season == null ? null : Number(season);
+    const local = new Map();
+    const merge = (m, ep, pos, dur, completed) => {
+      const prev = m.get(ep) || { pos: 0, dur: 0, completed: false };
+      m.set(ep, {
+        pos: Math.max(prev.pos, pos),
+        dur: Math.max(prev.dur, dur),
+        completed: prev.completed || completed,
+      });
+    };
+    try {
+      (global.WP.historyGet() || []).forEach((e) => {
+        if (!e || String(e.id) !== String(showId) || e.episode == null) return;
+        const es = e.season != null && e.season !== '' ? Number(e.season) : null;
+        if (wantSeason === null ? es !== null : es !== wantSeason) return;
+        const pos = Number(e.position) || 0;
+        const dur = Number(e.duration) || 0;
+        merge(local, Number(e.episode), pos, dur, dur > 0 && pos >= dur - 30);
+      });
+    } catch (_) {}
+    let server = watchedServerCache.get(String(showId)) || null;
+    if (!server && global.WP.Social && global.WP.Social.getServerHistory) {
+      server = Promise.resolve(global.WP.Social.getServerHistory())
+        .then((items) => {
+          const m = new Map();
+          (items || []).forEach((h) => {
+            if (!h || String(h.mediaId) !== String(showId) || h.episode == null) return;
+            const hs = h.season != null && h.season !== 0 ? Number(h.season) : null;
+            if (wantSeason === null ? hs !== null : hs !== wantSeason) return;
+            const pos = Number(h.positionSeconds) || 0;
+            const dur = Number(h.durationSeconds) || 0;
+            merge(m, Number(h.episode), pos, dur, !!h.completed || (dur > 0 && pos >= dur - 30));
+          });
+          return m;
+        })
+        .catch(() => null);
+      watchedServerCache.set(String(showId), server);
+    }
+    return { local: local, server: server };
+  }
+
+  /**
+   * Paint watched state onto every .ep-btn under `root` (deep: covers flat
+   * grids AND lazily-built thread rows). Idempotent; the CURRENT episode
+   * keeps its highlight.
+   * @param {HTMLElement} root
+   * @param {Map<number, {pos: number, dur: number, completed: boolean}>} byEp
+   * @param {number} [currentEp]
+   */
+  function paintWatched(root, byEp, currentEp) {
+    if (!root || !byEp || !byEp.size) return;
+    root.querySelectorAll('.ep-btn').forEach((b) => {
+      const n = Number(b.textContent);
+      if (!n || n === currentEp || b.classList.contains('ep-btn--watched') || b.classList.contains('ep-btn--partial')) return;
+      const w = byEp.get(n);
+      if (!w) return;
+      if (w.completed || (w.dur > 0 && w.pos >= w.dur - 30)) {
+        b.classList.add('ep-btn--watched');
+        b.title = (b.title ? b.title + ' \u00b7 ' : '') + 'Watched';
+      } else if (w.pos > 15 && w.dur > 0) {
+        b.classList.add('ep-btn--partial');
+        b.style.setProperty('--wp', Math.min(100, Math.round((w.pos / w.dur) * 100)) + '%');
+        b.title = (b.title ? b.title + ' \u00b7 ' : '') + 'In progress';
+      }
+    });
+  }
+
+  /**
+   * THE episode grid component - used by EVERY episode surface (detail
+   * picker, anime flat picker, room episodes modal) so long seasons thread
+   * identically everywhere. <=50 episodes: flat grid. >50: threaded rows.
+   * Episode names enrich tooltips in both shapes (cached per show+season).
+   * @param {HTMLElement} epGrid
+   * @param {{ count: number, pick: (n: number) => void, currentEp?: number, showId?: string|number|null, season?: number|null }} o
+   */
+  function renderEpisodeGrid(epGrid, o) {
+    const applyNames = (/** @type {HTMLElement} */ root) => {
+      if (!o.showId || !o.season) return;
+      const key = o.showId + ':' + o.season;
+      const paint = (/** @type {Map<number, {name: string}>} */ byNum) => {
+        root.querySelectorAll('.ep-btn').forEach((b) => {
+          const ep = byNum.get(Number(b.textContent));
+          if (ep && ep.name) b.title = 'E' + b.textContent + ' \u00b7 ' + ep.name;
+        });
+      };
+      const cached = epNamesCache.get(key);
+      if (cached) {
+        paint(cached);
+        return;
+      }
+      api('/tv/' + encodeURIComponent(String(o.showId)) + '/season/' + o.season)
+        .then((data) => {
+          if (!data || !data.episodes) return;
+          const byNum = new Map(data.episodes.map((e) => [e.episode_number, e]));
+          epNamesCache.set(key, byNum);
+          paint(byNum);
+        })
+        .catch(() => {});
+    };
+    // WATCHED FADE: local history paints immediately; the server view
+    // (cross-device) re-paints when it arrives. Deep on purpose — it also
+    // decorates thread rows built later.
+    const watched = o.showId != null ? watchedEpisodesFor(o.showId, o.season == null ? null : o.season) : null;
+    const paintLocal = () => watched && paintWatched(epGrid, watched.local, o.currentEp || 0);
+    const decorate = (/** @type {HTMLElement} */ root) => {
+      applyNames(root);
+      paintLocal();
+    };
+    if (o.count > 50) {
+      buildThreadedEpisodes(epGrid, o.count, o.pick, o.currentEp || 0, decorate);
+    } else {
+      for (let n = 1; n <= o.count; n++) {
+        const b = h('button', 'ep-btn' + (n === o.currentEp ? ' ep-btn--current' : ''), String(n));
+        b.type = 'button';
+        b.addEventListener('click', () => o.pick(n));
+        epGrid.appendChild(b);
+      }
+      decorate(epGrid);
+    }
+    if (watched && watched.server) {
+      watched.server.then((byEp) => {
+        if (byEp && byEp.size && epGrid.isConnected) paintWatched(epGrid, byEp, o.currentEp || 0);
+      });
+    }
+  }
+
+  /**
+   * Threaded episode grid for LONG seasons (> THREAD_ROW_MAX episodes):
+   * every episode is available, chunked into collapsible rows of ~50 with
+   * labeled headers (E1-50, E51-100, ...) - rows materialize their buttons
+   * lazily on first open (1000+ episodes must not create 1000 nodes).
+   * @param {HTMLElement} epGrid
+   * @param {number} count
+   * @param {(n: number) => void} pick
+   * @param {number} [currentEp] highlight + auto-open its thread row
+   * @param {(root: HTMLElement) => void} [applyNames] name enrichment per row
+   */
+  function buildThreadedEpisodes(epGrid, count, pick, currentEp, applyNames) {
+    const THREAD_ROW_MAX = 50;
+    const rows = Math.ceil(count / THREAD_ROW_MAX);
+    /** @type {HTMLElement[]} */ const rowEls = [];
+    for (let r = 0; r < rows; r++) {
+      const from = r * THREAD_ROW_MAX + 1;
+      const to = Math.min(count, from + THREAD_ROW_MAX - 1);
+      const rowEl = h('div', 'detail__ep-row');
+      const head = h('button', 'detail__ep-row-head', 'E' + from + '\u2013' + to);
+      head.type = 'button';
+      const body = h('div', 'detail__ep-row-body');
+      rowEl.appendChild(head);
+      rowEl.appendChild(body);
+      let built = false;
+      head.addEventListener('click', () => {
+        if (!built) {
+          built = true;
+          for (let n = from; n <= to; n++) {
+            const b = h('button', 'ep-btn' + (n === currentEp ? ' ep-btn--current' : ''), String(n));
+            b.type = 'button';
+            b.addEventListener('click', () => pick(n));
+            body.appendChild(b);
+          }
+          if (applyNames) applyNames(body);
+        }
+        rowEl.classList.toggle('is-open');
+      });
+      epGrid.appendChild(rowEl);
+      rowEls.push(rowEl);
+    }
+    // Auto-open the row holding the current episode (or the first row).
+    const idx = currentEp ? Math.min(rows - 1, Math.floor((currentEp - 1) / THREAD_ROW_MAX)) : 0;
+    const head = rowEls[idx] && /** @type {HTMLButtonElement} */ (rowEls[idx].querySelector('.detail__ep-row-head'));
+    if (head) {
+      head.click();
+      const body = rowEls[idx].querySelector('.detail__ep-row-body');
+      const cur = body && body.querySelector('.ep-btn--current');
+      if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'center' });
+    }
   }
 
   function typeLabel(item) {
@@ -411,7 +628,8 @@
           iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
           iframe.setAttribute('allowfullscreen', '');
           media.appendChild(iframe);
-        });
+        })
+        .catch(() => {});
       }, 550);
     });
     card.addEventListener('mouseleave', scheduleClosePreview);
@@ -442,6 +660,46 @@
       );
     }
     poster.appendChild(h('span', 'card-item__badge', typeLabel(item)));
+
+    // LIKE HEART: top-right of the poster; state from the WP.Social cache.
+    const likeBtn = document.createElement('button');
+    likeBtn.type = 'button';
+    likeBtn.className = 'card-item__like';
+    likeBtn.setAttribute('aria-label', 'Like');
+    const syncHeart = (/** @type {boolean} */ on) => {
+      likeBtn.classList.toggle('is-liked', on);
+      likeBtn.textContent = on ? '\u2665' : '\u2661';
+    };
+    if (global.WP && global.WP.Social && global.WP.Social.getLikeIds) {
+      global.WP.Social.getLikeIds().then((set) => {
+        // Card may have been swapped out while the request was in flight.
+        if (likeBtn.isConnected) syncHeart(set.has(String(item.id)));
+      });
+    }
+    likeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const Social = global.WP && global.WP.Social;
+      if (!Social || !Social.toggleLike) return;
+      if (!Social.getSession || !Social.getSession()) {
+        Social.toast('Sign in to like titles.', true);
+        return;
+      }
+      const optimistic = !likeBtn.classList.contains('is-liked');
+      syncHeart(optimistic);
+      Social.toggleLike({
+        mediaId: String(item.id),
+        mediaType: item.type === 'tv' ? 'tv' : 'movie',
+        mediaTitle: item.title || '',
+        posterUrl: item.poster || '',
+      })
+        .then((on) => syncHeart(on))
+        .catch(() => {
+          syncHeart(!optimistic);
+          Social.toast('Could not save that like \u2014 try again.', true);
+        });
+    });
+    poster.appendChild(likeBtn);
 
     const body = h('div', 'card-item__body');
     body.appendChild(h('div', 'card-item__title', item.title));
@@ -497,10 +755,10 @@
     if (item.overview) content.appendChild(h('p', 'hero__overview', item.overview));
 
     const actions = h('div', 'hero__actions');
-    const watch = h('button', 'btn btn--primary', 'Watch together');
+    const watch = h('button', 'btn btn--primary', tr('card.watchTogether', 'Watch together'));
     watch.addEventListener('click', () => onSelect(item));
     actions.appendChild(watch);
-    const details = h('button', 'btn btn--ghost', 'Details');
+    const details = h('button', 'btn btn--ghost', tr('card.details', 'Details'));
     details.addEventListener('click', () => openDetail(item, (v) => onSelect(v)));
     actions.appendChild(details);
 
@@ -525,7 +783,7 @@
     const body = h('div', 'detail__body');
     body.style.padding = '20px';
     body.style.overflowY = 'auto';
-    body.appendChild(h('div', 'browse__empty', 'Loading\u2026'));
+    body.appendChild(h('div', 'browse__empty', tr('feed.loading', 'Loading\u2026')));
     card.appendChild(body);
 
     overlay.appendChild(card);
@@ -549,7 +807,7 @@
           // Resolve anime classification + AniList id. Try the Worker endpoint
           // first (TMDB keywords + AniList match); if that's unreachable or
           // can't find a match, fall back to a direct browser -> AniList lookup
-          // (public, keyless GraphQL API). Anime never falls back to /watch/tv/.
+          // (public, keyless GraphQL API). Unmatched anime degrades to the TMDB tv path.
           let info = null;
           try {
             info = await anilistApi(item.id);
@@ -570,9 +828,18 @@
             }
             if (anilistId != null) {
               item.anilistId = anilistId;
-              renderAnimeBody(body, item, extra, { episodes }, onPick, close);
+              const malId = info && info.malId != null ? String(info.malId) : null;
+              if (malId) item.malId = malId;
+              renderAnimeBody(body, item, extra, { episodes: episodes, malId: malId }, onPick, close);
             } else {
-              renderAnimeUnresolved(body, item, extra);
+              // NO AniList match: degrade to the REAL TMDB seasons UI (chips
+              // + per-season grids playing the tv path) instead of a dead
+              // end. TMDB anime entries carry proper /season structure, so
+              // the user can still watch; if a later resolve matches, the
+              // absolute AniList grid takes over again.
+              item.isAnime = false;
+              item.type = 'tv';
+              renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
             }
           } else {
             renderDetailBody(body, item, extra, extra.seasons || [], onPick, close);
@@ -589,11 +856,20 @@
     body.innerHTML = '';
 
     const top = h('div', 'detail__top');
+    const showPosterSrc = (extra && extra.poster_path ? img(extra.poster_path, 'w500') : '') || item.poster || '';
     const poster = document.createElement('img');
     poster.className = 'detail__poster';
     poster.alt = '';
-    poster.src = (extra && extra.poster_path ? img(extra.poster_path, 'w500') : '') || item.poster || '';
-    poster.onerror = () => poster.remove();
+    poster.src = showPosterSrc;
+    // A failed season cover reverts to the SHOW poster (never a broken image,
+    // never a vanished cover); only when even the show art is gone do we drop it.
+    poster.onerror = () => {
+      if (poster.src !== showPosterSrc && showPosterSrc) {
+        poster.src = showPosterSrc;
+      } else {
+        poster.remove();
+      }
+    };
     top.appendChild(poster);
 
     const info = h('div', 'detail__info');
@@ -616,7 +892,7 @@
     // Movies play directly; series need an episode choice.
     if (item.type === 'movie') {
       const actions = h('div', 'detail__actions');
-      const play = h('button', 'btn btn--primary', 'Watch together');
+      const play = h('button', 'btn btn--primary', tr('card.watchTogether', 'Watch together'));
       play.addEventListener('click', () => {
         onPick(buildVideo(item));
         close();
@@ -628,7 +904,13 @@
 
     const usable = (Array.isArray(seasons) ? seasons : [])
       .filter((s) => s && Number(s.season_number) > 0)
-      .map((s) => ({ season: Number(s.season_number), name: s.name || `Season ${s.season_number}`, episodes: Number(s.episode_count) || 0 }));
+      .map((s) => ({
+        season: Number(s.season_number),
+        name: s.name || `Season ${s.season_number}`,
+        episodes: Number(s.episode_count) || 0,
+        // TMDB ships a poster per season — the detail cover follows it.
+        poster: (s.poster_path ? img(s.poster_path, 'w500') : '') || showPosterSrc,
+      }));
 
     const section = h('div', 'detail__section');
     section.appendChild(h('p', 'detail__label', 'Season'));
@@ -640,66 +922,33 @@
     section.appendChild(epGrid);
     body.appendChild(section);
 
-    function renderSeason(s, autoFirst) {
+    function renderSeason(s) {
       seasonChips.querySelectorAll('.chip').forEach((c) => c.classList.remove('chip--active'));
       seasonChips.querySelectorAll('.chip').forEach((c) => {
         if (Number(c.dataset.season) === s.season) c.classList.add('chip--active');
       });
-      renderEpisodes(s, autoFirst);
+      // The cover follows the selected season (falls back to the show art).
+      if (s.poster && poster.parentNode && poster.src !== s.poster) poster.src = s.poster;
+      renderEpisodes(s);
     }
 
-    function renderEpisodes(s, autoFirst) {
+    function renderEpisodes(s) {
       epGrid.innerHTML = '';
       const count = s.episodes || 0;
-
-      if (count > 120) {
-        // Very long shows: use a numeric input instead of 100+ buttons.
-        const wrap = h('div', 'detail__actions');
-        const num = h('input', 'field__input');
-        num.type = 'number';
-        num.min = '1';
-        num.max = String(count);
-        num.value = '1';
-        num.style.width = '120px';
-        const go = h('button', 'btn btn--primary', 'Play episode');
-        go.addEventListener('click', () => {
-          let n = Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1)));
-          onPick(buildVideo(item, { season: s.season, episode: n }));
-          close();
-        });
-        wrap.appendChild(num);
-        wrap.appendChild(go);
-        epGrid.appendChild(wrap);
+      if (!count) {
+        epGrid.appendChild(h('div', 'browse__empty', 'No episode data.'));
         return;
       }
-
-      if (count) {
-        for (let n = 1; n <= count; n++) {
-          const b = h('button', 'ep-btn', String(n));
-          b.type = 'button';
-          b.addEventListener('click', () => {
-            onPick(buildVideo(item, { season: s.season, episode: n }));
-            close();
-          });
-          epGrid.appendChild(b);
-        }
-      } else {
-        epGrid.appendChild(h('div', 'browse__empty', 'No episode data.'));
-      }
-
-      // Enrich with episode names when available.
-      if (autoFirst !== false) {
-        api('/tv/' + encodeURIComponent(item.id) + '/season/' + s.season)
-          .then((data) => {
-            if (!data || !data.episodes) return;
-            const byNum = new Map(data.episodes.map((e) => [e.episode_number, e]));
-            epGrid.querySelectorAll('.ep-btn').forEach((b) => {
-              const ep = byNum.get(Number(b.textContent));
-              if (ep && ep.name) b.title = ep.name;
-            });
-          })
-          .catch(() => {});
-      }
+      // ONE component everywhere: flat <=50, threaded >50, names in both.
+      renderEpisodeGrid(epGrid, {
+        count: count,
+        pick: (n) => {
+          onPick(buildVideo(item, { season: s.season, episode: n }));
+          close();
+        },
+        showId: item.id,
+        season: s.season,
+      });
     }
 
     if (!usable.length) {
@@ -711,10 +960,10 @@
       const chip = h('button', 'chip' + (i === 0 ? ' chip--active' : ''), s.name || `Season ${s.season}`);
       chip.type = 'button';
       chip.dataset.season = String(s.season);
-      chip.addEventListener('click', () => renderSeason(s, false));
+      chip.addEventListener('click', () => renderSeason(s));
       seasonChips.appendChild(chip);
     });
-    renderEpisodes(usable[0], true);
+    renderEpisodes(usable[0]);
   }
 
   // Anime detail: episode-only picker (absolute numbering, AniList total).
@@ -759,52 +1008,47 @@
       close();
     };
 
-    if (count > 120) {
-      const wrap = h('div', 'detail__actions');
-      const num = h('input', 'field__input');
-      num.type = 'number';
-      num.min = '1';
-      num.max = String(count);
-      num.value = '1';
-      num.style.width = '120px';
-      const go = h('button', 'btn btn--primary', 'Play episode');
-      go.type = 'button';
-      go.addEventListener('click', () => {
-        pick(Math.max(1, Math.min(count, Math.floor(Number(num.value) || 1))));
-      });
-      wrap.appendChild(num);
-      wrap.appendChild(go);
-      epGrid.appendChild(wrap);
-    } else {
-      for (let n = 1; n <= count; n++) {
-        const b = h('button', 'ep-btn', String(n));
-        b.type = 'button';
-        b.addEventListener('click', () => pick(n));
-        epGrid.appendChild(b);
-      }
-    }
+    renderEpisodeGrid(epGrid, { count: count, pick: pick, showId: item.id, season: null });
     section.appendChild(epGrid);
     body.appendChild(section);
   }
 
-  // Detected as anime, but AniList lookup failed to yield an ID.
-  function renderAnimeUnresolved(body, item, extra) {
-    body.innerHTML = '';
-    const title = (extra && (extra.name || extra.title)) || item.title || 'This title';
-    body.appendChild(h('div', 'detail__title', title));
-    body.appendChild(
-      h(
-        'div',
-        'browse__empty',
-        "This looks like anime, but we couldn't match it on AniList, so it can't be played through the anime player yet."
-      )
-    );
-  }
+
+  // ---- feed definitions (shared by the home browse feed and /discovery pages) --------
+  // Pure data: instances must copy these, never mutate them (two mounts can
+  // coexist — home browse + room sidebar browse).
+  const FEED_DEFS = [
+    { key: 'movie', title: 'Popular Movies', path: (p) => `/movie/popular?page=${p}`, map: normMovie },
+    { key: 'tv', title: 'Popular TV Shows', path: (p) => `/tv/popular?page=${p}`, map: (t) => normTv(t, false) },
+    { key: 'anime', title: 'Popular Anime', path: (p) => `/discover/tv?with_keywords=${ANIME_KEYWORD}&sort_by=popularity.desc&page=${p}`, map: (t) => normTv(t, true) },
+    { key: 'trending', title: 'Trending Now', path: (p) => `/trending/all/week?page=${p}`, map: normAny },
+    { key: 'topMovies', title: 'Top Rated Movies', path: (p) => `/movie/top_rated?page=${p}`, map: normMovie },
+    { key: 'topTv', title: 'Top Rated Series', path: (p) => `/tv/top_rated?page=${p}`, map: (t) => normTv(t, false) },
+    { key: 'nowPlaying', title: 'In Theaters', path: (p) => `/movie/now_playing?page=${p}`, map: normMovie },
+    { key: 'airingToday', title: 'Airing Today', path: (p) => `/tv/airing_today?page=${p}`, map: (t) => normTv(t, false) },
+  ];
+
+  // Side-nav keys (= /discovery/:key route keys) → FEED_DEFS keys.
+  // 'movie' is accepted as an alias of 'movies'.
+  const DISCOVERY_ROUTES = {
+    movies: 'movie',
+    movie: 'movie',
+    series: 'tv',
+    anime: 'anime',
+    trending: 'trending',
+    'top-movies': 'topMovies',
+    'top-tv': 'topTv',
+    'now-playing': 'nowPlaying',
+    'airing-today': 'airingToday',
+  };
 
   // ---- browse surface -----------------------------------------------------------------
   function mountBrowse(container, opts) {
     opts = opts || {};
     const onSelect = opts.onSelect || function () {};
+    // Optional async `(query) => Node | null` — renders the "People" section
+    // above media results (profiles/search integration, see social.js).
+    const peopleProvider = typeof opts.peopleProvider === 'function' ? opts.peopleProvider : null;
     const externalInputs = Array.isArray(opts.searchInputs)
       ? opts.searchInputs.filter(Boolean)
       : opts.searchInput
@@ -870,20 +1114,11 @@
     let seq = 0;
 
     // ---- browse feed (vertical infinite scroll) --------------------------------
-    // The home feed is an ordered list of sections. New sections appear as you
-    // scroll toward the bottom (vertical infinite scroll); each section is a
-    // horizontal row that also deepens page by page. Sections are addressable
-    // by `key` so the side rail can jump straight to them.
-    const ROW_DEFS = [
-      { key: 'movie', title: 'Popular Movies', path: (p) => `/movie/popular?page=${p}`, map: normMovie },
-      { key: 'tv', title: 'Popular TV Shows', path: (p) => `/tv/popular?page=${p}`, map: (t) => normTv(t, false) },
-      { key: 'anime', title: 'Popular Anime', path: (p) => `/discover/tv?with_keywords=${ANIME_KEYWORD}&sort_by=popularity.desc&page=${p}`, map: (t) => normTv(t, true) },
-      { key: 'trending', title: 'Trending Now', path: (p) => `/trending/all/week?page=${p}`, map: normAny },
-      { key: 'topMovies', title: 'Top Rated Movies', path: (p) => `/movie/top_rated?page=${p}`, map: normMovie },
-      { key: 'topTv', title: 'Top Rated Series', path: (p) => `/tv/top_rated?page=${p}`, map: (t) => normTv(t, false) },
-      { key: 'nowPlaying', title: 'In Theaters', path: (p) => `/movie/now_playing?page=${p}`, map: normMovie },
-      { key: 'airingToday', title: 'Airing Today', path: (p) => `/tv/airing_today?page=${p}`, map: (t) => normTv(t, false) },
-    ];
+    // The home feed is an ordered list of sections (FEED_DEFS, module scope —
+    // shared with the /discovery pages). New sections appear as you scroll
+    // toward the bottom; each section is a horizontal row that also deepens
+    // page by page. Sections are addressable by `key` so the side nav can
+    // jump straight to them.
     const INITIAL_SECTIONS = 4;
 
     let sections = [];
@@ -899,7 +1134,7 @@
     const sentinel = h('div', 'browse__sentinel');
 
     function resetSections() {
-      sections = ROW_DEFS.map((d) => ({
+      sections = FEED_DEFS.map((d) => ({
         key: d.key,
         title: d.title,
         path: d.path,
@@ -1039,11 +1274,20 @@
       const list = results.filter(matchesFilter);
       gridEl = h('div', 'grid');
       if (!list.length) {
-        gridEl.appendChild(h('div', 'browse__empty', 'No results \u2014 try another title.'));
+        gridEl.appendChild(h('div', 'browse__empty', tr('feed.noResults', 'No results \u2014 try another title.')));
       } else {
         list.forEach((it) => gridEl.appendChild(cardNode(it, choose)));
       }
       rowsWrap.insertBefore(gridEl, sentinel);
+      // People results sit above the media grid (best effort — if the call
+      // fails or finds nobody, the media grid stands alone).
+      if (peopleProvider && searchQuery) {
+        const q = searchQuery;
+        Promise.resolve(peopleProvider(q)).then((node) => {
+          if (destroyed || !node || mode !== 'search' || searchQuery !== q) return;
+          rowsWrap.insertBefore(node, rowsWrap.firstChild);
+        }).catch(() => {});
+      }
     }
 
     function showError(detail) {
@@ -1089,7 +1333,8 @@
     }
 
     const onInput = (ev) => {
-      const q = String((ev && ev.target && ev.target.value) || '').trim();
+      const raw = String((ev && ev.target && ev.target.value) || '');
+      const q = raw.trim();
       clearTimeout(searchTimer);
       if (!q) {
         seq++;
@@ -1104,7 +1349,15 @@
         loadBrowse();
         return;
       }
-      setInputsValue(q);
+      // Keep the OTHER synced input(s) in step with the RAW value. Writing
+      // the trimmed value back — especially into the input the user is
+      // typing in — ate every trailing space mid-keystroke, making
+      // multi-word search ("dune part two") impossible from the nav bars.
+      if (externalInputs) {
+        externalInputs.forEach((inp) => {
+          if (inp && inp !== ev.target && inp.value !== raw) inp.value = raw;
+        });
+      }
       searchTimer = setTimeout(async () => {
         const mySeq = ++seq;
         mode = 'search';
@@ -1169,6 +1422,22 @@
       }
       if (destroyed || mySeq !== seq) return;
       resetRows();
+      // FOR YOU row: like-based suggestions sit above the feed (signed-in
+      // users with likes only; silent skip otherwise).
+      if (global.WP && global.WP.Social && global.WP.Social.getSuggestions) {
+        try {
+          const sug = await global.WP.Social.getSuggestions();
+          if (!destroyed && mySeq === seq && sug.items && sug.items.length) {
+            const items = sug.items.map((si) => ({
+              id: si.mediaId,
+              type: si.mediaType === 'tv' ? 'tv' : 'movie',
+              title: si.mediaTitle,
+              poster: si.posterUrl,
+            }));
+            makeSectionRow({ key: 'foryou', title: 'For you' + (sug.seeds && sug.seeds.length ? ' \u00b7 because you liked ' + sug.seeds[0] : '') }, items);
+          }
+        } catch (_) {}
+      }
       for (let i = 0; i < INITIAL_SECTIONS; i++) await createSection(i);
       if (destroyed || mySeq !== seq) return;
       if (!sections.some((s) => s.el)) {
@@ -1221,6 +1490,320 @@
     };
   }
 
+  // ---- discovery pages (/discovery/:key) ----------------------------------------------
+  // One feed section promoted to a full page with vertical infinite scroll.
+  // Shares the home feed's row definitions (FEED_DEFS) and card renderer; the
+  // worker's /api/tmdb proxy already passes `page` through, so this is a
+  // frontend-only feature. Clicks behave exactly like the home feed: movies
+  // start a room directly, series/anime open the detail preview first.
+  function mountDiscovery(container, opts) {
+    opts = opts || {};
+    const onSelect = opts.onSelect || function () {};
+    const def = FEED_DEFS.find((d) => d.key === DISCOVERY_ROUTES[opts.routeKey]);
+
+    container.classList.add('discovery');
+    container.innerHTML = '';
+
+    if (!def) {
+      const missing = h('div', 'discovery__missing');
+      missing.appendChild(h('h1', 'discovery__title', 'Unknown collection'));
+      missing.appendChild(h('p', 'discovery__sub', 'No library page matches \u201C' + opts.routeKey + '\u201D.'));
+      const back = /** @type {HTMLAnchorElement} */ (h('a', 'btn btn--ghost btn--sm', '\u2190 Back to browsing'));
+      back.href = '/';
+      missing.appendChild(back);
+      container.appendChild(missing);
+      return {
+        destroy() {
+          container.innerHTML = '';
+          container.classList.remove('discovery');
+        },
+      };
+    }
+
+    const head = h('div', 'discovery__head');
+    head.appendChild(h('h1', 'discovery__title', def.title));
+    head.appendChild(h('p', 'discovery__sub', tr('discovery.sub', 'Keep scrolling \u2014 more titles load automatically.')));
+    container.appendChild(head);
+
+    const grid = h('div', 'grid');
+    container.appendChild(grid);
+    const status = h('div', 'discovery__status');
+    container.appendChild(status);
+    const sentinel = h('div', 'browse__sentinel');
+    container.appendChild(sentinel);
+
+    function choose(item) {
+      if (item.type === 'movie') {
+        onSelect(buildVideo(item));
+      } else {
+        openDetail(item, (video) => onSelect(video));
+      }
+    }
+
+    let page = 0;
+    let loading = false;
+    let done = false;
+    let destroyed = false;
+    let seq = 0;
+
+    async function loadMore() {
+      if (destroyed || loading || done) return;
+      loading = true;
+      const mySeq = ++seq;
+      status.textContent = tr('feed.loading', 'Loading\u2026');
+      try {
+        const data = await api(def.path(page + 1));
+        if (destroyed || mySeq !== seq) return;
+        const items = (data.results || []).map(def.map).filter(Boolean);
+        page += 1;
+        const totalPages = data.total_pages || 1;
+        if (!items.length || page >= totalPages) done = true;
+        items.forEach((it) => grid.appendChild(cardNode(it, choose)));
+        status.textContent = done && page === 1 && !grid.childElementCount ? 'Nothing here yet.' : '';
+      } catch (e) {
+        if (destroyed || mySeq !== seq) return;
+        done = true;
+        status.textContent = 'Could not load more' + (e && e.message ? ' \u2014 ' + e.message : '');
+        const retry = /** @type {HTMLButtonElement} */ (h('button', 'btn btn--ghost btn--sm', 'Retry'));
+        retry.type = 'button';
+        retry.addEventListener('click', () => {
+          done = false;
+          status.textContent = '';
+          void loadMore();
+        });
+        status.appendChild(retry);
+      } finally {
+        if (!destroyed && mySeq === seq) loading = false;
+      }
+    }
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((en) => en.isIntersecting)) void loadMore();
+      },
+      { rootMargin: '600px 0px' } // start loading before the bottom is reached
+    );
+    io.observe(sentinel);
+
+    void loadMore(); // first page, immediately
+
+    return {
+      destroy() {
+        destroyed = true;
+        io.disconnect();
+        container.innerHTML = '';
+        container.classList.remove('discovery');
+      },
+      reload() {
+        page = 0;
+        done = false;
+        grid.innerHTML = '';
+        void loadMore();
+      },
+    };
+  }
+
+  /**
+   * Room episode switcher: compact modal for the CURRENT video (tv/anime).
+   * Season chips + numbered episode grid; the current episode is marked;
+   * picking calls onPick(buildVideo(...)) - the room decides apply vs request.
+   * @param {{ id: string, type: string, anilistId?: string|null, title?: string, season?: number|null, episode?: number|null }} video
+   * @param {(video: ReturnType<typeof buildVideo>) => void} onPick
+   */
+  function openEpisodes(video, onPick) {
+    if (!video || !video.id || video.type === 'movie') return;
+    const overlay = h('div', 'modal');
+    const card = h('div', 'modal__card detail episodes-modal');
+    const head = h('div', 'modal__head');
+    head.appendChild(h('h2', 'modal__title', (video.title || 'Series') + ' \u00b7 episodes'));
+    const closeBtn = h('button', 'modal__close', '\u00d7');
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Close');
+    head.appendChild(closeBtn);
+    card.appendChild(head);
+    const body = h('div', 'detail__body');
+    body.style.padding = '16px 20px 20px';
+    body.style.overflowY = 'auto';
+    body.appendChild(h('div', 'browse__empty', tr('feed.loading', 'Loading\u2026')));
+    card.appendChild(body);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    const isAnime = video.type === 'anime';
+    (async () => {
+      try {
+        const extra = await api('/tv/' + encodeURIComponent(String(video.id)));
+        if (isAnime) {
+          // Anime = AniList ABSOLUTE numbering. TMDB splits long anime into
+          // many seasons whose episode numbers RESTART at 1 (One Piece
+          // "Season 14, E5"), but the anime player plays
+          // /anime/<anilistId>/<episode> with that number as the ABSOLUTE
+          // episode - so every pick past TMDB season 1 replayed the wrong
+          // episode. Render ONE flat absolute grid instead.
+          let anilistId = video.anilistId != null ? String(video.anilistId) : null;
+          let malId = video.malId != null ? String(video.malId) : null;
+          let episodes = 0;
+          try {
+            const info = await anilistApi(video.id);
+            if (info && info.anilistId != null) anilistId = String(info.anilistId);
+            if (info && info.malId != null) malId = String(info.malId);
+            if (info && info.episodes != null) episodes = Number(info.episodes) || 0;
+          } catch (_) {}
+          // Ongoing anime often have episodes: null on AniList - use the
+          // TMDB total (same source the detail picker falls back to).
+          if (!episodes) episodes = Number(extra && extra.number_of_episodes) || 0;
+          if (anilistId == null && video.title) {
+            try {
+              const direct = await anilistDirect(video.title, video.year || '');
+              if (direct && direct.id != null) {
+                anilistId = String(direct.id);
+                if (!episodes) episodes = Number(direct.episodes) || 0;
+              }
+            } catch (_) {}
+          }
+          // Last-resort counts BEFORE giving up: AniList total, then the
+          // TMDB total. With an AniList id we NEVER fall back to the TMDB
+          // season grid (bogus anime seasons = empty/nonsense lists).
+          if (anilistId != null && !episodes) {
+            try {
+              const info = await anilistApi(video.id);
+              if (info && info.episodes != null) episodes = Number(info.episodes) || 0;
+            } catch (_) {}
+          }
+          if (anilistId != null && !episodes) {
+            episodes = Number(extra && extra.number_of_episodes) || 0;
+          }
+          if (anilistId != null && episodes > 0) {
+            body.innerHTML = '';
+            const animePoster = (extra && extra.poster_path ? img(extra.poster_path, 'w154') : '') || video.poster || '';
+            const acov = document.createElement('img');
+            acov.className = 'episodes-modal__cover';
+            acov.alt = '';
+            acov.src = animePoster;
+            acov.onerror = () => {
+              if (acov.src !== animePoster && animePoster) acov.src = animePoster;
+              else acov.remove();
+            };
+            const ameta = h('div', 'episodes-modal__covermeta');
+            ameta.appendChild(h('div', 'episodes-modal__show', video.title || 'Series'));
+            ameta.appendChild(h('div', 'episodes-modal__season', episodes + ' episodes'));
+            const arow = h('div', 'episodes-modal__headrow');
+            arow.appendChild(acov);
+            ameta && arow.appendChild(ameta);
+            body.appendChild(arow);
+            body.appendChild(h('p', 'detail__label', 'Episode'));
+            const epGrid = h('div', 'detail__episodes');
+            body.appendChild(epGrid);
+            renderEpisodeGrid(epGrid, {
+              count: episodes,
+              pick: (n) => {
+                // SPREAD the room video: dropping poster/backdrop/overview here
+                // is what erased the room cover on every episode switch.
+                onPick(buildVideo({ ...video, type: 'anime', isAnime: true, anilistId: anilistId, malId: malId }, { episode: n }));
+                close();
+              },
+              currentEp: Number(video.episode) || 0,
+              showId: null,
+              season: null,
+            });
+            return;
+          }
+          if (isAnime && anilistId != null) {
+            // Had an AniList id but no usable count anywhere: say so instead
+            // of rendering the broken TMDB season split.
+            body.innerHTML = '';
+            body.appendChild(
+              h('div', 'browse__empty', 'Episode list unavailable right now - try again shortly.')
+            );
+            return;
+          }
+          // No AniList match: fall through to the TMDB grid (best effort).
+        }
+        const usable = ((extra && extra.seasons) || [])
+          .filter((s) => s && Number(s.season_number) > 0)
+          .map((s) => ({
+            season: Number(s.season_number),
+            name: s.name || 'Season ' + s.season_number,
+            episodes: Number(s.episode_count) || 0,
+            poster: (s.poster_path ? img(s.poster_path, 'w154') : '') || showPoster,
+          }));
+        body.innerHTML = '';
+        if (!usable.length) {
+          body.appendChild(h('div', 'browse__empty', 'No season data available.'));
+          return;
+        }
+        const curSeason = Number(video.season) || usable[0].season;
+        const curEp = Number(video.episode) || 0;
+        const seasonChips = h('div', 'detail__seasons');
+        const epGrid = h('div', 'detail__episodes');
+
+        // Cover row: the show's art, following the selected season (TMDB
+        // ships a poster per season) — the modal no longer looks like a
+        // bare numbered list.
+        const showPoster = (extra && extra.poster_path ? img(extra.poster_path, 'w154') : '') || video.poster || '';
+        const cov = document.createElement('img');
+        cov.className = 'episodes-modal__cover';
+        cov.alt = '';
+        cov.src = showPoster;
+        cov.onerror = () => {
+          if (cov.src !== showPoster && showPoster) cov.src = showPoster;
+          else cov.remove();
+        };
+        const coverMeta = h('div', 'episodes-modal__covermeta');
+        coverMeta.appendChild(h('div', 'episodes-modal__show', video.title || 'Series'));
+        const seasonLabel = h('div', 'episodes-modal__season', 'Season ' + curSeason);
+        coverMeta.appendChild(seasonLabel);
+        const coverRow = h('div', 'episodes-modal__headrow');
+        coverRow.appendChild(cov);
+        coverRow.appendChild(coverMeta);
+        body.appendChild(coverRow);
+        body.appendChild(seasonChips);
+        body.appendChild(epGrid);
+
+        function renderEpisodes(s) {
+          epGrid.innerHTML = '';
+          const count = s.episodes || 0;
+          renderEpisodeGrid(epGrid, {
+            count: count,
+            pick: (n) => {
+              onPick(buildVideo({ ...video, type: isAnime ? 'anime' : 'tv', isAnime: isAnime, anilistId: video.anilistId }, { season: s.season, episode: n }));
+              close();
+            },
+            currentEp: s.season === curSeason ? curEp : 0,
+            showId: video.id,
+            season: s.season,
+          });
+        }
+
+        let active = usable[0];
+        usable.forEach((s) => {
+          const chip = h('button', 'chip' + (s.season === curSeason ? ' chip--active' : ''), s.name);
+          chip.type = 'button';
+          chip.dataset.season = String(s.season);
+          chip.addEventListener('click', () => {
+            active = s;
+            seasonChips.querySelectorAll('.chip').forEach((x) => x.classList.remove('chip--active'));
+            chip.classList.add('chip--active');
+            if (s.poster && cov.parentNode && cov.src !== s.poster) cov.src = s.poster;
+            seasonLabel.textContent = 'Season ' + s.season;
+            renderEpisodes(s);
+          });
+          seasonChips.appendChild(chip);
+          if (s.season === curSeason) active = s;
+        });
+        renderEpisodes(active);
+      } catch (e) {
+        body.innerHTML = '';
+        body.appendChild(h('div', 'browse__empty', 'Could not load episodes \u2014 try again.'));
+      }
+    })();
+  }
+
   global.WP.Catalog = {
     api,
     anilistApi,
@@ -1228,7 +1811,9 @@
     watchUrl,
     typeLabel,
     mountBrowse,
+    mountDiscovery,
     openDetail,
+    openEpisodes,
     fetchRecommendations,
   };
 })(window);

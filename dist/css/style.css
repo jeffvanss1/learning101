@@ -12,6 +12,15 @@
   --border: #303030;
   --border-soft: #262626;
 
+  /* Subtle translucent fills (hover washes, tracks, ghost buttons) that
+     flip direction in light mode (white-on-dark -> black-on-light). */
+  --fill-soft: rgba(255, 255, 255, 0.05);
+  --fill-med: rgba(255, 255, 255, 0.08);
+  --fill-strong: rgba(255, 255, 255, 0.14);
+
+  /* The blurred home top bar (translucent over the page). */
+  --topnav-bg: rgba(15, 15, 15, 0.92);
+
   --text: #f1f1f1;
   --text-dim: #aaaaaa;
   --text-muted: #717171;
@@ -21,6 +30,10 @@
   --blue: #3ea6ff;
   --blue-hover: #65b8ff;
   --green: #2ba640;
+  /* Text/ink ON accent fills (blue is bright in dark, dark navy in light). */
+  --on-accent: #0b0b0b;
+  /* Away/amber status - pastel on dark, deep amber on light. */
+  --amber: #e8c35a;
 
   /* The system type stack Apple ships on its site: SF Pro on Apple devices
      (Display/Text/Icons), with graceful fallbacks everywhere else. */
@@ -30,11 +43,85 @@
   --radius-sm: 8px;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 
+  color-scheme: dark;
+
   --header-h: 60px;
   --sidebar-w: 380px;
   --topnav-h: 60px;
   --sidenav-w: 224px;
   --sidenav-w-collapsed: 72px;
+}
+
+/* ---------------------------------------------------------------------------
+   LIGHT THEME — explicit pick (html[data-theme='light']) or the system
+   preference by default (prefers-color-scheme). An explicit data-theme wins;
+   with no attribute the media query below follows the OS. The inline head
+   script in index.html applies an explicit pick pre-paint (no flash).
+   -------------------------------------------------------------------------- */
+html[data-theme='light'] {
+  /* Each surface step must stay VISIBLY distinct (the dark theme separates
+     by shade; light does the same): page fff -> card f7 -> tile f1 ->
+     hover dd. Same-color-on-same-color was the "blending" bug. */
+  --bg: #ffffff;
+  --bg-soft: #f7f7f7;
+  --bg-elev: #f1f1f1;
+  --bg-raised: #e8e8e8;
+  --bg-input: #f4f4f4;
+  --bg-hover: #dddddd;
+  --border: #e0e0e0;
+  --border-soft: #e9e9e9;
+
+  --fill-soft: rgba(0, 0, 0, 0.045);
+  --fill-med: rgba(0, 0, 0, 0.07);
+  --fill-strong: rgba(0, 0, 0, 0.12);
+
+  --topnav-bg: rgba(255, 255, 255, 0.92);
+
+  --text: #0f0f0f;
+  --text-dim: #606060;
+  --text-muted: #909090;
+
+  --blue: #065fd4;
+  --blue-hover: #0557c5;
+  --on-accent: #ffffff;
+  --amber: #8f6c00;
+
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  /* System default: follow the OS unless the user picked dark explicitly. */
+  html:not([data-theme='dark']) {
+    --bg: #ffffff;
+    --bg-soft: #f7f7f7;
+    --bg-elev: #f1f1f1;
+    --bg-raised: #e8e8e8;
+    --bg-input: #f4f4f4;
+    --bg-hover: #dddddd;
+    --border: #e0e0e0;
+    --border-soft: #e9e9e9;
+
+    --fill-soft: rgba(0, 0, 0, 0.045);
+    --fill-med: rgba(0, 0, 0, 0.07);
+    --fill-strong: rgba(0, 0, 0, 0.12);
+
+    --topnav-bg: rgba(255, 255, 255, 0.92);
+
+    --text: #0f0f0f;
+    --text-dim: #606060;
+    --text-muted: #909090;
+
+    --blue: #065fd4;
+    --blue-hover: #0557c5;
+    --on-accent: #ffffff;
+    --amber: #8f6c00;
+
+    --shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+
+    color-scheme: light;
+  }
 }
 
 * {
@@ -128,7 +215,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  color: #fff;
+  color: var(--text);
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.2px;
@@ -164,8 +251,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  border: 1px solid var(--border); /* neutral buttons read as buttons on any surface */
+  border-radius: 8px;
   padding: 9px 18px;
   font-size: 14px;
   font-weight: 500;
@@ -188,6 +275,7 @@ button {
 .btn--primary {
   background: var(--red);
   color: #fff;
+  border-color: transparent; /* solid accent: no ring */
 }
 .btn--primary:hover:not(:disabled) {
   background: var(--red-hover);
@@ -195,19 +283,20 @@ button {
 
 .btn--secondary {
   background: var(--blue);
-  color: #0b0b0b;
+  color: var(--on-accent);
+  border-color: transparent;
 }
 .btn--secondary:hover:not(:disabled) {
   background: var(--blue-hover);
 }
 
 .btn--ghost {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-med);
   color: var(--text);
   border-color: var(--border);
 }
 .btn--ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--fill-strong);
 }
 
 .btn--danger:hover:not(:disabled) {
@@ -228,8 +317,8 @@ button {
   display: none;
   width: 15px;
   height: 15px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
+  border: 2px solid var(--fill-strong);
+  border-top-color: currentColor; /* follows the button ink - visible on any theme */
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -374,6 +463,7 @@ button {
 /* ---- Lobby -------------------------------------------------------------------- */
 .lobby {
   min-height: 100vh;
+  min-height: 100dvh; /* iOS toolbar-safe (fallback above) */
   display: flex;
   flex-direction: column;
   background:
@@ -484,7 +574,7 @@ button {
   border: 1px solid var(--border);
   color: var(--text);
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 13.5px;
   box-shadow: var(--shadow);
   animation: toast-in 0.25s ease;
@@ -496,7 +586,7 @@ button {
 
 .toast--error {
   border-color: rgba(255, 0, 51, 0.5);
-  color: #ff8fa3;
+  color: var(--red);
 }
 
 .toast.is-leaving {
@@ -527,6 +617,7 @@ button {
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh; /* iOS toolbar-safe (fallback above) */
   overflow: hidden;
 }
 
@@ -570,7 +661,7 @@ button {
   align-items: center;
   gap: 7px;
   padding: 5px 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   font-size: 12.5px;
@@ -696,11 +787,13 @@ button {
   align-items: center;
   gap: 7px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: rgba(0, 0, 0, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.14);
   font-size: 12px;
-  color: var(--text-dim);
+  /* Always sits ON the dark player surface - pinned light-on-dark, it must
+     NOT follow the theme (dark-grey on black in light mode otherwise). */
+  color: #cccccc;
   backdrop-filter: blur(6px);
   transition: border-color 0.2s ease, color 0.2s ease;
 }
@@ -721,6 +814,36 @@ button {
 .sync-indicator--syncing {
   border-color: rgba(245, 197, 24, 0.5);
   color: #f5d76a;
+}
+
+/* ---- Up-next auto-advance overlay (in the player) -------------------------- */
+.up-next {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px);
+}
+@media (max-width: 560px) {
+  .up-next {
+    width: calc(100% - 24px);
+    flex-wrap: wrap;
+    justify-content: center;
+    text-align: center;
+  }
+}
+.up-next__label {
+  font-size: 13px;
+  color: #f1f1f1;
+  white-space: nowrap;
 }
 
 /* ---- Video info (YouTube-style, under the player) ------------------------- */
@@ -757,10 +880,10 @@ button {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #ffccd5;
+  color: var(--red);
   background: rgba(255, 0, 51, 0.16);
   border: 1px solid rgba(255, 0, 51, 0.4);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 3px 9px;
 }
 
@@ -812,6 +935,12 @@ button {
   flex: 0 0 auto;
 }
 
+/* Auto-next toggle: accent outline while ON (device pref, per viewer). */
+#auto-next.is-on {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 .video-info__desc {
   margin-top: 10px;
   padding: 10px 14px;
@@ -849,7 +978,7 @@ button {
   border: 1px solid var(--border);
   background: var(--bg-elev);
   color: var(--text-dim);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 6px 14px;
   font-size: 12.5px;
   font-weight: 500;
@@ -878,7 +1007,7 @@ button {
   font-weight: 600;
   color: var(--text-dim);
   background: var(--bg-raised);
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 1px 8px;
 }
 
@@ -935,7 +1064,7 @@ button {
 }
 
 .upnext-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--fill-soft);
 }
 
 .upnext-item__thumb {
@@ -1045,9 +1174,10 @@ button {
 }
 
 .peer-avatar--more {
-  background: var(--bg-elev);
-  color: var(--text-muted);
+  background: var(--bg-raised);
+  color: var(--text-dim);
   font-size: 10px;
+  border-color: var(--border);
 }
 
 /* ---- Peer list (host roster management) ------------------------------------- */
@@ -1105,18 +1235,18 @@ button {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 2px 7px;
 }
 
 .peer-row .peer-badge:first-of-type {
-  color: #ffccd5;
+  color: var(--red);
   background: rgba(255, 0, 51, 0.16);
   border: 1px solid rgba(255, 0, 51, 0.4);
 }
 
 .peer-badge {
-  color: #b9e3ff;
+  color: var(--blue);
   background: rgba(62, 166, 255, 0.14);
   border: 1px solid rgba(62, 166, 255, 0.4);
 }
@@ -1133,7 +1263,7 @@ button {
   border: 1px solid var(--border);
   background: var(--bg-elev);
   color: var(--text-dim);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
@@ -1177,7 +1307,7 @@ button {
 }
 
 .chat-msg:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--fill-soft);
 }
 
 @keyframes msg-in {
@@ -1233,12 +1363,12 @@ button {
 }
 
 .chat-msg__author.is-owner {
-  color: #ff8fa3;
+  color: var(--red);
 }
 
 .chat-msg__author::after {
   content: '· host';
-  color: #ff8fa3;
+  color: var(--red);
   font-size: 11px;
   font-weight: 500;
   margin-left: 6px;
@@ -1345,10 +1475,10 @@ button {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #b9e3ff;
+  color: var(--blue);
   background: rgba(62, 166, 255, 0.14);
   border: 1px solid rgba(62, 166, 255, 0.4);
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 3px 8px;
   white-space: nowrap;
 }
@@ -1378,7 +1508,7 @@ button {
   flex: 1;
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   color: var(--text);
   padding: 10px 16px;
   font-size: 14px;
@@ -1398,7 +1528,7 @@ button {
   border-radius: 50%;
   border: none;
   background: var(--blue);
-  color: #0b0b0b;
+  color: var(--on-accent);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -1523,4 +1653,158 @@ button {
 
 .chat-form {
   padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---- Custom subtitles (subs.js) --------------------------------------------------- */
+/* Overlay: rendered on top of the player iframe (pointer-events: none), synced
+   to the player clock reported via postMessage. Panel: CC button in the
+   room header toggles it; needs .player-wrap to be the positioning context. */
+.player-wrap {
+  position: relative;
+}
+
+.subs-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 6;
+  padding: 0 6%;
+}
+
+.subs-overlay__text {
+  display: none;
+  max-width: 100%;
+  white-space: pre-line;
+  text-align: center;
+  font-size: clamp(15px, 2.2vw, 26px);
+  line-height: 1.35;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.95), 0 2px 6px rgba(0, 0, 0, 0.85);
+}
+
+.subs-overlay.subs--sm .subs-overlay__text { font-size: clamp(13px, 1.7vw, 19px); }
+.subs-overlay.subs--lg .subs-overlay__text { font-size: clamp(18px, 2.8vw, 34px); }
+.subs-overlay.subs--xl .subs-overlay__text { font-size: clamp(21px, 3.5vw, 44px); }
+
+.subs-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 300px;
+  max-width: calc(100% - 24px);
+  background: var(--bg-soft, #16181f);
+  border: 1px solid var(--border, #2a2d3a);
+  border-radius: var(--radius, 12px);
+  padding: 12px;
+  z-index: 8;
+  box-shadow: var(--shadow, 0 12px 32px rgba(0, 0, 0, 0.45));
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.subs-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.subs-panel__title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.subs-panel__x {
+  background: none;
+  border: 0;
+  color: var(--text-dim, #8b90a0);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.subs-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.subs-panel__select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg, #0d0e13);
+  color: inherit;
+  border: 1px solid var(--border, #2a2d3a);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.subs-panel__file {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim, #8b90a0);
+}
+
+.subs-panel__label {
+  font-size: 12px;
+  color: var(--text-dim, #8b90a0);
+}
+
+.subs-panel__offset {
+  min-width: 52px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.subs-panel__status {
+  font-size: 12px;
+  color: var(--text-dim, #8b90a0);
+  min-height: 16px;
+  margin-top: 4px;
+}
+
+.subs-panel__status--err {
+  color: var(--red);
+}
+
+.subs-panel__hint {
+  font-size: 11px;
+  color: var(--text-dim, #8b90a0);
+  opacity: 0.75;
+  margin-top: 4px;
+}
+
+/* subs mini timing editor (manual match) */
+.subs-editor { flex-direction: column; align-items: stretch; gap: 4px; }
+.subs-editor__bar { position: relative; height: 26px; border-radius: 6px; background: var(--fill-med); overflow: hidden; }
+.subs-editor__ticks { position: absolute; inset: 0; }
+.subs-editor__tick { position: absolute; top: 4px; bottom: 4px; min-width: 1px; border-radius: 1px; background: rgba(122, 162, 255, 0.45); border-left: 1px solid rgba(122, 162, 255, 0.95); cursor: pointer; }
+.subs-editor__tick:hover { background: #7aa2ff; }
+.subs-editor__tick--sel { z-index: 2; box-shadow: 0 0 0 2px #ffd166, 0 0 10px rgba(255, 213, 30, 0.7); filter: brightness(1.25); }
+.subs-editor__play { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff5d73; pointer-events: none; }
+
+/* ---- Mini-map thread sync (drag the cue strip like a Premiere clip) -------------- */
+.subs-editor__bar {
+  cursor: grab;
+  touch-action: none;
+}
+.subs-editor__bar:active {
+  cursor: grabbing;
+}
+.subs-editor__ticks {
+  will-change: transform;
+}
+.subs-editor__bar--drag .subs-editor__tick--sel {
+  opacity: 0.85;
 }
